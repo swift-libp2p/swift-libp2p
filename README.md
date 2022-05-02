@@ -153,6 +153,8 @@ Let's make this code better together! 🤝
 
 ## Credits
 
+- [swift-nio](https://github.com/apple/swift-nio)
+- [swift-vapor](https://github.com/vapor/vapor) 
 - [LibP2P Spec](https://github.com/libp2p/specs)
 
 ## License
