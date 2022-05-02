@@ -6,7 +6,7 @@
 //
 
 import LibP2PCore
-import libp2p_crypto
+import LibP2PCrypto
 import CoreFoundation
 import Darwin
 
