@@ -29,14 +29,19 @@ extension Application.ChildChannelHandlers.Provider {
     }
 }
 
-internal final class OutboundLoggerHandler: ChannelOutboundHandler {
+public final class OutboundLoggerHandler: ChannelOutboundHandler {
     public typealias OutboundIn = ByteBuffer
     public typealias OutboundOut = ByteBuffer
     
     private var logger:Logger
     
-    init(mode:LibP2P.Mode) {
+    public init(mode:LibP2P.Mode) {
         self.logger = Logger(label: "logger.outbound.\(mode)")
+        self.logger.logLevel = .trace //LOG_LEVEL
+    }
+    
+    public init() {
+        self.logger = Logger(label: "logger.outbound")
         self.logger.logLevel = .trace //LOG_LEVEL
     }
     
@@ -46,9 +51,9 @@ internal final class OutboundLoggerHandler: ChannelOutboundHandler {
         let readable = buffer.readableBytesView
         //print(String(data: Data(readable), encoding: .utf8) ?? "NIL")
         if self.logger.logLevel == .debug || self.logger.logLevel == .trace {
-            logger.debug("-- Outbound Data: '\(Data(readable).asString(base: .base16))' --")
+            logger.trace("-- Outbound Data: '\(Data(readable).asString(base: .base16))' --")
         } else {
-            logger.info("-- Outbound Data: '\(Data(readable).count)' --")
+            logger.debug("-- Outbound Data: '\(Data(readable).count)' --")
         }
         //print("--- Outbound Logger Done ---")
         
@@ -68,14 +73,19 @@ internal final class OutboundLoggerHandler: ChannelOutboundHandler {
     }
 }
 
-internal final class InboundLoggerHandler: ChannelInboundHandler {
+public final class InboundLoggerHandler: ChannelInboundHandler {
     public typealias InboundIn = ByteBuffer
     public typealias InboundOut = ByteBuffer
     
     private var logger:Logger
     
-    init(mode:LibP2P.Mode) {
+    public init(mode:LibP2P.Mode) {
         self.logger = Logger(label: "logger.inbound.\(mode)")
+        self.logger.logLevel = .trace //LOG_LEVEL
+    }
+    
+    public init() {
+        self.logger = Logger(label: "logger.inbound")
         self.logger.logLevel = .trace //LOG_LEVEL
     }
     
@@ -85,9 +95,9 @@ internal final class InboundLoggerHandler: ChannelInboundHandler {
         let readable = buffer.readableBytesView
         //print(String(data: Data(readable), encoding: .utf8) ?? "NIL")
         if self.logger.logLevel == .debug || self.logger.logLevel == .trace {
-            logger.debug("-- Inbound Data: '\(Data(readable).asString(base: .base16))' --")
+            logger.trace("-- Inbound Data: '\(Data(readable).asString(base: .base16))' --")
         } else {
-            logger.info("-- Inbound Data: '\(Data(readable).count)' --")
+            logger.debug("-- Inbound Data: '\(Data(readable).count)' --")
         }
         //print("--- Inbound Logger Done ---")
         
