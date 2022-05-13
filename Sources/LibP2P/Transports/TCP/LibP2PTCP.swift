@@ -70,7 +70,7 @@ public struct TCP: Transport {
             self.application.logger.warning("Invalid Mutliaddr. TCP can't dial \(address)")
             return self.application.eventLoopGroup.any().makeFailedFuture(Errors.invalidMultiaddr)
         }
-        
+        self.application.logger.trace("Attempting to dial \(address)")
         return sharedClient.connect(host: tcp.address, port: tcp.port).flatMap { channel -> EventLoopFuture<Connection> in
             
             self.application.logger.trace("Instantiating new BasicConnectionLight")
