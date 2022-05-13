@@ -12,7 +12,7 @@ import LibP2PCore
 public protocol SecurityUpgrader {
     
     static var key:String { get }
-    func upgradeConnection(_ conn:Connection, securedPromise:EventLoopPromise<Connection.SecuredResult>) -> EventLoopFuture<Void>
+    func upgradeConnection(_ conn:Connection, position:ChannelPipeline.Position, securedPromise:EventLoopPromise<Connection.SecuredResult>) -> EventLoopFuture<Void>
     func printSelf()
     
     //static var installer:SecurityProtocolInstaller { get }
