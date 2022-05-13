@@ -17,21 +17,6 @@ extension Application {
         self.servers.use(serverProvider)
     }
     
-//    public var server: Server {
-//        guard let makeServer = self.servers.storage.makeServer else {
-//            fatalError("No server configured. Configure with app.servers.use(...)")
-//        }
-//        return makeServer(self)
-//    }
-    
-    public func server<S:Server>(for sec:S.Type) -> S? {
-        self.server(forKey: sec.key) as? S
-    }
-    
-    public func server(forKey key:String) -> Server? {
-        self.servers.storage.servers.first(where: { $0.key == key })?.value
-    }
-    
     public var listenAddresses:[Multiaddr] {
         self.servers.allServers.reduce(into: Array<Multiaddr>()) { partialResult, server in
             partialResult.append(server.listeningAddress)
@@ -74,6 +59,14 @@ extension Application {
         public func use<S:Server>(_ makeServer: @escaping (Application) -> (S)) {
             guard !self.storage.servers.contains(where: { $0.key == S.key }) else { self.application.logger.warning("`\(S.key)` Server Already Installed - Skipping"); return }
             self.storage.servers.append( (S.key, makeServer(self.application)) )
+        }
+        
+        public func server<S:Server>(for sec:S.Type) -> S? {
+            self.server(forKey: sec.key) as? S
+        }
+        
+        public func server(forKey key:String) -> Server? {
+            self.storage.servers.first(where: { $0.key == key })?.value
         }
         
         public var available:[String] {
