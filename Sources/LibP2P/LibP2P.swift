@@ -166,6 +166,7 @@ public final class Application {
         
         /// Application wide log level...
         self.logger.logLevel = .trace
+        self.logger.notice("PeerID: \(self.peerID.b58String)")
     }
 
     /// Starts the Application using the `start()` method, then waits for any running tasks to complete
