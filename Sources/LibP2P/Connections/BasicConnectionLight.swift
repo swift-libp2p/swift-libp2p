@@ -259,14 +259,14 @@ public class BasicConnectionLight:AppConnection {
         let mssHandlers:[ChannelHandler] = self.application.upgrader.negotiate(protocols: self.application.routes.all.map { $0.description }, mode: .listener, logger: logger, promise: negotiationPromise)
 
         negotiationPromise.futureResult.whenComplete { [weak self] result in
-            guard let self = self else { return }
+            guard let self = self, self.application.isRunning else { return }
             switch result {
             case .failure(let error):
                 self.muxer?.removeStream(channel: childChannel)
                 self.logger.error("Error while upgrading Inbound ChildChannel: \(error)")
             case .success(let proto):
                 self.upgradeChildChannel(proto, childChannel: childChannel, responder: self.application.responder.current, direction: .inbound).whenComplete { [weak self] result in
-                    guard let self = self else { return }
+                    guard let self = self, self.application.isRunning else { return }
                     self.logger.trace("Result of Upgrader Removal and Pipeline Config: \(result)")
                     self.logger.debug("🔀 New Inbound ChildChannel[`\(proto)`] Ready!")
                     self.logger.trace("List of Streams:")
@@ -302,14 +302,14 @@ public class BasicConnectionLight:AppConnection {
             let mssHandlers:[ChannelHandler] = self.application.upgrader.negotiate(protocols: [`protocol`], mode: .initiator, logger: self.logger, promise: negotiationPromise)
 
             negotiationPromise.futureResult.whenComplete { [weak self] result in
-                guard let self = self else { return }
+                guard let self = self, self.application.isRunning else { return }
                 switch result {
                 case .failure(let error):
                     self.muxer?.removeStream(channel: childChannel)
                     self.logger.error("Error while upgrading Outbound ChildChannel: \(error)")
                 case .success(let proto):
                     self.upgradeChildChannel(proto, childChannel: childChannel, responder: pendingStream.responder, direction: .outbound).whenComplete { [weak self] result in
-                        guard let self = self else { return }
+                        guard let self = self, self.application.isRunning else { return }
                         self.logger.trace("Result of Upgrader Removal and Pipeline Config: \(result)")
                         self.logger.debug("🔀 New Outbound ChildChannel[`\(proto)`] Ready!")
                         self.logger.trace("List of Streams:")
@@ -743,6 +743,7 @@ extension AppConnection {
                     return
                 }
                 
+                // - TODO: we might want to be more specific here with the position we're adding our handlers...
                 secUpgrader.upgradeConnection(self, position: .last, securedPromise: promise).flatMap {
                     self.channel.pipeline.removeHandler(name: "upgrader")
                 }.whenComplete { res in
