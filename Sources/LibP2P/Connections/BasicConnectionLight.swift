@@ -743,7 +743,7 @@ extension AppConnection {
                     return
                 }
                 
-                secUpgrader.upgradeConnection(self, securedPromise: promise).flatMap {
+                secUpgrader.upgradeConnection(self, position: .last, securedPromise: promise).flatMap {
                     self.channel.pipeline.removeHandler(name: "upgrader")
                 }.whenComplete { res in
                     switch res {
