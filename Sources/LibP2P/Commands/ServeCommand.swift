@@ -45,8 +45,9 @@ public final class ServeCommand: Command {
 
     private var signalSources: [DispatchSourceSignal]
     private var didShutdown: Bool
-    private var server: Server?
+    private var servers: [Server] = []
     private var running: Application.Running?
+    private var nextPort:Int? = nil
 
     /// Create a new `ServeCommand`.
     init() {
@@ -58,24 +59,32 @@ public final class ServeCommand: Command {
     public func run(using context: CommandContext, signature: Signature) throws {
         switch (signature.hostname, signature.port, signature.bind, signature.socketPath) {
         case (.none, .none, .none, .none): // use defaults
-            try context.application.server.start(address: nil)
+            try context.application.servers.allServers.forEach { try $0.start(address: nil) }
             
         case (.none, .none, .none, .some(let socketPath)): // unix socket
-            try context.application.server.start(address: .unixDomainSocket(path: socketPath))
+            try context.application.servers.allServers.forEach { try $0.start(address: .unixDomainSocket(path: socketPath)) }
             
         case (.none, .none, .some(let address), .none): // bind ("hostname:port")
             let hostname = address.split(separator: ":").first.flatMap(String.init)
             let port = address.split(separator: ":").last.flatMap(String.init).flatMap(Int.init)
+            nextPort = port
             
-            try context.application.server.start(address: .hostname(hostname, port: port))
+            try context.application.servers.allServers.forEach {
+                try $0.start(address: .hostname(hostname, port: port))
+                nextPort? += 1
+            }
             
         case (let hostname, let port, .none, .none): // hostname / port
-            try context.application.server.start(address: .hostname(hostname, port: port))
+            nextPort = port
+            try context.application.servers.allServers.forEach {
+                try $0.start(address: .hostname(hostname, port: nextPort!))
+                nextPort! += 1
+            }
             
         default: throw Error.incompatibleFlags
         }
         
-        self.server = context.application.server
+        self.servers = context.application.servers.allServers
 
         // allow the server to be stopped or waited for
         let promise = context.application.eventLoopGroup.next().makePromise(of: Void.self)
@@ -101,8 +110,8 @@ public final class ServeCommand: Command {
     func shutdown() {
         self.didShutdown = true
         self.running?.stop()
-        if let server = self.server {
-            server.shutdown()
+        self.servers.forEach {
+            $0.shutdown()
         }
         self.signalSources.forEach { $0.cancel() } // clear refs
         self.signalSources = []

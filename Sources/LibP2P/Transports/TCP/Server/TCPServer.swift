@@ -10,6 +10,7 @@ import NIOExtras
 import Logging
 
 public final class TCPServer: Server {
+    public static var key:String = "TCP"
     
     /// Engine server config struct.
     ///

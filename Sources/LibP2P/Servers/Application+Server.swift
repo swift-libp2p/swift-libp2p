@@ -10,18 +10,22 @@ extension Application {
         .init(application: self)
     }
 
-    public var server: Server {
-        guard let makeServer = self.servers.storage.makeServer else {
-            fatalError("No server configured. Configure with app.servers.use(...)")
-        }
-        return makeServer(self)
+    /// Conforms to Libp2p listen protocol
+    ///
+    /// - Note: This is the same as using app.servers.use(...)
+    public func listen(_ serverProvider:Servers.Provider) {
+        self.servers.use(serverProvider)
     }
     
     public var listenAddresses:[Multiaddr] {
-        [self.server.listeningAddress]
+        self.servers.allServers.reduce(into: Array<Multiaddr>()) { partialResult, server in
+            partialResult.append(server.listeningAddress)
+        }
     }
 
     public struct Servers {
+        typealias KeyedServer = (key: String, value: Server)
+        
         public struct Provider {
             let run: (Application) -> ()
 
@@ -35,7 +39,8 @@ extension Application {
         }
 
         final class Storage {
-            var makeServer: ((Application) -> Server)?
+            var servers:[KeyedServer] = []
+            //var makeServer: ((Application) -> Server)?
             init() { }
         }
 
@@ -50,13 +55,26 @@ extension Application {
         public func use(_ provider: Provider) {
             provider.run(self.application)
         }
-
-        public func use(_ makeServer: @escaping (Application) -> (Server)) {
-            self.storage.makeServer = makeServer
+        
+        public func use<S:Server>(_ makeServer: @escaping (Application) -> (S)) {
+            guard !self.storage.servers.contains(where: { $0.key == S.key }) else { self.application.logger.warning("`\(S.key)` Server Already Installed - Skipping"); return }
+            self.storage.servers.append( (S.key, makeServer(self.application)) )
         }
         
-        public var available:[Server] {
-            [self.application.server]
+        public func server<S:Server>(for sec:S.Type) -> S? {
+            self.server(forKey: sec.key) as? S
+        }
+        
+        public func server(forKey key:String) -> Server? {
+            self.storage.servers.first(where: { $0.key == key })?.value
+        }
+        
+        public var available:[String] {
+            self.storage.servers.map { $0.key }
+        }
+        
+        internal var allServers:[Server] {
+            self.storage.servers.map { $0.value }
         }
         
         public var command: ServeCommand {
