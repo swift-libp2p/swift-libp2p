@@ -23,14 +23,17 @@
 [libp2p](https://github.com/libp2p/specs) is a networking stack and library modularized out of [The IPFS Project](https://github.com/ipfs/ipfs), and bundled separately for other tools to use.
 > libp2p is the product of a long, and arduous quest of understanding -- a deep dive into the internet's network stack, and plentiful peer-to-peer protocols from the past. Building large-scale peer-to-peer systems has been complex and difficult in the last 15 years, and libp2p is a way to fix that. It is a "network stack" -- a protocol suite -- that cleanly separates concerns, and enables sophisticated applications to only use the protocols they absolutely need, without giving up interoperability and upgradeability. libp2p grew out of IPFS, but it is built so that lots of people can use it, for lots of different projects.
 
+### Docs & Examples
+- [**The Swift Libp2p Documentation**](https://swift-libp2p.github.io/documentation/libp2p/)
+
 ### Note:
 To learn more, check out the following resources:
-- [**Our documentation**](https://docs.libp2p.io)
-- [**Our community discussion forum**](https://discuss.libp2p.io)
-- [**The libp2p Specification**](https://github.com/libp2p/specs)
-- [**go-libp2p implementation**](https://github.com/libp2p/go-libp2p) 
-- [**js-libp2p implementation**](https://github.com/libp2p/js-libp2p)
-- [**rust-libp2p implementation**](https://github.com/libp2p/rust-libp2p)
+- [the libp2p documentation](https://docs.libp2p.io)
+- [the libp2p community discussion forum](https://discuss.libp2p.io)
+- [the libp2p specification](https://github.com/libp2p/specs)
+- [the go-libp2p implementation](https://github.com/libp2p/go-libp2p) 
+- [the js-libp2p implementation](https://github.com/libp2p/js-libp2p)
+- [the rust-libp2p implementation](https://github.com/libp2p/rust-libp2p)
 
 ## Disclaimer
 
@@ -104,7 +107,7 @@ lib.shutdown()
 | **Transport** |
 | [`swift-libp2p-tcp`](//github.com/swift-libp2p/swift-libp2p-tcp) | 🟢 | TCP transport |
 | [`swift-libp2p-udp`](//github.com/swift-libp2p/swift-libp2p-udp) | 🟡 | UDP transport |
-| [`swift-libp2p-ws`](//github.com/swift-libp2p/swift-libp2p-ws) | 🔴 | WebSocket transport |
+| [`swift-libp2p-ws`](//github.com/swift-libp2p/swift-libp2p-ws) | 🟢 | WebSocket transport |
 | [`swift-libp2p-http`](//github.com/swift-libp2p/swift-libp2p-http) | 🔴 | HTTP1 transport |
 | [`swift-libp2p-http2`](//github.com/swift-libp2p/swift-libp2p-http2) | 🔴 | HTTP2 transport |
 | **Encrypted Channels** |
@@ -131,8 +134,8 @@ lib.shutdown()
 | **RPC** |
 | [`swift-libp2p-rpc`](//github.com/swift-libp2p/swift-libp2p-rpc) | 🔴 | a simple RPC library for libp2p |
 | **Utilities/miscellaneous** |
-| [`swift-libp2p-dbsaddr`](//github.com/swift-libp2p/swift-libp2p-dnsaddr) | 🔴 | a dnsaddr resolver |
-| [`swift-libp2p-mdns`](//github.com/swift-libp2p/swift-libp2p-mdns) | 🔴 | MulticastDNS for LAN discovery |
+| [`swift-libp2p-dbsaddr`](//github.com/swift-libp2p/swift-libp2p-dnsaddr) | 🟡 | a dnsaddr resolver |
+| [`swift-libp2p-mdns`](//github.com/swift-libp2p/swift-libp2p-mdns) | 🟡 | MulticastDNS for LAN discovery |
 | **Testing and examples** |
 | [`swift-libp2p-testing`](//github.com/swift-libp2p/swift-libp2p-testing) | 🔴 | a collection of testing utilities for libp2p |
 
@@ -149,7 +152,7 @@ Contributions are welcomed! This code is very much a proof of concept. I can gua
 
 Let's make this code better together! 🤝
 
-[![](https://cdn.rawgit.com/jbenet/contribute-ipfs-gif/master/img/contribute.gif)](https://github.com/ipfs/community/blob/master/contributing.md)
+[![](https://cdn.rawgit.com/jbenet/contribute-ipfs-gif/master/img/contribute.gif)](#)
 
 ## Credits
 
