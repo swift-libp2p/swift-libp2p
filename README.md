@@ -65,7 +65,6 @@ let package = Package(
 ## Usage
 
 ### Example 
-check out the [tests]() for more examples
 
 ``` swift
 import LibP2P
