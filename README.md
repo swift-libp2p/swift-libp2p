@@ -65,7 +65,6 @@ let package = Package(
 ## Usage
 
 ### Example 
-
 ``` swift
 import LibP2P
 import LibP2PNoise
@@ -90,6 +89,9 @@ lib.start()
 lib.shutdown()
 
 ```
+- Check out the [libp2p-app-template](https://github.com/swift-libp2p/libp2p-app-template) repo for a bare-bones executable app ready to be customized
+- Check out the [Configure an Echo Server](https://swift-libp2p.github.io/tutorials/libp2p/configure-echo-server) tutorial in the documentation for more info
+
 
 ## Packages
 
