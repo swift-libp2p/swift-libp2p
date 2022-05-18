@@ -8,8 +8,6 @@
 #if os(Linux)
 import Backtrace
 import CBacktrace
-#else
-import Darwin
 #endif
 import Foundation
 
