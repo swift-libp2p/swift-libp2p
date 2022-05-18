@@ -504,7 +504,7 @@ public class BasicConnectionLight:AppConnection {
         self.channel.eventLoop.makeFailedFuture(Errors.notImplementedYet)
     }
 
-    public func hasStream(forProtocol proto:String, direction:ConnectionStats.Direction? = nil) -> LibP2P.Stream? {
+    public func hasStream(forProtocol proto:String, direction:ConnectionStats.Direction? = nil) -> LibP2PCore.Stream? {
         if let direction = direction {
             return self.muxer?.streams.first(where: { ($0.protocolCodec == proto) && ($0.direction == direction) })
         } else {

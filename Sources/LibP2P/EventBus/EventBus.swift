@@ -80,8 +80,8 @@ public final class EventBus {
     public enum EventEmitter {
         case connected(Connection)
         case disconnected(Connection, PeerID?)
-        case openedStream(LibP2P.Stream)/*(LibP2P.Stream)*/
-        case closedStream(LibP2P.Stream)/*(LibP2P.Stream)*/
+        case openedStream(LibP2PCore.Stream)
+        case closedStream(LibP2PCore.Stream)
         case listen(String, Multiaddr)
         case listenClosed(String, Multiaddr)
         case remotePeer(PeerInfo)
@@ -165,8 +165,8 @@ public final class EventBus {
     public enum EventHandler {
         case connected(_ cb:(Connection) -> Void)
         case disconnected(_ cb:(Connection, PeerID?) -> Void)
-        case openedStream(_ cb:(LibP2P.Stream) -> Void) //(_ cb:(LibP2P.Stream) -> Void)
-        case closedStream(_ cb:(LibP2P.Stream) -> Void) //(_ cb:(LibP2P.Stream) -> Void)
+        case openedStream(_ cb:(LibP2PCore.Stream) -> Void)
+        case closedStream(_ cb:(LibP2PCore.Stream) -> Void)
         case remotePeer(_ cb:(PeerInfo) -> Void)
         case upgraded(_ cb:(Connection) -> Void)
         case identifiedPeer(_ cb:(IdentifiedPeer) -> Void)
@@ -209,7 +209,7 @@ public final class EventBus {
             }
         case .openedStream(let handler):
             SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.OpenedStream + instanceID) { notification in
-                guard let not = notification, let stream = not.object as? LibP2P.Stream else {
+                guard let not = notification, let stream = not.object as? LibP2PCore.Stream else {
                 //guard let not = notification, let proto = not.object as? String else {
                     return
                 }
@@ -217,7 +217,7 @@ public final class EventBus {
             }
         case .closedStream(let handler):
             SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.ClosedStream + instanceID) { notification in
-                guard let not = notification, let stream = not.object as? LibP2P.Stream else {
+                guard let not = notification, let stream = not.object as? LibP2PCore.Stream else {
                 //guard let not = notification, let proto = not.object as? String else {
                     return
                 }

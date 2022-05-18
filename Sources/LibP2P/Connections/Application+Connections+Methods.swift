@@ -19,13 +19,13 @@ extension Application {
     }
     
     /// Asks our ConnectionManager for a list of all active streams registered for the specified protocol
-    func activeStreams(for proto:SemVerProtocol) -> EventLoopFuture<[LibP2P.Stream]> {
+    func activeStreams(for proto:SemVerProtocol) -> EventLoopFuture<[LibP2PCore.Stream]> {
         self.activeStreams(for: proto.stringValue)
     }
     
     /// Asks our ConnectionManager for a list of all active streams registered for the specified protocol
-    func activeStreams(for proto:String) -> EventLoopFuture<[LibP2P.Stream]> {
-        self.connections.getConnections(on: nil).map { connections -> [LibP2P.Stream] in
+    func activeStreams(for proto:String) -> EventLoopFuture<[LibP2PCore.Stream]> {
+        self.connections.getConnections(on: nil).map { connections -> [LibP2PCore.Stream] in
             //Loop through the connections looking for those who have an open / active stream for the specified protocol
             connections.reduce([], { _, connection in
                 connection.streams.filter { stream in

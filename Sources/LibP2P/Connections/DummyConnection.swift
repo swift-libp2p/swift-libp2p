@@ -26,9 +26,9 @@ internal class DummyConnection:Connection {
 
     public var tags: Any? = nil
 
-    public var registry: [UInt64 : LibP2P.Stream] = [:]
+    public var registry: [UInt64 : LibP2PCore.Stream] = [:]
 
-    public var streams: [LibP2P.Stream] = []
+    public var streams: [LibP2PCore.Stream] = []
 
     public var muxer: Muxer? = nil
 
@@ -46,11 +46,11 @@ internal class DummyConnection:Connection {
         self.channel.eventLoop.makeFailedFuture(Errors.notImplementedYet)
     }
 
-    public func newStream(_ protos: [String]) -> EventLoopFuture<LibP2P.Stream> {
+    public func newStream(_ protos: [String]) -> EventLoopFuture<LibP2PCore.Stream> {
         self.channel.eventLoop.makeFailedFuture(Errors.notImplementedYet)
     }
 
-    public func newStreamSync(_ proto: String) throws -> LibP2P.Stream {
+    public func newStreamSync(_ proto: String) throws -> LibP2PCore.Stream {
         throw Errors.notImplementedYet
     }
 
@@ -66,12 +66,12 @@ internal class DummyConnection:Connection {
         self.channel.eventLoop.makeFailedFuture(Errors.notImplementedYet)
     }
 
-    public func acceptStream(_ stream: LibP2P.Stream, protocol: String, metadata: [String]) -> EventLoopFuture<Bool> {
+    public func acceptStream(_ stream: LibP2PCore.Stream, protocol: String, metadata: [String]) -> EventLoopFuture<Bool> {
         self.channel.eventLoop.makeFailedFuture(Errors.notImplementedYet)
     }
     
     @discardableResult
-    public func hasStream(forProtocol proto:String, direction:ConnectionStats.Direction? = nil) -> LibP2P.Stream? {
+    public func hasStream(forProtocol proto:String, direction:ConnectionStats.Direction? = nil) -> LibP2PCore.Stream? {
         return nil
     }
 

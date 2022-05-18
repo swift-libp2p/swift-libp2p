@@ -112,7 +112,7 @@ extension Application {
             }
         }
         
-        private func onNewStream(_ stream:LibP2P.Stream) {
+        private func onNewStream(_ stream:LibP2PCore.Stream) {
             //self.application.logger.trace("Topology::On Proto Change")
             ///Given the change, loop through the regsitrations and call the necesary handlers...
             self.storage.registrations.forEach { registration in
