@@ -8,9 +8,9 @@
 #if os(Linux)
 import Backtrace
 import CBacktrace
-#endif
-
+#else
 import Darwin
+#endif
 import Foundation
 
 extension Optional where Wrapped == StackTrace {
