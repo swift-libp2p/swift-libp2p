@@ -13,7 +13,7 @@ final class LibP2PTests: XCTestCase {
         let app = try Application(.detect())
         defer { app.shutdown() }
         
-        try app.run()
+        try app.start()
         
         sleep(3)
         
