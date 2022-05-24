@@ -3,6 +3,7 @@
 [![](https://img.shields.io/badge/made%20by-Breth-blue.svg?style=flat-square)](https://breth.app)
 [![](https://img.shields.io/badge/project-libp2p-yellow.svg?style=flat-square)](http://libp2p.io/)
 [![Swift Package Manager compatible](https://img.shields.io/badge/SPM-compatible-blue.svg?style=flat-square)](https://github.com/apple/swift-package-manager)
+![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p/actions/workflows/build+test.yml/badge.svg)
 
 > The Swift implementation of the libp2p networking stack
 
@@ -98,47 +99,47 @@ lib.shutdown()
 - List of packages currently in existence for swift libp2p: 
 - Legend:  🟢 = kinda works, 🟡 = doesn't really work yet, 🔴 = not started yet, but on the radar
 
-| Name | Status | Description |
-| --------- | --------- | --------- |
+| Name | Status | Description | Build (macOS & Linux) |
+| --------- | --------- | --------- | --------- |
 | **Libp2p** |
-| [`swift-libp2p`](//github.com/swift-libp2p/swift-libp2p) | 🟢 | swift-libp2p entry point |
-| [`swift-libp2p-core`](//github.com/swift-libp2p/swift-libp2p-core) | 🟢 | core interfaces, types, and abstractions |
+| [`swift-libp2p`](//github.com/swift-libp2p/swift-libp2p) | 🟢 | swift-libp2p entry point | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p/actions/workflows/build+test.yml/badge.svg) |
+| [`swift-libp2p-core`](//github.com/swift-libp2p/swift-libp2p-core) | 🟢 | core interfaces, types, and abstractions | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-core/actions/workflows/build+test.yml/badge.svg) |
 | **Network** |
-| [`swift-libp2p-mss`](//github.com/swift-libp2p/swift-libp2p-mss) | 🟢 | MultistreamSelect transport upgrader |
+| [`swift-libp2p-mss`](//github.com/swift-libp2p/swift-libp2p-mss) | 🟢 | MultistreamSelect transport upgrader | N/A |
 | **Transport** |
-| [`swift-libp2p-tcp`](//github.com/swift-libp2p/swift-libp2p-tcp) | 🟢 | TCP transport |
-| [`swift-libp2p-udp`](//github.com/swift-libp2p/swift-libp2p-udp) | 🟡 | UDP transport |
-| [`swift-libp2p-ws`](//github.com/swift-libp2p/swift-libp2p-ws) | 🟢 | WebSocket transport |
-| [`swift-libp2p-http`](//github.com/swift-libp2p/swift-libp2p-http) | 🔴 | HTTP1 transport |
-| [`swift-libp2p-http2`](//github.com/swift-libp2p/swift-libp2p-http2) | 🔴 | HTTP2 transport |
+| [`swift-libp2p-tcp`](//github.com/swift-libp2p/swift-libp2p-tcp) | 🟢 | TCP transport | N/A |
+| [`swift-libp2p-udp`](//github.com/swift-libp2p/swift-libp2p-udp) | 🟡 | UDP transport | N/A |
+| [`swift-libp2p-ws`](//github.com/swift-libp2p/swift-libp2p-ws) | 🟢 | WebSocket transport | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-websocket/actions/workflows/build+test.yml/badge.svg) |
+| [`swift-libp2p-http`](//github.com/swift-libp2p/swift-libp2p-http) | 🔴 | HTTP1 transport | N/A |
+| [`swift-libp2p-http2`](//github.com/swift-libp2p/swift-libp2p-http2) | 🔴 | HTTP2 transport | N/A |
 | **Encrypted Channels** |
-| [`swift-libp2p-plaintext`](//github.com/swift-libp2p/swift-libp2p-plaintext) | 🟢 | Plaintext channel |
-| [`swift-libp2p-noise`](//github.com/swift-libp2p/swift-libp2p-noise) | 🟢 | Noise crypto channel |
-| [`swift-libp2p-tls`](//github.com/swift-libp2p/swift-libp2p-tls) | 🔴 | TLS 1.3+ crypto channel |
+| [`swift-libp2p-plaintext`](//github.com/swift-libp2p/swift-libp2p-plaintext) | 🟢 | Plaintext channel | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-plaintext/actions/workflows/build+test.yml/badge.svg) |
+| [`swift-libp2p-noise`](//github.com/swift-libp2p/swift-libp2p-noise) | 🟢 | Noise crypto channel | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-noise/actions/workflows/build+test.yml/badge.svg) |
+| [`swift-libp2p-tls`](//github.com/swift-libp2p/swift-libp2p-tls) | 🔴 | TLS 1.3+ crypto channel | N/A |
 | **Stream Muxers** |
-| [`swift-libp2p-mplex`](//github.com/swift-libp2p/swift-libp2p-mplex) | 🟢 | MPLEX stream multiplexer |
-| [`swift-libp2p-yamux`](//github.com/swift-libp2p/swift-libp2p-yamux) | 🔴 | YAMUX stream multiplexer |
+| [`swift-libp2p-mplex`](//github.com/swift-libp2p/swift-libp2p-mplex) | 🟢 | MPLEX stream multiplexer | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-mplex/actions/workflows/build+test.yml/badge.svg) |
+| [`swift-libp2p-yamux`](//github.com/swift-libp2p/swift-libp2p-yamux) | 🔴 | YAMUX stream multiplexer | N/A |
 | **Private Network** |
-| [`swift-libp2p-pnet`](//github.com/swift-libp2p/swift-libp2p-pnet) | 🔴 | reference private networking implementation |
+| [`swift-libp2p-pnet`](//github.com/swift-libp2p/swift-libp2p-pnet) | 🔴 | reference private networking implementation | N/A |
 | **NAT Traversal** |
-| [`swift-libp2p-nat`](//github.com/swift-libp2p/swift-libp2p-nat) | 🔴 | NAT Traversal  |
+| [`swift-libp2p-nat`](//github.com/swift-libp2p/swift-libp2p-nat) | 🔴 | NAT Traversal  | N/A |
 | **Peerstore** |
-| [`swift-libp2p-peerstore`](//github.com/libp2p/swift-libp2p/swift-libp2p-peerstore) | 🔴 | reference implementation of peer metadata storage component |
+| [`swift-libp2p-peerstore`](//github.com/libp2p/swift-libp2p/swift-libp2p-peerstore) | 🔴 | reference implementation of peer metadata storage component | N/A |
 | **Connection Manager** |
-| [`swift-libp2p-connection-manager`](//github.com/swift-libp2p/swift-libp2p-connection-manager) | 🔴 | reference implementation of connection manager |
+| [`swift-libp2p-connection-manager`](//github.com/swift-libp2p/swift-libp2p-connection-manager) | 🔴 | reference implementation of connection manager | N/A |
 | **Routing** |
-| [`swift-libp2p-record`](//github.com/swift-libp2p/swift-libp2p-record) | 🟡 | record type and validator logic |
-| [`swift-libp2p-kad-dht`](//github.com/swift-libp2p/swift-libp2p-kad-dht) | 🟡 | Kademlia-like router |
-| [`swift-libp2p-kbucket`](//github.com/swift-libp2p/swift-libp2p-kbucket) | 🟡 | Kademlia routing table helper types |
+| [`swift-libp2p-record`](//github.com/swift-libp2p/swift-libp2p-record) | 🟡 | record type and validator logic | N/A |
+| [`swift-libp2p-kad-dht`](//github.com/swift-libp2p/swift-libp2p-kad-dht) | 🟡 | Kademlia-like router | N/A |
+| [`swift-libp2p-kbucket`](//github.com/swift-libp2p/swift-libp2p-kbucket) | 🟡 | Kademlia routing table helper types | N/A |
 | **Pubsub** |
-| [`swift-libp2p-pubsub`](//github.com/swift-libp2p/swift-libp2p-pubsub) | 🟡 | multiple pubsub implementations |
+| [`swift-libp2p-pubsub`](//github.com/swift-libp2p/swift-libp2p-pubsub) | 🟡 | multiple pubsub implementations | N/A |
 | **RPC** |
-| [`swift-libp2p-rpc`](//github.com/swift-libp2p/swift-libp2p-rpc) | 🔴 | a simple RPC library for libp2p |
+| [`swift-libp2p-rpc`](//github.com/swift-libp2p/swift-libp2p-rpc) | 🔴 | a simple RPC library for libp2p | N/A |
 | **Utilities/miscellaneous** |
-| [`swift-libp2p-dbsaddr`](//github.com/swift-libp2p/swift-libp2p-dnsaddr) | 🟡 | a dnsaddr resolver |
-| [`swift-libp2p-mdns`](//github.com/swift-libp2p/swift-libp2p-mdns) | 🟡 | MulticastDNS for LAN discovery |
+| [`swift-libp2p-dbsaddr`](//github.com/swift-libp2p/swift-libp2p-dnsaddr) | 🟡 | a dnsaddr resolver | N/A |
+| [`swift-libp2p-mdns`](//github.com/swift-libp2p/swift-libp2p-mdns) | 🟡 | MulticastDNS for LAN discovery | N/A |
 | **Testing and examples** |
-| [`swift-libp2p-testing`](//github.com/swift-libp2p/swift-libp2p-testing) | 🔴 | a collection of testing utilities for libp2p |
+| [`swift-libp2p-testing`](//github.com/swift-libp2p/swift-libp2p-testing) | 🔴 | a collection of testing utilities for libp2p | N/A |
 
 
 ## API
