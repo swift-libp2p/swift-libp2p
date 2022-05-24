@@ -109,7 +109,7 @@ lib.shutdown()
 | **Transport** |
 | [`swift-libp2p-tcp`](//github.com/swift-libp2p/swift-libp2p-tcp) | 🟢 | TCP transport | N/A |
 | [`swift-libp2p-udp`](//github.com/swift-libp2p/swift-libp2p-udp) | 🟡 | UDP transport | N/A |
-| [`swift-libp2p-ws`](//github.com/swift-libp2p/swift-libp2p-ws) | 🟢 | WebSocket transport | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-websocket/actions/workflows/build+test.yml/badge.svg) |
+| [`swift-libp2p-websocket`](//github.com/swift-libp2p/swift-libp2p-websocket) | 🟢 | WebSocket transport | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-websocket/actions/workflows/build+test.yml/badge.svg) |
 | [`swift-libp2p-http`](//github.com/swift-libp2p/swift-libp2p-http) | 🔴 | HTTP1 transport | N/A |
 | [`swift-libp2p-http2`](//github.com/swift-libp2p/swift-libp2p-http2) | 🔴 | HTTP2 transport | N/A |
 | **Encrypted Channels** |
