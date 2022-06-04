@@ -105,10 +105,10 @@ lib.shutdown()
 | [`swift-libp2p`](//github.com/swift-libp2p/swift-libp2p) | 🟢 | swift-libp2p entry point | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p/actions/workflows/build+test.yml/badge.svg) |
 | [`swift-libp2p-core`](//github.com/swift-libp2p/swift-libp2p-core) | 🟢 | core interfaces, types, and abstractions | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-core/actions/workflows/build+test.yml/badge.svg) |
 | **Network** |
-| [`swift-libp2p-mss`](//github.com/swift-libp2p/swift-libp2p-mss) | 🟢 | MultistreamSelect transport upgrader | N/A |
+| [`swift-libp2p-mss`](//github.com/swift-libp2p/swift-libp2p-mss) | 🟢 | MultistreamSelect transport upgrader  (embedded) | N/A |
 | **Transport** |
-| [`swift-libp2p-tcp`](//github.com/swift-libp2p/swift-libp2p-tcp) | 🟢 | TCP transport | N/A |
-| [`swift-libp2p-udp`](//github.com/swift-libp2p/swift-libp2p-udp) | 🟡 | UDP transport | N/A |
+| [`swift-libp2p-tcp`](//github.com/swift-libp2p/swift-libp2p-tcp) | 🟢 | TCP transport (embedded) | N/A |
+| [`swift-libp2p-udp`](//github.com/swift-libp2p/swift-libp2p-udp) | 🟡 | UDP transport (embedded) | N/A |
 | [`swift-libp2p-websocket`](//github.com/swift-libp2p/swift-libp2p-websocket) | 🟢 | WebSocket transport | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-websocket/actions/workflows/build+test.yml/badge.svg) |
 | [`swift-libp2p-http`](//github.com/swift-libp2p/swift-libp2p-http) | 🔴 | HTTP1 transport | N/A |
 | [`swift-libp2p-http2`](//github.com/swift-libp2p/swift-libp2p-http2) | 🔴 | HTTP2 transport | N/A |
@@ -124,9 +124,9 @@ lib.shutdown()
 | **NAT Traversal** |
 | [`swift-libp2p-nat`](//github.com/swift-libp2p/swift-libp2p-nat) | 🔴 | NAT Traversal  | N/A |
 | **Peerstore** |
-| [`swift-libp2p-peerstore`](//github.com/libp2p/swift-libp2p/swift-libp2p-peerstore) | 🔴 | reference implementation of peer metadata storage component | N/A |
+| [`swift-libp2p-peerstore`](//github.com/libp2p/swift-libp2p/swift-libp2p-peerstore) | 🔴 | reference implementation of peer metadata storage component  (embedded) | N/A |
 | **Connection Manager** |
-| [`swift-libp2p-connection-manager`](//github.com/swift-libp2p/swift-libp2p-connection-manager) | 🔴 | reference implementation of connection manager | N/A |
+| [`swift-libp2p-connection-manager`](//github.com/swift-libp2p/swift-libp2p-connection-manager) | 🔴 | reference implementation of connection manager  (embedded) | N/A |
 | **Routing** |
 | [`swift-libp2p-record`](//github.com/swift-libp2p/swift-libp2p-record) | 🟡 | record type and validator logic | N/A |
 | [`swift-libp2p-kad-dht`](//github.com/swift-libp2p/swift-libp2p-kad-dht) | 🟡 | Kademlia-like router | N/A |
