@@ -142,6 +142,23 @@ lib.shutdown()
 | [`swift-libp2p-testing`](//github.com/swift-libp2p/swift-libp2p-testing) | 🔴 | a collection of testing utilities for libp2p | N/A |
 
 
+## Dependencies
+
+| Name | Description | Build (macOS & Linux) |
+| --------- | --------- | --------- |
+| **Multiformats** |
+| [`swift-multibase`](//github.com/swift-libp2p/swift-multibase) | Self Identifying Base Encodings | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-multibase/actions/workflows/build+test.yml/badge.svg) |
+| [`swift-multicodec`](//github.com/swift-libp2p/swift-multicodec) | Multiformat Codecs | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-multicodec/actions/workflows/build+test.yml/badge.svg) |
+| [`swift-multihash`](//github.com/swift-libp2p/swift-multihash) | Self Identifying Hashes | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-multihash/actions/workflows/build+test.yml/badge.svg) |
+| [`swift-multiaddr`](//github.com/swift-libp2p/swift-multiaddr) | Self Identifying Addresses | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-multiaddr/actions/workflows/build+test.yml/badge.svg) |
+| [`swift-peer-id`](//github.com/swift-libp2p/swift-peer-id) | Peer IDs  | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-peer-id/actions/workflows/build+test.yml/badge.svg) |
+| **Utilities** |
+| [`swift-bases`](//github.com/swift-libp2p/swift-bases) | Base encodings & decodings | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-bases/actions/workflows/build+test.yml/badge.svg)  |
+| [`swift-varint`](//github.com/swift-libp2p/swift-varint) | Protocol Buffer Variable Integers | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-varint/actions/workflows/build+test.yml/badge.svg)  |
+| [`swift-cid`](//github.com/swift-libp2p/swift-cid) | Content Identifiers | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-cid/actions/workflows/build+test.yml/badge.svg)  |
+| **External** |
+| [`swift-nio`](//github.com/swift-libp2p/swift-nio) | Network application framework | N/A |
+
 ## API
 
 ``` swift
