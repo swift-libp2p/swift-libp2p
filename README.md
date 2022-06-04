@@ -159,7 +159,7 @@ lib.shutdown()
 | [`swift-varint`](//github.com/swift-libp2p/swift-varint) | Protocol Buffer Variable Integers | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-varint/actions/workflows/build+test.yml/badge.svg)  |
 | [`swift-cid`](//github.com/swift-libp2p/swift-cid) | Content Identifiers | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-cid/actions/workflows/build+test.yml/badge.svg)  |
 | **External** |
-| [`swift-nio`](//github.com/swift-libp2p/swift-nio) | Network application framework | N/A |
+| [`swift-nio`](//github.com/apple/swift-nio) | Network application framework | N/A |
 
 ## API
 
