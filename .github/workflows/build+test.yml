@@ -2,6 +2,8 @@ name: Build & Test (macos & linux)
 
 on:
   push:
+    paths-ignore:
+      - 'README.md'
     branches: [ main ]
   pull_request:
     branches: [ main ]
