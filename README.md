@@ -1,3 +1,5 @@
+![swift-libp2p-logo-wide](https://user-images.githubusercontent.com/32753167/172017715-7684aff8-9a32-451f-a7cf-01e0db53edb4.png)
+
 # Swift LibP2P
 
 [![](https://img.shields.io/badge/made%20by-Breth-blue.svg?style=flat-square)](https://breth.app)
