@@ -138,7 +138,7 @@ lib.shutdown()
 | **RPC** |
 | [`swift-libp2p-rpc`](//github.com/swift-libp2p/swift-libp2p-rpc) | 🔴 | a simple RPC library for libp2p | N/A |
 | **Utilities/miscellaneous** |
-| [`swift-libp2p-dbsaddr`](//github.com/swift-libp2p/swift-libp2p-dnsaddr) | 🟡 | a dnsaddr resolver | N/A |
+| [`swift-libp2p-dnsaddr`](//github.com/swift-libp2p/swift-libp2p-dnsaddr) | 🟡 | a dnsaddr resolver | ![Build & Test (macos)](https://github.com/swift-libp2p/swift-libp2p-dnsaddr/actions/workflows/build+test.yml/badge.svg) |
 | [`swift-libp2p-mdns`](//github.com/swift-libp2p/swift-libp2p-mdns) | 🟡 | MulticastDNS for LAN discovery | N/A |
 | [`swift-libp2p-identify (embedded)`](//github.com/swift-libp2p/swift-libp2p-identify) | 🟡 | IPFS Identify Protocols | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-identify/actions/workflows/build+test.yml/badge.svg) |
 | **Testing and examples** |
