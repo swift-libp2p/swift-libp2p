@@ -106,7 +106,7 @@ lib.shutdown()
 | **Libp2p** |
 | [`swift-libp2p`](//github.com/swift-libp2p/swift-libp2p) | 🟢 | swift-libp2p entry point | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p/actions/workflows/build+test.yml/badge.svg) |
 | [`swift-libp2p-core`](//github.com/swift-libp2p/swift-libp2p-core) | 🟢 | Core interfaces, types, and abstractions | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-core/actions/workflows/build+test.yml/badge.svg) |
-| **Network** |
+| **Protocol Negotiation** |
 | [`swift-libp2p-mss`](//github.com/swift-libp2p/swift-libp2p-mss) | 🟢 | MultistreamSelect transport upgrader  (embedded) | N/A |
 | **Transport** |
 | [`swift-libp2p-tcp`](//github.com/swift-libp2p/swift-libp2p-tcp) | 🟢 | TCP transport (embedded) | N/A |
