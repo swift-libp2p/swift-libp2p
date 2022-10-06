@@ -25,7 +25,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     private var connectionHistory:[String:[ConnectionStats]] = [:]
     
     /// The max number of connections we can have open at any given time
-    private let maxPeers:Int
+    private var maxPeers:Int
     
     /// The eventloop that this ConnectionManager is constrained to
     private let eventLoop:EventLoop
@@ -46,6 +46,13 @@ class BasicInMemoryConnectionManager:ConnectionManager {
         self.application.events.on(self, event: .disconnected( onDisconnectedNew ))
         
         self.logger.trace("Initialized")
+    }
+    
+    func setMaxConnections(_ maxConnections:Int) {
+        let _ = self.eventLoop.submit {
+            self.maxPeers = maxConnections
+            self.logger.notice("Max Connections updated to \(maxConnections)")
+        }
     }
     
     func getConnections(on loop:EventLoop?) -> EventLoopFuture<[Connection]> {
