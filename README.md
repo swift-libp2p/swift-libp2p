@@ -149,6 +149,8 @@ lib.shutdown()
 
 | Name | Description | Build (macOS & Linux) |
 | --------- | --------- | --------- |
+| **Cryptography** |
+| [`swift-libp2p-crypto`](//github.com/swift-libp2p/swift-libp2p-crypto) | Crypto abstractions for Keys, Hashes and Ciphers | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-crypto/actions/workflows/build+test.yml/badge.svg) |
 | **Multiformats** |
 | [`swift-multibase`](//github.com/swift-libp2p/swift-multibase) | Self Identifying Base Encodings | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-multibase/actions/workflows/build+test.yml/badge.svg) |
 | [`swift-multicodec`](//github.com/swift-libp2p/swift-multicodec) | Multiformat Codecs | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-multicodec/actions/workflows/build+test.yml/badge.svg) |
