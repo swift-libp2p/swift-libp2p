@@ -92,7 +92,7 @@ public class BasicConnectionLight:AppConnection {
         /// Metadata
         self.registry = [:]
         self.tags = nil
-        self.stats = ConnectionStats(direction: direction)
+        self.stats = ConnectionStats(uuid: id, direction: direction)
         
         /// State Promises
         self.securedPromise = self.channel.eventLoop.makePromise(of: SecuredResult.self)

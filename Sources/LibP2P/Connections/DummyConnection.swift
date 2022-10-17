@@ -6,38 +6,58 @@
 //
 
 internal class DummyConnection:Connection {
-    public var channel: Channel = EmbeddedChannel()
+    public var channel: Channel
 
-    public var logger: Logger = Logger(label: "DummyConnection")
+    public var logger: Logger
 
-    public var id: UUID = UUID()
+    public var id: UUID
 
-    public var state: ConnectionState = .closed
+    public var state: ConnectionState
 
-    public var localAddr: Multiaddr? = nil
+    public var localAddr: Multiaddr?
 
-    public var remoteAddr: Multiaddr? = nil
+    public var remoteAddr: Multiaddr?
 
-    public var localPeer: PeerID = try! PeerID(.Ed25519)
+    public var localPeer: PeerID
 
-    public var remotePeer: PeerID? = nil
+    public var remotePeer: PeerID?
 
-    public var stats: ConnectionStats = .init(direction: .inbound)
+    public var stats: ConnectionStats
 
-    public var tags: Any? = nil
+    public var tags: Any?
 
-    public var registry: [UInt64 : LibP2PCore.Stream] = [:]
+    public var registry: [UInt64 : LibP2PCore.Stream]
 
-    public var streams: [LibP2PCore.Stream] = []
+    public var streams: [LibP2PCore.Stream]
 
-    public var muxer: Muxer? = nil
+    public var muxer: Muxer?
 
-    public var isMuxed: Bool = false
+    public var isMuxed: Bool
 
-    public var status: ConnectionStats.Status = .closed
+    public var status: ConnectionStats.Status
 
-    public var timeline: [ConnectionStats.Status : Date] = [:]
+    public var timeline: [ConnectionStats.Status : Date]
 
+    public init(peer:PeerID? = nil) {
+        let id = UUID()
+        self.channel = EmbeddedChannel()
+        self.logger = Logger(label: "DummyConnection")
+        self.id = id
+        self.state = .closed
+        self.localAddr = nil
+        self.remoteAddr = nil
+        self.localPeer = try! peer ?? PeerID(.Ed25519)
+        self.remotePeer = nil
+        self.stats = .init(uuid: id, direction: .inbound)
+        self.tags = nil
+        self.registry = [:]
+        self.streams = []
+        self.muxer = nil
+        self.isMuxed = false
+        self.status = .closed
+        self.timeline = [:]
+    }
+    
     public func inboundMuxedChildChannelInitializer(_ childChannel: Channel) -> EventLoopFuture<Void> {
         self.channel.eventLoop.makeFailedFuture(Errors.notImplementedYet)
     }
