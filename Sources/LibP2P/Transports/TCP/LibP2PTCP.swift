@@ -74,7 +74,7 @@ public struct TCP: Transport {
         return sharedClient.connect(host: tcp.address, port: tcp.port).flatMap { channel -> EventLoopFuture<Connection> in
             
             self.application.logger.trace("Instantiating new BasicConnectionLight")
-            let conn = BasicConnectionLight(application: application, channel: channel, direction: .outbound, remoteAddress: address, expectedRemotePeer: try? PeerID(cid: address.getPeerID() ?? ""))
+            let conn = application.connectionManager.generateConnection(channel: channel, direction: .outbound, remoteAddress: address, expectedRemotePeer: try? PeerID(cid: address.getPeerID() ?? ""))
             
             /// The connection installs the necessary channel handlers here
             self.application.logger.trace("Asking BasicConnectionLight to instantiate new outbound channel")
@@ -121,6 +121,7 @@ public struct TCP: Transport {
     public enum Errors:Error {
         case notYetImplemeted
         case invalidMultiaddr
+        case inboundConnectionAfterApplicationShutdown
     }
 }
 

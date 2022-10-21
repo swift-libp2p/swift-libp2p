@@ -268,21 +268,17 @@ private final class TCPServerConnection {
             
             // Set the handlers that are applied to the accepted Channels
             .childChannelInitializer { [weak application] channel in
-                let conn = BasicConnectionLight(application: application!, channel: channel, direction: .inbound, remoteAddress: try! channel.remoteAddress!.toMultiaddr(), expectedRemotePeer: nil)
+                guard let application = application else { return channel.eventLoop.makeFailedFuture(TCP.Errors.inboundConnectionAfterApplicationShutdown) }
+                guard let remoteAddress = try? channel.remoteAddress?.toMultiaddr() else { return channel.eventLoop.makeFailedFuture(TCP.Errors.invalidMultiaddr) } //.always({ _ in channel.close(mode: .all) }) }
+                let conn = application.connectionManager.generateConnection(channel: channel, direction: .inbound, remoteAddress: remoteAddress, expectedRemotePeer: nil)
                 
-                /// Add the new inbound conneciton to our ConnectionManager
-                return application!.connections.addConnection(conn, on: nil).flatMap {
+                // Add the new inbound connection to our ConnectionManager
+                return application.connections.addConnection(conn, on: nil).flatMap {
                     channel.pipeline.addHandler(BackPressureHandler(), position: .first).flatMap {
-                        /// Initialize the new inbound channel
+                        // Initialize the new inbound channel
                         conn.initializeChannel()
                     }
                 }
-                
-//                return channel.pipeline.addTCPHandlers(
-//                    application: application!,
-//                    responder: responder,
-//                    configuration: configuration
-//                )
             }
             
             // Enable TCP_NODELAY and SO_REUSEADDR for the accepted Channels
@@ -347,14 +343,3 @@ final class TCPServerErrorHandler: ChannelInboundHandler {
         context.close(mode: .output, promise: nil)
     }
 }
-
-//extension ChannelPipeline {
-//    func addTCPHandlers(
-//        application: Application,
-//        responder: Responder,
-//        configuration: TCPServer.Configuration
-//    ) -> EventLoopFuture<Void> {
-//        var handlers: [ChannelHandler] = []
-//      ...
-//    }
-//}
