@@ -17,9 +17,21 @@ extension Application {
         self.servers.use(serverProvider)
     }
     
+//    public var listenAddresses:[Multiaddr] {
+//        self.servers.allServers.reduce(into: Array<Multiaddr>()) { partialResult, server in
+//            partialResult.append(server.listeningAddress)
+//        }
+//    }
+    
     public var listenAddresses:[Multiaddr] {
-        self.servers.allServers.reduce(into: Array<Multiaddr>()) { partialResult, server in
+        return self.servers.allServers.reduce(into: Array<Multiaddr>()) { partialResult, server in
             partialResult.append(server.listeningAddress)
+        }.map { ma in
+            if let tcp = ma.tcpAddress, tcp.address == "0.0.0.0", let en0 = (try? self.getSystemAddress(forDevice: "en0"))?.address?.ipAddress {
+                return (try? ma.swap(address: en0, forCodec: .ip4)) ?? ma
+            } else {
+                return ma
+            }
         }
     }
 
