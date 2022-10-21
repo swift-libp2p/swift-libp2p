@@ -48,9 +48,9 @@ public struct TCPClient:Client {
     }
     
     public func execute(request: ClientRequest, eventLoop: EventLoop, logger: Logger?) -> EventLoopFuture<ClientResponse> {
-        guard let tcpAddress = request.addr.tcpAddress else {
-            return eventLoop.makeFailedFuture(Errors.invalidMultiaddrForTransport)
-        }
+//        guard let tcpAddress = request.addr.tcpAddress else {
+//            return eventLoop.makeFailedFuture(Errors.invalidMultiaddrForTransport)
+//        }
 //        client.connect(host: tcpAddress.address, port: tcpAddress.port).flatMap { channel -> EventLoopFuture<Connection> in
 //
 //            let conn = BasicConnectionLight(
