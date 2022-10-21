@@ -7,16 +7,16 @@
 
 import NIO
 
-/// Can convert `self` to a `Response`.
+/// Can convert `self` to a `RawResponse`.
 ///
 /// Types that conform to this protocol can be returned in route closures.
 public protocol ResponseEncodable {
-    /// Encodes an instance of `Self` to a `Response`.
+    /// Encodes an instance of `Self` to a `RawResponse`.
     ///
     /// - parameters:
-    ///     - for: The `Request` associated with this `Response`.
-    /// - returns: A `Response`.
-    func encodeResponse(for request: Request) -> EventLoopFuture<Response>
+    ///     - for: The `Request` associated with this `RawResponse`.
+    /// - returns: A `RawResponse`.
+    func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse>
 }
 
 /// Can convert `Request` to a `Self`.
@@ -38,61 +38,61 @@ extension Request: RequestDecodable {
 }
 
 // MARK: Default Conformances
-extension Response: ResponseEncodable {
+extension RawResponse: ResponseEncodable {
     // See `ResponseEncodable`.
-    public func encodeResponse(for request: Request) -> EventLoopFuture<Response> {
+    public func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse> {
         return request.eventLoop.makeSucceededFuture(self)
     }
 }
 
 extension StaticString: ResponseEncodable {
     // See `ResponseEncodable`.
-    public func encodeResponse(for request: Request) -> EventLoopFuture<Response> {
+    public func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse> {
         //let res = Response(payload: .init(staticString: self))
-        let res = Response(payload: request.allocator.buffer(staticString: self))
+        let res = RawResponse(payload: request.allocator.buffer(staticString: self))
         return request.eventLoop.makeSucceededFuture(res)
     }
 }
 
 extension String: ResponseEncodable {
     // See `ResponseEncodable`.
-    public func encodeResponse(for request: Request) -> EventLoopFuture<Response> {
+    public func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse> {
         //let res = Response(payload: .init(string: self))
-        let res = Response(payload: request.allocator.buffer(string: self))
+        let res = RawResponse(payload: request.allocator.buffer(string: self))
         return request.eventLoop.makeSucceededFuture(res)
     }
 }
 
 extension ByteBuffer: ResponseEncodable {
     // See `ResponseEncodable`.
-    public func encodeResponse(for request: Request) -> EventLoopFuture<Response> {
+    public func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse> {
         //let res = Response(payload: .init(buffer: self))
-        let res = Response(payload: request.allocator.buffer(buffer: self))
+        let res = RawResponse(payload: request.allocator.buffer(buffer: self))
         return request.eventLoop.makeSucceededFuture(res)
     }
 }
 
 extension Data: ResponseEncodable {
     // See `ResponseEncodable`.
-    public func encodeResponse(for request: Request) -> EventLoopFuture<Response> {
+    public func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse> {
         //let res = Response(payload: .init(bytes: self.bytes))
-        let res = Response(payload: request.allocator.buffer(bytes: self.bytes))
+        let res = RawResponse(payload: request.allocator.buffer(bytes: self.bytes))
         return request.eventLoop.makeSucceededFuture(res)
     }
 }
 
 extension Array: ResponseEncodable where Element == UInt8 {
     // See `ResponseEncodable`.
-    public func encodeResponse(for request: Request) -> EventLoopFuture<Response> {
+    public func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse> {
         //let res = Response(payload: .init(bytes: self))
-        let res = Response(payload: request.allocator.buffer(bytes: self))
+        let res = RawResponse(payload: request.allocator.buffer(bytes: self))
         return request.eventLoop.makeSucceededFuture(res)
     }
 }
 
 extension EventLoopFuture: ResponseEncodable where Value: ResponseEncodable {
     // See `ResponseEncodable`.
-    public func encodeResponse(for request: Request) -> EventLoopFuture<Response> {
+    public func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse> {
         return self.flatMap { t in
             return t.encodeResponse(for: request)
         }

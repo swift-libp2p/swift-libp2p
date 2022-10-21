@@ -87,14 +87,7 @@ public final class Identify: IdentityManager, CustomStringConvertible {
     internal func onNewConnection(_ connection:Connection) -> Void {
         // Take this opportunity to request an Identify Message from the remote peer...
         connection.logger.trace("Identify::New Upgraded Connection, Attempting to Identify Remote Peer...")
-        
-        guard let connection = connection as? BasicConnectionLight else {
-            connection.logger.warning("Identify::TODO:: FIX ME!! I only work with BasicConnectionLights")
-            return
-        }
-        
         // Open a new stream requesting the remote peer send us an Identify message
-        connection.logger.trace("Identify::Attempting to open outbound /ipfs/id/1.0.0 stream")
         // Calling newStream() without a closure/handler defaults to our registered route responder
         connection.newStream(forProtocol: "/ipfs/id/1.0.0")
     }
@@ -117,7 +110,9 @@ extension Identify {
     internal func consumeIdentifyMessage(payload:Data, id:String?, connection: Connection) {
         
         do {
+            /// Ensure the Payload is an IdentifyMessage
             let remoteIdentify = try IdentifyMessage(contiguousBytes: payload)
+            /// and that is valid
             let signedEnvelope = try SealedEnvelope(marshaledEnvelope: remoteIdentify.signedPeerRecord.bytes, verifiedWithPublicKey: remoteIdentify.publicKey.bytes)
             let peerRecord = try PeerRecord(marshaledData: Data(signedEnvelope.rawPayload), withPublicKey: remoteIdentify.publicKey)
             
@@ -127,7 +122,7 @@ extension Identify {
             connection.logger.trace("Identify::Updating PeerStore with Identified Peer")
             self.updateIdentifiedPeerInPeerStore(peerRecord, identifyMessage: remoteIdentify, connection: connection)
             
-            //self.application.publish(.peerIdentified(IdentifiedPeer(peer: peerRecord.peerID, identity: remoteIdentify))
+            /// Publish the identifiedPeer event
             self.application?.events.post(.identifiedPeer(IdentifiedPeer(peer: peerRecord.peerID, identity: try! remoteIdentify.serializedData().bytes)))
             
             connection.logger.trace("Identify::Successfully Identified Remote Peer using the Identify Protocol")
@@ -140,6 +135,37 @@ extension Identify {
         }
     }
 }
+
+extension Identify {
+    /// Handles inbound IdentifyMessage parsing
+    ///
+    /// - Ensures the message is signed by the correct / expected remote peer
+    /// - Updates our peerstore with the metadata within the peer record
+    internal func consumePushIdentifyMessage(payload:Data, id:String?, connection: Connection) {
+        do {
+            /// Ensure the Payload is an IdentifyMessage
+            let remoteIdentify = try IdentifyMessage(contiguousBytes: payload)
+            /// and that is valid
+            let signedEnvelope = try SealedEnvelope(marshaledEnvelope: remoteIdentify.signedPeerRecord.bytes, verifiedWithPublicKey: remoteIdentify.publicKey.bytes)
+            let peerRecord = try PeerRecord(marshaledData: Data(signedEnvelope.rawPayload), withPublicKey: remoteIdentify.publicKey)
+
+            connection.logger.debug("Identify::Push::\n\(signedEnvelope)")
+            connection.logger.debug("Identify::Push::\n\(peerRecord)")
+
+            connection.logger.trace("Identify::Push::Updating PeerStore with Identified Peer")
+            self.updateIdentifiedPeerInPeerStore(peerRecord, identifyMessage: remoteIdentify, connection: connection)
+
+            connection.logger.trace("Identify::Push::Successfully Updated Identified Remote Peer using the Identify Push Protocol")
+
+            return
+        } catch {
+            connection.logger.warning("Identify::Push::Failed to consume Remote IdentifyMessage -> \(error)")
+            connection.logger.trace("\(payload)")
+            return
+        }
+    }
+}
+
 
 extension Identify {
     /// Constructs an IdentifyMessage that represents our applications current state.
@@ -198,7 +224,14 @@ extension Identify {
         
         // Update our peers listening addresses
         let listeningAddresses = identifyMessage.listenAddrs.compactMap { multiaddrData -> Multiaddr? in
-            try? Multiaddr(multiaddrData).encapsulate(proto: .p2p, address: identifiedPeer.b58String)
+            if let ma = try? Multiaddr(multiaddrData) {
+                if !ma.protocols().contains(.p2p) {
+                    return try? ma.encapsulate(proto: .p2p, address: identifiedPeer.b58String)
+                } else {
+                    return ma
+                }
+            }
+            return nil
         }
         tasks.append(application.peers.add(addresses: listeningAddresses, toPeer: identifiedPeer, on: connection.channel.eventLoop))
         

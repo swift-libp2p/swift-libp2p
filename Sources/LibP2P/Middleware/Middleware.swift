@@ -10,14 +10,14 @@ import NIO
 /// `Middleware` is placed between the server and your router. It is capable of
 /// mutating both incoming requests and outgoing responses. `Middleware` can choose
 /// to pass requests on to the next `Middleware` in a chain, or they can short circuit and
-/// return a custom `Response` if desired.
+/// return a custom `RawResponse` if desired.
 public protocol Middleware {
     /// Called with each `Request` that passes through this middleware.
     /// - parameters:
     ///     - request: The incoming `Request`.
     ///     - next: Next `Responder` in the chain, potentially another middleware or the main router.
-    /// - returns: An asynchronous `Response`.
-    func respond(to request: Request, chainingTo next: Responder) -> EventLoopFuture<Response>
+    /// - returns: An asynchronous `RawResponse`.
+    func respond(to request: Request, chainingTo next: Responder) -> EventLoopFuture<RawResponse>
 }
 
 extension Array where Element == Middleware {
@@ -48,7 +48,7 @@ private struct BasicMiddlewareResponder: Responder {
         self.responder = responder
     }
     
-    func respond(to request: Request) -> EventLoopFuture<Response> {
+    func respond(to request: Request) -> EventLoopFuture<RawResponse> {
         return self.middleware.respond(to: request, chainingTo: self.responder)
     }
     

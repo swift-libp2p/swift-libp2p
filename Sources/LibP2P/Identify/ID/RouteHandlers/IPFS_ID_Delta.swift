@@ -5,7 +5,7 @@
 //  Created by Brandon Toms on 5/1/22.
 //
 
-internal func handleDeltaRequest(_ req:Request) -> ResponseType<ByteBuffer> {
+internal func handleDeltaRequest(_ req:Request) -> Response<ByteBuffer> {
     guard req.streamDirection == .inbound else {
         req.logger.error("Identify::Delta::Error - We dont support outbound /ipfs/id/delta messages on this handler")
         return .close
@@ -15,6 +15,9 @@ internal func handleDeltaRequest(_ req:Request) -> ResponseType<ByteBuffer> {
         return .stayOpen
     case .data:
         req.logger.warning("Identify::Delta::We haven't tested this yet!")
+        //req.logger.warning("🚨 Received Delta ID Payload 🚨")
+        //req.logger.warning("\(Data(req.payload.readableBytesView).toHexString())")
+        //req.logger.warning("---------------------")
         handleDeltaMessage(req)
     default:
         break

@@ -1,13 +1,13 @@
 //
 //  Client+Utils.swift
-//  
-//  
+//
+//
 //  Modified by Brandon Toms on 5/1/22.
 //
 
 extension Application {
     
-    public func newStream(to:PeerID, forProtocol proto:String, withHandlers handlers:HandlerConfig = .rawHandlers([]), andMiddleware middleware: MiddlewareConfig = .custom(nil), closure: @escaping ((Request) throws -> EventLoopFuture<Response>)) throws {
+    public func newStream(to:PeerID, forProtocol proto:String, withHandlers handlers:HandlerConfig = .rawHandlers([]), andMiddleware middleware: MiddlewareConfig = .custom(nil), closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>)) throws {
         // Do we search the peerstore? or connection manager???
         let el = self.eventLoopGroup.next()
         
@@ -30,13 +30,15 @@ extension Application {
     }
     
     /// Creates a new outbound stream (channel) to node at the specified multiaddr. This method will resuse existing connections when possible.
-    public func newStream(to:Multiaddr, forProtocol proto:String, withHandlers handlers:HandlerConfig = .rawHandlers([]), andMiddleware middleware: MiddlewareConfig = .custom(nil), closure: @escaping ((Request) throws -> EventLoopFuture<Response>)) throws {
+    public func newStream(to:Multiaddr, forProtocol proto:String, withHandlers handlers:HandlerConfig = .rawHandlers([]), andMiddleware middleware: MiddlewareConfig = .custom(nil), closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>)) throws {
         let el = self.eventLoopGroup.next()
+        // BUG in SwiftNIO (please report), unleakable promise leaked.:474: Fatal error: leaking promise created at (file: "BUG in SwiftNIO (please report), unleakable promise leaked.", line: 474)
         return self.resolveAddressForBestTransport(to, on: el).flatMap { ma -> EventLoopFuture<Void> in
             self.connections.getConnectionsTo(ma, onlyMuxed: false, on: el).flatMap { existingConnections -> EventLoopFuture<Void> in
+                self.logger.trace("We have \(existingConnections.count) existing connections")
                 if let capableConn = existingConnections.first(where: { $0.isMuxed == true || $0.state != .closed}) {
 
-                    guard let capableConn = capableConn as? BasicConnectionLight else { return el.makeFailedFuture(Errors.noTransportForMultiaddr(ma)) }
+                    guard let capableConn = capableConn as? AppConnection else { return el.makeFailedFuture(Errors.noTransportForMultiaddr(ma)) }
                     /// We have an existing capable (muxed) connection, lets reuse it!
                     self.logger.trace("Reusing Existing Connection[\(capableConn.id.uuidString.prefix(5))]")
                     capableConn.newStream(forProtocol: proto, withHandlers: handlers, andMiddleware: middleware, closure: closure)
@@ -52,8 +54,8 @@ extension Application {
                     }
                     self.logger.trace("Found Transport for dialing peer \(transport)")
                     return transport.dial(address: ma).flatMap { connection -> EventLoopFuture<Void> in
-                        guard let conn = connection as? BasicConnectionLight else { return connection.channel.eventLoop.makeFailedFuture( Errors.noTransportForMultiaddr(ma) ) }
-                        self.logger.trace("Asking BasicConnectionLight to open a new stream for `\(proto)`")
+                        guard let conn = connection as? AppConnection else { return connection.channel.eventLoop.makeFailedFuture( Errors.noTransportForMultiaddr(ma) ) }
+                        self.logger.trace("Asking Connection to open a new stream for `\(proto)`")
                         conn.newStream(forProtocol: proto, withHandlers: handlers, andMiddleware: middleware, closure: closure)
                         return connection.channel.eventLoop.makeSucceededVoidFuture()
                     }
@@ -94,7 +96,7 @@ extension Application {
             self.connections.getConnectionsTo(ma, onlyMuxed: false, on: el).flatMap { existingConnections -> EventLoopFuture<Void> in
                 if let capableConn = existingConnections.first(where: { $0.isMuxed == true || $0.state != .closed}) {
 
-                    guard let capableConn = capableConn as? BasicConnectionLight else { return self.eventLoopGroup.any().makeFailedFuture(Errors.noTransportForMultiaddr(ma)) }
+                    guard let capableConn = capableConn as? CapableConnection else { return self.eventLoopGroup.any().makeFailedFuture(Errors.noTransportForMultiaddr(ma)) }
                     /// We have an existing capable (muxed) connection, lets reuse it!
                     self.logger.notice("Reusing Existing Connection[\(capableConn.id.uuidString.prefix(5))]")
                     capableConn.newStream(forProtocol: proto)
@@ -110,8 +112,8 @@ extension Application {
                     }
                     self.logger.trace("Found Transport for dialing peer \(transport)")
                     return transport.dial(address: ma).flatMap { connection -> EventLoopFuture<Void> in
-                        guard let conn = connection as? BasicConnectionLight else { return connection.channel.eventLoop.makeFailedFuture( Errors.noTransportForMultiaddr(ma) ) }
-                        self.logger.trace("Asking BasicConnectionLight to open a new stream for `\(proto)`")
+                        guard let conn = connection as? CapableConnection else { return connection.channel.eventLoop.makeFailedFuture( Errors.noTransportForMultiaddr(ma) ) }
+                        self.logger.trace("Asking Connection to open a new stream for `\(proto)`")
                         conn.newStream(forProtocol: proto)
                         return connection.channel.eventLoop.makeSucceededVoidFuture()
                     }
@@ -129,7 +131,7 @@ extension Application {
 //        forProtocol proto:String,
 //        withHandlers handlers:HandlerConfig = .rawHandlers([]),
 //        andMiddleware middleware: MiddlewareConfig = .custom(nil),
-//        closure: @escaping ((Request) throws -> EventLoopFuture<Response>)? = nil) -> EventLoopFuture<Void> {
+//        closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>)? = nil) -> EventLoopFuture<Void> {
 //        if let capableConn = existingConnections.first(where: { $0.isMuxed == true || $0.state != .closed}) {
 //
 //            guard let capableConn = capableConn as? BasicConnectionLight else { return self.eventLoopGroup.any().makeFailedFuture(Errors.unknownConnection) }
@@ -218,12 +220,5 @@ extension Application {
                 return self.transports.canDialAny(resolvedAddresses, on: loop)
             }
         }
-    }
-    
-    public enum Errors:Error {
-        case noTransportForMultiaddr(Multiaddr)
-        case unknownConnection
-        case unknownPeer
-        case noKnownAddressesForPeer
     }
 }

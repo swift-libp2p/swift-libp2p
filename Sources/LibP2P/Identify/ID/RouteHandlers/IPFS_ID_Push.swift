@@ -5,7 +5,7 @@
 //  Created by Brandon Toms on 5/1/22.
 //
 
-internal func handlePushRequest(_ req:Request) -> ResponseType<ByteBuffer> {
+internal func handlePushRequest(_ req:Request) -> Response<ByteBuffer> {
     guard req.streamDirection == .inbound else {
         req.logger.error("Identify::Push::Error - We dont support outbound /ipfs/id/push messages on this handler")
         return .close
@@ -23,7 +23,7 @@ internal func handlePushRequest(_ req:Request) -> ResponseType<ByteBuffer> {
         
         /// Update values that are present...
         req.logger.warning("Identify::Push::We haven't tested this yet!")
-        manager.consumeIdentifyMessage(payload: Data(payload.readableBytesView), id: req.remotePeer!.b58String, connection: req.connection)
+        manager.consumePushIdentifyMessage(payload: Data(payload.readableBytesView), id: req.remotePeer!.b58String, connection: req.connection)
         return .close
         
     default:

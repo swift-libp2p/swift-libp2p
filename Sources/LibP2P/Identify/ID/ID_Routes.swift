@@ -26,7 +26,7 @@ func routes(_ app: Application) throws {
             
             // Route Endpoint: ipfs/id/1.0.0
             // Handlers: .partialIdentifyMessageHandler used to accumulate partial IdentifyMessages before triggering our handler
-            id.on("1.0.0", handlers: [.partialIdentifyMessageHandler]) { req -> ResponseType<ByteBuffer> in
+            id.on("1.0.0", handlers: [.partialIdentifyMessageHandler]) { req -> Response<ByteBuffer> in
                 return handleIDRequest(req)
             }
             
@@ -34,7 +34,7 @@ func routes(_ app: Application) throws {
             id.group("delta") { delta in
                 
                 // Route Endpoint: ipfs/id/delta/1.0.0
-                delta.on("1.0.0") { req -> ResponseType<ByteBuffer> in
+                delta.on("1.0.0") { req -> Response<ByteBuffer> in
                     return handleDeltaRequest(req)
                 }
             }
@@ -43,7 +43,7 @@ func routes(_ app: Application) throws {
             id.group("push") { push in
                 
                 // Route Endpoint: ipfs/id/push/1.0.0
-                push.on("1.0.0") { req -> ResponseType<ByteBuffer> in
+                push.on("1.0.0") { req -> Response<ByteBuffer> in
                     return handlePushRequest(req)
                 }
             }
@@ -53,7 +53,7 @@ func routes(_ app: Application) throws {
         ipfs.group("ping") { ping in
             
             // Route Enpoint: /ipfs/ping/1.0.0
-            ping.on("1.0.0") { req -> ResponseType<ByteBuffer> in
+            ping.on("1.0.0") { req -> Response<ByteBuffer> in
                 return handlePingRequest(req)
             }
         }

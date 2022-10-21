@@ -1,5 +1,5 @@
 //
-//  BasicConnectionLight.swift
+//  ARCConnection.swift
 //
 //
 //  Created by Brandon Toms on 5/1/22.
@@ -9,7 +9,8 @@ import LibP2PCore
 import Logging
 import Foundation
 
-public class BasicConnectionLight:AppConnection {
+/// Esentially a BasicConnectionLight but adds support for Automatic Reference (Stream) Counting and closes / deinits itself when the connection is idle and empty for a given amount of time.
+public class ARCConnection:AppConnection {
     
     public var application:Application
     
@@ -55,7 +56,7 @@ public class BasicConnectionLight:AppConnection {
     
     struct StreamStateEntry {
         let proto:String
-        let id:Int
+        let direction:ConnectionStats.Direction
         let state:StreamState
         let date:Date
     }
@@ -71,19 +72,27 @@ public class BasicConnectionLight:AppConnection {
     /// This is called when we're initiating a new stream for a particular protocol
     public var outboundMuxedChildChannelInitializer: ((Channel, String) -> EventLoopFuture<Void>)? = nil
     
+    /// Our Connections Logger
     public var logger:Logger
     
-    // These promises are used only once...
+    /// These promises are used only once...
     private var securedPromise:EventLoopPromise<SecuredResult>
     private var muxedPromise:EventLoopPromise<Muxer>
     
+    /// The timestamp at which this connection was instantiated
     private var startTime:UInt64
+    
+    /// The IdleTimeout Task that gets set each time our connection gets to zero (0) open streams.
+    /// We wait `idleTimeoutMilliseconds` for a new Stream to be opened. If one isn't opened in that window, the connection shuts down and deinits itself.
+    private var idleTimeoutTask:Scheduled<Void>? = nil
+    /// The time in milliseconds that our connection will sit idle before terminating itself.
+    private var idleTimeoutMilliseconds:Int64 = 250
     
     public required init(application:Application, channel: Channel, direction: ConnectionStats.Direction, remoteAddress: Multiaddr, expectedRemotePeer: PeerID?) {
         let id = UUID()
         self.id = id
         self.application = application
-        self.logger = Logger(label: "Connection[\(application.peerID.shortDescription)][\(id.uuidString.prefix(5))]") //logger
+        self.logger = Logger(label: "ARCConnection[\(application.peerID.shortDescription)][\(id.uuidString.prefix(5))]") //logger
         self.logger.logLevel = application.logger.logLevel
         self.channel = channel
         self.stateMachine = ConnectionStateMachine()
@@ -111,7 +120,7 @@ public class BasicConnectionLight:AppConnection {
         /// Append an eventbus notification onto our parent channel's close future
         self.channel.closeFuture.whenComplete { [weak self] res in
             guard let self = self else { return }
-            self.logger.trace("BasicConnectionLight:CloseFuture")
+            self.logger.trace("ARCConnection:CloseFuture")
             self.stats.status = .closed
             
             /// Should ensure that we actually connected before posting a disconnect event
@@ -156,6 +165,40 @@ public class BasicConnectionLight:AppConnection {
         return self.secureConnection(promise: self.securedPromise).always { [weak self] _ in
             guard let self = self else { return }
             self.stats.status = .open
+        }
+    }
+    
+    /// Called by our Muxer when a stream of ours has been closed.
+    /// - Note: We take this opportunity to check if there are any active streams and kick off our idleTimeoutTask if there isn't.
+    private func onStreamClosed(_ stream:LibP2PCore.Stream) -> Void {
+        self.logger.trace("On Stream Closed...")
+        if self.newStreamCache.isEmpty && self.pendingStreamCache.isEmpty {
+            self.logger.trace("No Pending Streams")
+        }
+        if let mux = self.muxer, mux.streams.isEmpty {
+            self.logger.trace("No Streams")
+            if self.idleTimeoutTask != nil { return }
+            self.idleTimeoutTask = self.eventLoop.scheduleTask(in: .milliseconds(self.idleTimeoutMilliseconds)) {
+                /// Ask our connection manager to terminate us...
+                //self.application.connections.closeConnection(self)
+                /// Or close ourselves and notify our connection manager
+                self.logger.trace("Idle timeout reached. Terminating self")
+                let _ = self.close()
+            }
+        } else if let mux = self.muxer {
+            self.logger.trace("We still have \(mux.streams.count) streams")
+            self.logger.trace("\(mux.streams.map { "Stream[\($0.id)][\($0.protocolCodec)][\($0.direction)][\($0.streamState)]" }.joined(separator: "\n") )")
+        } else {
+            self.logger.trace("No Muxer Available")
+        }
+    }
+    
+    /// Called by our Muxer when a new stream has been opened
+    /// - Note: We take this opportunity to cancel the idleTimeoutTask if one exists.
+    private func onNewStream(_ stream:LibP2PCore.Stream) -> Void {
+        if let idleTimeoutTask = self.idleTimeoutTask {
+            idleTimeoutTask.cancel()
+            self.logger.trace("Notified of new stream, canceling existing idleTimeoutTask")
         }
     }
     
@@ -216,6 +259,10 @@ public class BasicConnectionLight:AppConnection {
                 self.stats.status = .upgraded
                 self.stats.muxer = muxer.protocolCodec
                 
+                /// Callback handlers for ARC functionality
+                self.muxer?.onStream = self.onNewStream
+                self.muxer?.onStreamEnd = self.onStreamClosed
+                
                 let timeToUpgrade = DispatchTime.now().uptimeNanoseconds - self.startTime
                 self.logger.notice("Upgrade Time: \(timeToUpgrade / 1_000_000) ms")
                 
@@ -236,8 +283,7 @@ public class BasicConnectionLight:AppConnection {
                                 switch result {
                                 case .success:
                                     break
-                                    //print("PendingStreams - Skipping Stream Registry")
-                                    //self.registry[stream.id] = stream
+                                    
                                 case .failure(let error):
                                     let errorRequest = Request(application: self.application, event: .error(error), streamDirection: .outbound, connection: self, channel: self.channel, logger: self.logger, on: self.channel.eventLoop)
                                     let _ = pendingStream.responder.respond(to: errorRequest)
@@ -272,9 +318,17 @@ public class BasicConnectionLight:AppConnection {
             case .failure(let error):
                 self.muxer?.removeStream(channel: childChannel)
                 self.logger.error("Error while upgrading Inbound ChildChannel: \(error)")
+                
             case .success(let proto):
+                /// Append a stream event in our stream history array
+                self.streamHistory.append(StreamStateEntry(proto: proto.protocol.description, direction: .inbound, state: .initialized, date: Date()))
+                
                 self.upgradeChildChannel(proto, childChannel: childChannel, responder: self.application.responder.current, direction: .inbound).whenComplete { [weak self] result in
                     guard let self = self, self.application.isRunning else { return }
+                    
+                    /// Append a stream event in our stream history array
+                    self.streamHistory.append(StreamStateEntry(proto: proto.protocol, direction: .inbound, state: .open, date: Date()))
+                    
                     self.logger.trace("Result of Upgrader Removal and Pipeline Config: \(result)")
                     self.logger.debug("🔀 New Inbound ChildChannel[`\(proto)`] Ready!")
                     self.logger.trace("List of Streams:")
@@ -286,6 +340,8 @@ public class BasicConnectionLight:AppConnection {
                         self.application.events.post(.openedStream(str))
                         childChannel.closeFuture.whenComplete { [weak self] _ in
                             guard let self = self else { return }
+                            /// Append a stream event in our stream history array
+                            self.streamHistory.append(StreamStateEntry(proto: proto.protocol, direction: .inbound, state: .closed, date: Date()))
                             self.application.events.post(.closedStream(str))
                         }
                     }
@@ -316,8 +372,15 @@ public class BasicConnectionLight:AppConnection {
                     self.muxer?.removeStream(channel: childChannel)
                     self.logger.error("Error while upgrading Outbound ChildChannel: \(error)")
                 case .success(let proto):
+                    /// Append a stream event in our stream history array
+                    self.streamHistory.append(StreamStateEntry(proto: proto.protocol.description, direction: .outbound, state: .initialized, date: Date()))
+                    
                     self.upgradeChildChannel(proto, childChannel: childChannel, responder: pendingStream.responder, direction: .outbound).whenComplete { [weak self] result in
                         guard let self = self, self.application.isRunning else { return }
+                        
+                        /// Append a stream event in our stream history array
+                        self.streamHistory.append(StreamStateEntry(proto: proto.protocol, direction: .outbound, state: .open, date: Date()))
+                        
                         self.logger.trace("Result of Upgrader Removal and Pipeline Config: \(result)")
                         self.logger.debug("🔀 New Outbound ChildChannel[`\(proto)`] Ready!")
                         self.logger.trace("List of Streams:")
@@ -329,6 +392,8 @@ public class BasicConnectionLight:AppConnection {
                             self.application.events.post(.openedStream(str))
                             childChannel.closeFuture.whenComplete { [weak self] _ in
                                 guard let self = self else { return }
+                                /// Append a stream event in our stream history array
+                                self.streamHistory.append(StreamStateEntry(proto: proto.protocol, direction: .outbound, state: .closed, date: Date()))
                                 self.application.events.post(.closedStream(str))
                             }
                         }
@@ -338,7 +403,6 @@ public class BasicConnectionLight:AppConnection {
             return childChannel.pipeline.addHandler(mssHandlers.first!, name: "upgrader", position: .last)
         }
     }
-    
     
     /// To be called when the childChannel's protocol negotiation completes
     ///
@@ -371,14 +435,6 @@ public class BasicConnectionLight:AppConnection {
                         }
                         self.logger.trace("Forwarding leftover bytes along pipeline...")
                         childChannel.pipeline.fireChannelRead( NIOAny(proto.leftoverBytes) )
-                        //childChannel.eventLoop.execute { [unowned self] in
-                        //    guard childChannel.isWritable else {
-                        //        self.logger.error("Failed to forward leftover bytes along pipeline")
-                        //        return
-                        //    }
-                        //    self.logger.trace("Forwarding leftover bytes along pipeline...")
-                        //    childChannel.pipeline.fireChannelRead( NIOAny(proto.leftoverBytes) )
-                        //}
                     }
                     return childChannel.eventLoop.makeSucceededVoidFuture()
                 }
@@ -447,9 +503,6 @@ public class BasicConnectionLight:AppConnection {
             responder: responder
         )
         
-        /// Append a stream event in our stream history array
-        self.streamHistory.append(StreamStateEntry(proto: proto, id: 0, state: .initialized, date: Date()))
-        
         self.eventLoop.execute {
             /// Ask our muxer to open the stream...
             if self.isMuxed, let mux = self.muxer {
@@ -506,7 +559,7 @@ public class BasicConnectionLight:AppConnection {
     public func removeStream(id: UInt64) -> EventLoopFuture<Void> {
         if let stream = self.registry.removeValue(forKey: id) {
             /// Append a stream event in our stream history array
-            self.streamHistory.append(StreamStateEntry(proto: stream.protocolCodec, id: Int(id), state: .closed, date: Date()))
+            //self.streamHistory.append(StreamStateEntry(proto: stream.protocolCodec, id: Int(id), state: .closed, date: Date()))
             return stream.close(gracefully: true)
         } else {
             return self.channel.eventLoop.makeFailedFuture(Application.Connections.Errors.noStreamForID(id))
@@ -565,7 +618,7 @@ public class BasicConnectionLight:AppConnection {
                                 default:
                                     // Ensure we fire our close event before
                                     // TODO: Silently force close the stream...
-                                    self.logger.trace("Force Closing Stream")
+                                    self.logger.warning("Force Closing Stream[\($0.id)][\($0.protocolCodec)][\($0.direction)]")
                                     return $0.on?(.closed)
                                 }
                             }.flatten(on: self.eventLoop)
@@ -574,6 +627,7 @@ public class BasicConnectionLight:AppConnection {
                 )
                 
                 return closePromise.futureResult.flatMapAlways { res in
+                    self.stats.status = .closed
                     switch res {
                     case .success:
                         self.logger.trace("All Streams closed cleanly")
@@ -589,7 +643,7 @@ public class BasicConnectionLight:AppConnection {
     }
 }
 
-extension BasicConnectionLight {
+extension ARCConnection {
     
     public struct ConnectionStateMachine {
         internal private(set) var state:ConnectionState
@@ -640,7 +694,7 @@ extension BasicConnectionLight {
     }
 }
 
-extension BasicConnectionLight {
+extension ARCConnection {
     public func lastActivity() -> Date {
         guard !(self.status == .closed || self.status == .closing) else {
             if let upgraded = self.stats.timeline.history.first(where: { $0.key == .upgraded } ) {
@@ -668,7 +722,7 @@ extension BasicConnectionLight {
     }
 }
 
-extension BasicConnectionLight {
+extension ARCConnection {
     public var description: String {
         let header = "--- 🔁 \(self.direction == .inbound ? "Inbound" : "Outbound") Connection[\(self.id.uuidString.prefix(5))] 🔁 ---"
         return """
@@ -676,11 +730,11 @@ extension BasicConnectionLight {
             State: \(self.state) <\(self.status)>
             Peer: \(self.remoteAddr?.description ?? "???") <\(self.remotePeer?.b58String ?? "???")>
             Timeline:
-            \(self.timeline.sorted(by: { $0.value < $1.value }).map { "\($0.value) - \($0.key)" }.joined(separator: "\n-"))
-            Streams: Open<\(self.streams.filter({ $0.streamState == .open }).count)>, Total<\(self.streamHistory.count)>
-            \(self.streamHistory.sorted(by: { $0.date < $1.date }).map { "[\($0.state)][\($0.id)]\($0.proto) @ \($0.date)" }.joined(separator: "\n-"))
+             - \(self.timeline.sorted(by: { $0.value < $1.value }).map { "\($0.value) - \($0.key)" }.joined(separator: "\n - "))
+            Streams: Open<\(self.streams.filter({ $0.streamState == .open }).count)>, Total<\(self.streams.count)>
+             - \(self.streamHistory.sorted(by: { $0.date < $1.date }).map { "[\($0.state)][\($0.direction)]\($0.proto) @ \($0.date.timeIntervalSince1970)" }.joined(separator: "\n - "))
             Last Activity: \(self.lastActivity())
-            \(String(repeating: "-", count: header.count + 2))
+            \(String(repeating: "-", count: header.count + 2))\n
             """
     }
 }

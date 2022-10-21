@@ -9,7 +9,7 @@ import NIO
 
 final class ResponderChannelHandler: ChannelInboundHandler, RemovableChannelHandler {
     typealias InboundIn = Request
-    typealias OutboundOut = Response
+    typealias OutboundOut = RawResponse
 
     let responder: Responder
     let logger: Logger
@@ -24,12 +24,12 @@ final class ResponderChannelHandler: ChannelInboundHandler, RemovableChannelHand
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let request = self.unwrapInboundIn(data)
         self.responder.respond(to: request).whenComplete { response in
-            //self.logger.trace("Got our Response! Need to serialize it and write it out...")
+            //self.logger.trace("Got our RawResponse! Need to serialize it and write it out...")
             self.serialize(response, for: request, context: context)
         }
     }
 
-    func serialize(_ response: Result<Response, Error>, for request: Request, context: ChannelHandlerContext) {
+    func serialize(_ response: Result<RawResponse, Error>, for request: Request, context: ChannelHandlerContext) {
         switch response {
         case .failure(let error):
             self.errorCaught(context: context, error: error)
@@ -38,7 +38,7 @@ final class ResponderChannelHandler: ChannelInboundHandler, RemovableChannelHand
         }
     }
 
-    func serialize(_ response: Response, for request: Request, context: ChannelHandlerContext) {
+    func serialize(_ response: RawResponse, for request: Request, context: ChannelHandlerContext) {
         guard response.payload.readableBytes > 0 else { self.logger.trace("Dropping Empty Response"); return }
         context.write(self.wrapOutboundOut(response), promise: nil)
     }

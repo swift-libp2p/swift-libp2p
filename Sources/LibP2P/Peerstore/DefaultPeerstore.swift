@@ -1,6 +1,6 @@
 //
-//  DefualtPeerstore.swift
-//  
+//  DefaultPeerstore.swift
+//
 //
 //  Created by Brandon Toms on 5/1/22.
 //
@@ -19,6 +19,18 @@ extension Application.PeerStores.Provider {
     }
 }
 
+private extension String {
+    init?(bytes: [UInt8], encoding: String.Encoding = .utf8) {
+        self.init(data: Data(bytes), encoding: encoding)
+    }
+}
+
+private extension Array where Element == UInt8 {
+    func toString(encoding: String.Encoding = .utf8) -> String? {
+        String(bytes: self, encoding: encoding)
+    }
+}
+
 /// An in-memory implementation of PeerStore
 ///
 /// Common Peer Lifecycle
@@ -27,7 +39,7 @@ extension Application.PeerStores.Provider {
 /// - PeerID with known supported Protocols (via Identify protocol)
 /// - PeerID with metadata (as we communicate with the peer) (latency, software, lib version, via Identify protocol and others)
 internal final class BasicInMemoryPeerStore:PeerStore {
-        
+    
     /// Dictionary where Key == B58 PeerID String, and Value == PeerInfo that contains the PeerID and assocaited Multiaddr...
     private var store:[String:ComprehensivePeer]
         
@@ -36,6 +48,10 @@ internal final class BasicInMemoryPeerStore:PeerStore {
     
     private var logger:Logger
     
+    private var maxPeers:Int = 5000
+    private var isPruning:Bool = false
+    
+    /// - Note: Should the peerstore be responsible for emiting certain events?
     init(application:Application) {
         //print("InMemeoryPeerStore2 Instantiated...")
         self.store = [:]
@@ -45,6 +61,127 @@ internal final class BasicInMemoryPeerStore:PeerStore {
         self.logger.trace("Initialized")
     }
     
+    /// This method will prune peers who we haven't talked to within the specified time period.
+    func prunePeers(olderThan expiration:TimeAmount = .seconds(30)) -> EventLoopFuture<Void> {
+        eventLoop.submit {
+            guard self.isPruning == false else { self.logger.info("Pruning in progress, skipping..."); return }
+            self.isPruning = true
+            
+            let _ = self._prunePeers(olderThan: expiration)
+        }
+    }
+    
+    /// This function should remove all peers in our peerstore that we haven't talked to (either dialed or was dialed) within the specified time
+    func _prunePeers(olderThan:TimeAmount) -> EventLoopFuture<Void> {
+        eventLoop.next().submit {
+            let expiration = Date().addingTimeInterval(-1 * Double(olderThan.nanoseconds) / Double(1_000_000_000))
+
+            /// Find all peers whos last handshake is older than our expiration date...
+            let peersToPrune = self.store.compactMap { peer -> String? in
+                guard self.prunability(peer: peer.value) != .necessary else { return nil }
+                guard let lastHandshake = self.lastHandshake(with: peer.value) else { return peer.key }
+
+                if lastHandshake < expiration {
+                    return peer.key
+                } else {
+                    return nil
+                }
+            }
+
+            /// Prune the peers...
+            peersToPrune.forEach { self.store.removeValue(forKey: $0) }
+
+            self.logger.debug("✂️✂️✂️ Pruned \(peersToPrune.count) peers who we haven't talked to since \(expiration) ✂️✂️✂️")
+            self.logger.debug("✂️✂️✂️ PeerStore Count == \(self.store.count) ✂️✂️✂️")
+            self.isPruning = false
+        }
+    }
+
+    /// This only gets called when we exceed our max peers count so lets just trim the oldest 10%
+    func prunePeers(oldestPercent percent:Double = 0.05) -> EventLoopFuture<Void> {
+        eventLoop.submit {
+            guard self.isPruning == false else { self.logger.info("Pruning in progress, skipping..."); return }
+            self.isPruning = true
+            
+            let _ = self._prunePeers(oldestPercent: percent)
+        }
+    }
+    
+    /// This only gets called when we exceed our max peers count so lets just trim the oldest 10%
+    /// - TODO: Prune inbound unreachable / undialable peers first...
+    private func _prunePeers(oldestPercent percent:Double) -> EventLoopFuture<Void> {
+        self.eventLoop.next().submit {
+            let numberOfPeersToPrune = max(Int(Double(self.maxPeers) * percent), 1)
+            /// Find the oldest X peers and prune them...
+            let sortedByOldest = self.store.sorted(by: self.oldestFirst)
+            /// Filter out only the prunable peers
+            var oldestPrunablePeers = sortedByOldest.filter({ peer in
+                if case .prunable = self.prunability(peer: peer.value) { return true }
+                return false
+            }).map { $0.key }.prefix(numberOfPeersToPrune)
+            
+            /// If we don't have enough prunable peers, take some from the preferred set...
+            if oldestPrunablePeers.count < numberOfPeersToPrune {
+                oldestPrunablePeers += sortedByOldest.filter({ peer in
+                    if case .preferred = self.prunability(peer: peer.value) { return true }
+                    return false
+                }).map { $0.key }.prefix(numberOfPeersToPrune - oldestPrunablePeers.count)
+            }
+            
+            /// If we still don't have the desired amount, log a warning...
+            if oldestPrunablePeers.count < numberOfPeersToPrune {
+                self.logger.warning("Not enough prunable peers to satisfy prune request of \(percent * 100)%")
+                self.logger.warning("Found \(oldestPrunablePeers.count) of desired \(numberOfPeersToPrune) of a total \(self.store.count) peers")
+            }
+            
+            /// Remove the peers
+            oldestPrunablePeers.forEach {
+                self.store.removeValue(forKey: $0)
+            }
+
+            self.logger.debug("✂️✂️✂️ Pruned the \(oldestPrunablePeers.count) oldest peers ✂️✂️✂️")
+            self.logger.debug("✂️✂️✂️ PeerStore Count == \(self.store.count) ✂️✂️✂️")
+            
+            self.isPruning = false
+        }.flatMap { self.trimAllRecords() }
+    }
+    
+    /// This function is meant to be used within an Array.sorted(by:) call.
+    private func oldestFirst(_ lhs:Dictionary<String, ComprehensivePeer>.Element, _ rhs:Dictionary<String, ComprehensivePeer>.Element) -> Bool {
+        switch (self.discovered(peer: lhs.value), self.discovered(peer: rhs.value)) {
+        case (nil, nil):
+            return true
+        case (nil, .some):
+            return false
+        case (.some, nil):
+            return true
+        case (.some(let lhsDiscovered), .some(let rhsDiscovered)):
+            return lhsDiscovered < rhsDiscovered
+        }
+    }
+    
+    /// Helper method to extract the `Date` at which this peer was `discovered`
+    private func discovered(peer:ComprehensivePeer) -> Date? {
+        guard let discoveredData = peer.metadata[MetadataBook.Keys.Discovered.rawValue] else { return nil }
+        guard let discoveredString = discoveredData.toString(encoding: .utf8) else { return nil }
+        guard let timeInterval = Double(discoveredString) else { return nil }
+        return Date(timeIntervalSince1970: timeInterval)
+    }
+    
+    /// Helper method to extract the most recent`Date` at which we established a handshake with this peer
+    private func lastHandshake(with peer:ComprehensivePeer) -> Date? {
+        guard let handshakeData = peer.metadata[MetadataBook.Keys.LastHandshake.rawValue] else { return nil }
+        guard let handshakeString = handshakeData.toString(encoding: .utf8) else { return nil }
+        guard let timeInterval = Double(handshakeString) else { return nil }
+        return Date(timeIntervalSince1970: timeInterval)
+    }
+    
+    /// Helper method to extract the current prunablity of this peer
+    private func prunability(peer:ComprehensivePeer) -> MetadataBook.PrunableMetadata.Prunable {
+        guard let prunableData = peer.metadata[MetadataBook.Keys.Prunable.rawValue] else { return .prunable }
+        guard let prunableState = try? JSONDecoder().decode(MetadataBook.PrunableMetadata.self, from: Data(prunableData)) else { return .prunable }
+        return prunableState.prunable
+    }
  
     private func getPeer(withID id:String) -> EventLoopFuture<ComprehensivePeer> {
         eventLoop.submit { () -> ComprehensivePeer in
@@ -199,8 +336,11 @@ internal final class BasicInMemoryPeerStore:PeerStore {
                     existingPeer.id = key
                 }
             } else {
-                self.store[key.b58String] = ComprehensivePeer(id: key)
+                let compPeer = ComprehensivePeer(id: key)
+                compPeer.metadata[MetadataBook.Keys.Discovered.rawValue] = "\(Date().timeIntervalSince1970)".bytes
+                self.store[key.b58String] = compPeer
             }
+            if self.store.count > self.maxPeers { let _ = self.prunePeers(oldestPercent: 0.05) }
         }.hop(to: on ?? eventLoop)
     }
     
@@ -318,6 +458,19 @@ internal final class BasicInMemoryPeerStore:PeerStore {
             }) else { compPeer.records = []; return }
             compPeer.records = [mostRecentRecord]
         }.hop(to: on ?? eventLoop)
+    }
+    
+    func trimAllRecords() -> EventLoopFuture<Void> {
+        eventLoop.submit {
+            self.logger.debug("✂️✂️✂️ Trimming PeerStore Records ✂️✂️✂️")
+            self.store.forEach { (key, compPeer) in
+                guard let mostRecentRecord = compPeer.records.max(by: { a, b in
+                    a.sequenceNumber < b.sequenceNumber
+                }) else { compPeer.records = []; return }
+                compPeer.records = [mostRecentRecord]
+            }
+            self.logger.debug("✂️✂️✂️ Done Trimming PeerStore Records ✂️✂️✂️")
+        }
     }
     
     func removeRecords(forPeer peer:PeerID, on: EventLoop? = nil) -> EventLoopFuture<Void> {
