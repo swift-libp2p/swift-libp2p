@@ -23,7 +23,7 @@ internal func handlePushRequest(_ req:Request) -> Response<ByteBuffer> {
         
         /// Update values that are present...
         req.logger.warning("Identify::Push::We haven't tested this yet!")
-        manager.consumeIdentifyMessage(payload: Data(payload.readableBytesView), id: req.remotePeer!.b58String, connection: req.connection)
+        manager.consumePushIdentifyMessage(payload: Data(payload.readableBytesView), id: req.remotePeer!.b58String, connection: req.connection)
         return .close
         
     default:
