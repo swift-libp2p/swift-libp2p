@@ -10,7 +10,7 @@ import NIO
 /// A basic, closure-based `Responder`.
 public struct BasicResponder: Responder {
     /// The stored responder closure.
-    private let closure: (Request) throws -> EventLoopFuture<Response>
+    private let closure: (Request) throws -> EventLoopFuture<RawResponse>
 
     /// The ChannelHandlers that should be installed on the ChildChannel Pipeline
     private let handlers:[ChannelHandler]
@@ -27,7 +27,7 @@ public struct BasicResponder: Responder {
     /// - parameters:
     ///     - closure: Responder closure.
     public init(
-        closure: @escaping (Request) throws -> EventLoopFuture<Response>,
+        closure: @escaping (Request) throws -> EventLoopFuture<RawResponse>,
         handlers: [ChannelHandler] = []
 //        file: String = #file, function: String = #function, line: Int = #line
     ) {
@@ -42,7 +42,7 @@ public struct BasicResponder: Responder {
 //    }
 
     /// See `Responder`.
-    public func respond(to request: Request) -> EventLoopFuture<Response> {
+    public func respond(to request: Request) -> EventLoopFuture<RawResponse> {
 //        didRespond = true
         do {
             return try closure(request)

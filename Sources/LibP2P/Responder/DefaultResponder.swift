@@ -58,9 +58,9 @@ internal struct DefaultResponder: Responder {
     }
 
     /// See `Responder`
-    public func respond(to request: Request) -> EventLoopFuture<Response> {
+    public func respond(to request: Request) -> EventLoopFuture<RawResponse> {
         let startTime = DispatchTime.now().uptimeNanoseconds
-        let response: EventLoopFuture<Response>
+        let response: EventLoopFuture<RawResponse>
         if let cachedRoute = self.getRoute(for: request) {
             request.route = cachedRoute.route
             response = cachedRoute.responder.respond(to: request)
@@ -185,7 +185,7 @@ public extension Multiaddr {
 }
 
 private struct NotFoundResponder: Responder {
-    func respond(to request: Request) -> EventLoopFuture<Response> {
+    func respond(to request: Request) -> EventLoopFuture<RawResponse> {
         request.eventLoop.makeFailedFuture(RouteNotFound())
     }
     

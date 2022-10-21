@@ -9,7 +9,7 @@ import NIO
 import LibP2PCore
 
 public protocol Responder {
-    func respond(to request: Request) -> EventLoopFuture<Response>
+    func respond(to request: Request) -> EventLoopFuture<RawResponse>
     func pipelineConfig(for protocol: String, on:Connection) -> [ChannelHandler]?
 }
 
@@ -80,7 +80,7 @@ extension Application {
 }
 
 extension Application.Responder: Responder {
-    public func respond(to request: Request) -> EventLoopFuture<Response> {
+    public func respond(to request: Request) -> EventLoopFuture<RawResponse> {
         self.current.respond(to: request)
     }
     
