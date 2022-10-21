@@ -8,7 +8,7 @@
 import NIO
 
 final class ResponseDecoderChannelHandler: ChannelOutboundHandler, RemovableChannelHandler {
-    typealias OutboundIn = Response
+    typealias OutboundIn = RawResponse
     typealias OutboundOut = ByteBuffer
     
     private let logger:Logger
