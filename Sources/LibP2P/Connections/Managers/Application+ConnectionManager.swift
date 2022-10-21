@@ -1,9 +1,13 @@
 //
 //  Application+ConnectionManager.swift
-//  
+//
 //
 //  Created by Brandon Toms on 5/1/22.
 //
+
+import NIOCore
+import Multiaddr
+import LibP2PCore
 
 extension Application {
     public var connectionManager: Connections {
@@ -18,6 +22,15 @@ extension Application {
     }
     
     public struct Connections {
+        public enum Errors:Error {
+            case notImplementedYet
+            case invalidProtocolNegotatied
+            case noResponder
+            case failedToCloseAllStreams
+            case noStreamForID(UInt64)
+            case timedOut
+        }
+        
         public struct Provider {
             let run: (Application) -> ()
 
@@ -54,6 +67,11 @@ extension Application {
                 fatalError("ConnectionManager not initialized. Configure with app.connectionManager.initialize()")
             }
             return storage
+        }
+        
+        public func generateConnection(channel: Channel, direction: ConnectionStats.Direction, remoteAddress: Multiaddr, expectedRemotePeer: PeerID?) -> AppConnection {
+            return ARCConnection(application: application, channel: channel, direction: direction, remoteAddress: remoteAddress, expectedRemotePeer: expectedRemotePeer)
+            //return BasicConnectionLight(application: application, channel: channel, direction: direction, remoteAddress: remoteAddress, expectedRemotePeer: expectedRemotePeer)
         }
     }
 }
