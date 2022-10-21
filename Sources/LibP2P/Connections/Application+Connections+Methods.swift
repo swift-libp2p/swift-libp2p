@@ -60,7 +60,7 @@ extension Application {
         let promise = on.makePromise(of: [Multiaddr].self)
         var dialableAddresses:[Multiaddr] = []
         
-        let _ = mas.map { ma in
+        let _ = Set(mas).map { ma in
             self.transports.canDial(ma, on: on).map { canDial in
                 if canDial {
                     if externalAddressesOnly {
