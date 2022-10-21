@@ -5,7 +5,7 @@
 //  Created by Brandon Toms on 5/1/22.
 //
 
-internal func handlePingRequest(_ req:Request) -> ResponseType<ByteBuffer> {
+internal func handlePingRequest(_ req:Request) -> Response<ByteBuffer> {
     switch req.streamDirection {
     case .inbound:
         switch req.event {

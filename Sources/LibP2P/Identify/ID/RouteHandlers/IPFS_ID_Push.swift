@@ -5,7 +5,7 @@
 //  Created by Brandon Toms on 5/1/22.
 //
 
-internal func handlePushRequest(_ req:Request) -> ResponseType<ByteBuffer> {
+internal func handlePushRequest(_ req:Request) -> Response<ByteBuffer> {
     guard req.streamDirection == .inbound else {
         req.logger.error("Identify::Push::Error - We dont support outbound /ipfs/id/push messages on this handler")
         return .close

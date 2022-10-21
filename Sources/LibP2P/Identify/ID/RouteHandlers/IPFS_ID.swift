@@ -5,7 +5,7 @@
 //  Created by Brandon Toms on 5/1/22.
 //
 
-internal func handleIDRequest(_ req:Request) -> ResponseType<ByteBuffer> {
+internal func handleIDRequest(_ req:Request) -> Response<ByteBuffer> {
     switch req.event {
     case .ready:
         guard req.streamDirection == .inbound else {
