@@ -1,6 +1,6 @@
 //
 //  BasicConnectionLight.swift
-//  
+//
 //
 //  Created by Brandon Toms on 5/1/22.
 //
@@ -53,10 +53,19 @@ public class BasicConnectionLight:AppConnection {
         self.stats.timeline.history
     }
     
-    public var state: ConnectionState = .raw
-    
-    public var stateMachine:ConnectionStateMachine
+    struct StreamStateEntry {
+        let proto:String
+        let id:Int
+        let state:StreamState
+        let date:Date
+    }
+    internal private(set) var streamHistory:[StreamStateEntry] = []
         
+    private var stateMachine:ConnectionStateMachine
+    public var state:ConnectionState {
+        self.stateMachine.state
+    }
+    
     /// This is called when a remote peer is initiating a new stream
     public var inboundMuxedChildChannelInitializer: ((Channel) -> EventLoopFuture<Void>)? = nil
     /// This is called when we're initiating a new stream for a particular protocol
@@ -78,7 +87,6 @@ public class BasicConnectionLight:AppConnection {
         self.logger.logLevel = application.logger.logLevel
         self.channel = channel
         self.stateMachine = ConnectionStateMachine()
-        self.state = .raw
         
         // Addresses
         self.localAddr = try? channel.localAddress?.toMultiaddr()
@@ -122,8 +130,8 @@ public class BasicConnectionLight:AppConnection {
     
     deinit {
         /// We had a leaking promise get triggered here... When our connection deinitializes before the securedPromise / muxedPromise are completed...
-        self.securedPromise.fail(Errors.timedOut)
-        self.muxedPromise.fail(Errors.timedOut)
+        self.securedPromise.fail(Application.Connections.Errors.timedOut)
+        self.muxedPromise.fail(Application.Connections.Errors.timedOut)
         self.logger.trace("Deinitialized")
     }
 
@@ -226,7 +234,7 @@ public class BasicConnectionLight:AppConnection {
                         do {
                             try muxer.newStream(channel: self.channel, proto: pendingStream.proto).whenComplete({ result in
                                 switch result {
-                                case .success(let stream):
+                                case .success:
                                     break
                                     //print("PendingStreams - Skipping Stream Registry")
                                     //self.registry[stream.id] = stream
@@ -294,7 +302,7 @@ public class BasicConnectionLight:AppConnection {
             guard let idx = self.newStreamCache.firstIndex(where: { $0.proto == `protocol`}) else {
                 self.logger.error("No Responder For `\(`protocol`)`")
                 self.logger.error("\(self.newStreamCache)")
-                return childChannel.eventLoop.makeFailedFuture(Errors.noResponder)
+                return childChannel.eventLoop.makeFailedFuture(Application.Connections.Errors.noResponder)
             } //?? self.application.responder.current
             let pendingStream = self.newStreamCache.remove(at: idx)
             let negotiationPromise = childChannel.eventLoop.makePromise(of: NegotiationResult.self)
@@ -379,7 +387,7 @@ public class BasicConnectionLight:AppConnection {
     }
     
     public func newStream(_ protos: [String]) -> EventLoopFuture<LibP2PCore.Stream> {
-        self.channel.eventLoop.makeFailedFuture(Errors.notImplementedYet)
+        self.channel.eventLoop.makeFailedFuture(Application.Connections.Errors.notImplementedYet)
     }
     
     public enum NewStreamMode {
@@ -401,7 +409,7 @@ public class BasicConnectionLight:AppConnection {
     private var newStreamCache:[StreamCache] = []
     private var pendingStreamCache:[StreamCache] = []
     /// Opens an outbound stream delegating to a uniquely specified handler / responder
-    public func newStream(forProtocol proto: String, withHandlers:HandlerConfig = .rawHandlers([]), andMiddleware:MiddlewareConfig = .custom(nil), closure: @escaping ((Request) throws -> EventLoopFuture<Response>)) {
+    public func newStream(forProtocol proto: String, withHandlers:HandlerConfig = .rawHandlers([]), andMiddleware:MiddlewareConfig = .custom(nil), closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>)) {
         
         self.logger.trace("Constructing Responder with Handlers: [\(withHandlers.handlers(application: self.application, connection: self, forProtocol: proto))]")
         
@@ -439,6 +447,9 @@ public class BasicConnectionLight:AppConnection {
             responder: responder
         )
         
+        /// Append a stream event in our stream history array
+        self.streamHistory.append(StreamStateEntry(proto: proto, id: 0, state: .initialized, date: Date()))
+        
         self.eventLoop.execute {
             /// Ask our muxer to open the stream...
             if self.isMuxed, let mux = self.muxer {
@@ -470,7 +481,7 @@ public class BasicConnectionLight:AppConnection {
             // Initialize a Stream to be opened once our Muxer is installed...
             self.logger.debug("TODO: Store new stream to be open later, once a muxer has been installed")
             //stream = MplexStream(channel: self.channel, mode: .initiator, id: 0, name: "\(id)", proto: proto, streamState: .initialized)
-            throw Errors.notImplementedYet
+            throw Application.Connections.Errors.notImplementedYet
         }
         
         stream._connection = self
@@ -489,19 +500,21 @@ public class BasicConnectionLight:AppConnection {
     }
 
     public func newStreamHandlerSync(_ proto: String) throws -> StreamHandler {
-        throw Errors.notImplementedYet
+        throw Application.Connections.Errors.notImplementedYet
     }
 
     public func removeStream(id: UInt64) -> EventLoopFuture<Void> {
         if let stream = self.registry.removeValue(forKey: id) {
+            /// Append a stream event in our stream history array
+            self.streamHistory.append(StreamStateEntry(proto: stream.protocolCodec, id: Int(id), state: .closed, date: Date()))
             return stream.close(gracefully: true)
         } else {
-            return self.channel.eventLoop.makeFailedFuture(Errors.noStreamForID(id))
+            return self.channel.eventLoop.makeFailedFuture(Application.Connections.Errors.noStreamForID(id))
         }
     }
 
     public func acceptStream(_ stream: LibP2PCore.Stream, protocol: String, metadata: [String]) -> EventLoopFuture<Bool> {
-        self.channel.eventLoop.makeFailedFuture(Errors.notImplementedYet)
+        self.channel.eventLoop.makeFailedFuture(Application.Connections.Errors.notImplementedYet)
     }
 
     public func hasStream(forProtocol proto:String, direction:ConnectionStats.Direction? = nil) -> LibP2PCore.Stream? {
@@ -534,7 +547,7 @@ public class BasicConnectionLight:AppConnection {
             self.onClosing().flatMap { () -> EventLoopFuture<Void> in
                 let closePromise = self.eventLoop.makePromise(of: Void.self)
                 let timeout = self.eventLoop.scheduleTask(in: .seconds(1)) {
-                    closePromise.fail(Errors.failedToCloseAllStreams)
+                    closePromise.fail(Application.Connections.Errors.failedToCloseAllStreams)
                 }
                 
                 closePromise.completeWith (
@@ -543,7 +556,7 @@ public class BasicConnectionLight:AppConnection {
                         switch result {
                         case .failure(let err):
                             self.logger.error("Error encountered while attempting to close streams: \(err)")
-                            return self.eventLoop.makeFailedFuture(Errors.failedToCloseAllStreams)
+                            return self.eventLoop.makeFailedFuture(Application.Connections.Errors.failedToCloseAllStreams)
                         case .success:
                             return self.streams.compactMap {
                                 switch $0.streamState {
@@ -574,21 +587,12 @@ public class BasicConnectionLight:AppConnection {
             }
         }
     }
-    
-    public enum Errors:Error {
-        case notImplementedYet
-        case invalidProtocolNegotatied
-        case noResponder
-        case failedToCloseAllStreams
-        case noStreamForID(UInt64)
-        case timedOut
-    }
 }
 
 extension BasicConnectionLight {
     
     public struct ConnectionStateMachine {
-        private var state:ConnectionState
+        internal private(set) var state:ConnectionState
         
         internal init() {
             self.state = .raw
@@ -636,237 +640,47 @@ extension BasicConnectionLight {
     }
 }
 
-extension SocketAddress {
-    public func toMultiaddr(proto:MultiaddrProtocol = .tcp) throws -> Multiaddr {
-        var ma:Multiaddr
-        if let ip = self.ipAddress {
-            /// - TODO: Determine if ip4 or ip6
-            switch self.protocol {
-            case .inet:
-                ma = try Multiaddr(.ip4, address: ip)
-            case .inet6:
-                ma = try Multiaddr(.ip6, address: ip)
-            default:
-                throw NSError(domain: "Failed to convert SocketAddress to Multiaddr", code: 0, userInfo: nil)
+extension BasicConnectionLight {
+    public func lastActivity() -> Date {
+        guard !(self.status == .closed || self.status == .closing) else {
+            if let upgraded = self.stats.timeline.history.first(where: { $0.key == .upgraded } ) {
+                return upgraded.value
             }
-//            if self.description.hasPrefix("[IPv6]") {
-//                ma = try Multiaddr(.ip6, address: ip)
-//            } else if self.description.hasPrefix("[IPv4]") {
-//                ma = try Multiaddr(.ip4, address: ip)
-//            } else {
-//                throw NSError(domain: "Failed to convert SocketAddress to Multiaddr", code: 0, userInfo: nil)
-//            }
-            
-            if let port = self.port {
-                switch proto {
-                case .tcp:
-                    ma = try ma.encapsulate(proto: .tcp, address: "\(port)")
-                case .udp:
-                    ma = try ma.encapsulate(proto: .udp, address: "\(port)")
-                default:
-                    print("WARNING: Unteseted Multiaddr Protocol Encapsulation!")
-                    ma = try ma.encapsulate(proto: proto, address: "\(port)")
-                }
-            }
-            
-        } else if let path = self.pathname {
-            ma = try Multiaddr(.unix, address: path)
-        } else {
-            throw NSError(domain: "Failed to convert SocketAddress to Multiaddr", code: 0, userInfo: nil)
+            return Date.distantPast
         }
-        return ma
+        let lastConnectionActivity = self.stats.timeline.history.max(by: { lhs, rhs in
+            lhs.value < rhs.value
+        })?.value
+        let lastStreamActivity = self.streamHistory.max(by: { lhs, rhs in
+            lhs.date < rhs.date
+        })?.date
+        
+        switch (lastConnectionActivity, lastStreamActivity) {
+        case (nil, nil):
+            return Date.distantPast
+        case (.some(let connActivity), nil):
+            return connActivity
+        case (nil, .some(let strActivity)):
+            return strActivity
+        case (.some(let connActivity), .some(let strActivity)):
+            return connActivity < strActivity ? strActivity : connActivity
+        }
     }
 }
 
-public protocol AppConnection:Connection {
-    var application:Application { get }
-    var logger:Logger { get }
-    
-    init(application:Application, channel: Channel, direction: ConnectionStats.Direction, remoteAddress:Multiaddr, expectedRemotePeer:PeerID?)
-}
-
-//extension Connection {
-//    /// TODO: Actually implement this....
-//    public func close() -> EventLoopFuture<Void> {
-//        self.logger.trace("Close called, attempting to close all streams before shutting down the channel.")
-//        return channel.eventLoop.flatSubmit { () -> EventLoopFuture<Void> in
-//            //self.onClosing().flatMap { () -> EventLoopFuture<Void> in
-//                return self.streams.map { $0.close(gracefully: true) }.flatten(on: self.channel.eventLoop).flatMapAlways { result -> EventLoopFuture<Void> in
-//                    switch result {
-//                    case .failure(let err):
-//                        self.logger.error("Error encountered while attempting to close streams: \(err)")
-//                        //return self.channel.eventLoop.makeFailedFuture(Errors.failedToCloseAllStreams)
-//                        return self.channel.eventLoop.makeFailedFuture(NSError(domain: "Failed To Close All Streams", code: 0))
-//                    case .success:
-//                        return self.streams.compactMap {
-//                            switch $0.streamState {
-//                            case .closed, .reset:
-//                                return nil
-//                            default:
-//                                // Ensure we fire our close event before
-//                                // TODO: Silently force close the stream...
-//                                return $0.on?(.closed)
-//                            }
-//                        }.flatten(on: self.channel.eventLoop).flatMapAlways { result -> EventLoopFuture<Void> in
-//                            self.logger.trace("Streams closed")
-//                            // Do any additional clean up before closing / deiniting self...
-//                            self.logger.trace("Proceeding to close Connection")
-//                            return self.channel.close(mode: .all)
-//                        }
-//                    }
-//                }
-//            //}
-//        }
-//    }
-//}
-
-extension AppConnection {
-    
-    /// This method returns immediately after installing the upgrader and completes a promise upon protocol negotiation
-    internal func negotiateProtocol(fromSet protocols:[String], mode: LibP2P.Mode, logger: Logger, promise:EventLoopPromise<NegotiationResult>) -> EventLoopFuture<Void> {
-        let mssHandlers:[ChannelHandler] = application.upgrader.negotiate(protocols: protocols, mode: mode, logger: logger, promise: promise)
-        return self.channel.pipeline.addHandler(mssHandlers.first!, name: "upgrader", position: .last)
-    }
-    
-    /// Satisifies the Promise by Negotiating and installing a Security Module
-    /// - Note: this method returns immediately after installing the negotiation ChannelHandlers
-    internal func secureConnection(promise:EventLoopPromise<SecuredResult>) -> EventLoopFuture<Void> {
-        let negotiationPromise = self.channel.eventLoop.makePromise(of: NegotiationResult.self)
-        
-        negotiationPromise.futureResult.whenComplete { res in
-            switch res {
-            case .failure(let error):
-                promise.fail(error)
-            case .success(let negotiated):
-                guard let secUpgrader = self.application.security.upgrader(forKey: negotiated.protocol) else {
-                    promise.fail(BasicConnectionLight.Errors.invalidProtocolNegotatied)
-                    return
-                }
-                
-                // - TODO: we might want to be more specific here with the position we're adding our handlers...
-                secUpgrader.upgradeConnection(self, position: .last, securedPromise: promise).flatMap {
-                    self.channel.pipeline.removeHandler(name: "upgrader")
-                }.whenComplete { res in
-                    switch res {
-                    case .failure(let error):
-                        promise.fail(error)
-                    case .success:
-                        self.logger.trace("Upgrader Removed Successfully")
-                    }
-                }
-            }
-        }
-        
-        return negotiateProtocol(fromSet: self.application.security.available, mode: self.mode, logger: logger, promise: negotiationPromise)
-    }
-    
-    /// Satisifies the Promise by Negotiating and installing a Muxer
-    /// - Note: this method returns immediately after installing the negotiation ChannelHandlers
-    internal func muxConnection(promise:EventLoopPromise<Muxer>) -> EventLoopFuture<Void> {
-        let negotiationPromise = self.channel.eventLoop.makePromise(of: NegotiationResult.self)
-        //let muxedPromise = self.channel.eventLoop.makePromise(of: Muxer.self)
-        
-        negotiationPromise.futureResult.whenComplete { res in
-            switch res {
-            case .failure(let error):
-                promise.fail(error)
-            case .success(let negotiated):
-                guard let muxUpgrader = self.application.muxers.upgrader(forKey: negotiated.protocol) else {
-                    promise.fail(BasicConnectionLight.Errors.invalidProtocolNegotatied)
-                    return
-                }
-            
-                muxUpgrader.upgradeConnection(self, muxedPromise: promise).flatMap {
-                    self.channel.pipeline.removeHandler(name: "upgrader")
-                }.whenComplete { res in
-                    switch res {
-                    case .failure(let error):
-                        promise.fail(error)
-                    case .success:
-                        self.logger.trace("Upgrader Removed Successfully")
-                    }
-                }
-            }
-        }
-        
-        return negotiateProtocol(fromSet: self.application.muxers.available, mode: self.mode, logger: logger, promise: negotiationPromise)
+extension BasicConnectionLight {
+    public var description: String {
+        let header = "--- 🔁 \(self.direction == .inbound ? "Inbound" : "Outbound") Connection[\(self.id.uuidString.prefix(5))] 🔁 ---"
+        return """
+            \(header)
+            State: \(self.state) <\(self.status)>
+            Peer: \(self.remoteAddr?.description ?? "???") <\(self.remotePeer?.b58String ?? "???")>
+            Timeline:
+            \(self.timeline.sorted(by: { $0.value < $1.value }).map { "\($0.value) - \($0.key)" }.joined(separator: "\n-"))
+            Streams: Open<\(self.streams.filter({ $0.streamState == .open }).count)>, Total<\(self.streamHistory.count)>
+            \(self.streamHistory.sorted(by: { $0.date < $1.date }).map { "[\($0.state)][\($0.id)]\($0.proto) @ \($0.date)" }.joined(separator: "\n-"))
+            Last Activity: \(self.lastActivity())
+            \(String(repeating: "-", count: header.count + 2))
+            """
     }
 }
-
-
-//extension AppConnection {
-//    internal func secureConnection() -> EventLoopFuture<SecuredResult> {
-//        self.negotiateProtocol(fromSet: application.security.available, mode: self.mode).flatMap { secProto, _ in
-//            guard let secUpgrader = self.application.security.upgrader(forKey: secProto) else {
-//                return self.channel.eventLoop.makeFailedFuture(BasicConnectionLight.Errors.invalidProtocolNegotatied)
-//            }
-//
-//            let secPromise = self.channel.eventLoop.makePromise(of: SecuredResult.self)
-//
-//            //self.channel.pipeline.addHandlers(secUpgrader.handlers(securedPromise: secPromise), position: .last)
-//            secUpgrader.upgradeConnection(self, securedPromise: secPromise).whenComplete { result in
-//                switch result {
-//                case .failure(let error):
-//                    secPromise.fail(error)
-//                case .success:
-//                    self.logger.trace("Security upgrader has been installed, awaiting upgrade")
-//                }
-//            }
-//
-//            return secPromise.futureResult
-//        }
-//    }
-    
-//    internal func muxConnection() -> EventLoopFuture<Muxer> {
-//        self.negotiateProtocol(fromSet: application.muxers.available, mode: self.mode).flatMap { muxProto, _ in
-//            guard let muxUpgrader = self.application.muxers.upgrader(forKey: muxProto) else {
-//                return self.channel.eventLoop.makeFailedFuture(BasicConnectionLight.Errors.invalidProtocolNegotatied)
-//            }
-//
-//            let muxPromise = self.channel.eventLoop.makePromise(of: Muxer.self)
-//
-//            //self.channel.pipeline.addHandlers(secUpgrader.handlers(securedPromise: secPromise), position: .last)
-//            muxUpgrader.upgradeConnection(self, muxedPromise: muxPromise).whenComplete { result in
-//                switch result {
-//                case .failure(let error):
-//                    muxPromise.fail(error)
-//                case .success:
-//                    self.logger.trace("Muxer upgrader has been installed, awaiting upgrade")
-//                }
-//            }
-//
-//            return muxPromise.futureResult
-//        }
-//    }
-    
-    /// This method waits for a negotiation to take place and returns the result.
-//    internal func negotiateProtocol(fromSet protocols:[String], mode: LibP2P.Mode) -> EventLoopFuture<NegotiationResult> {
-//        let negotiationPromise:EventLoopPromise<(`protocol`:String, leftoverBytes:ByteBuffer?)> = channel.eventLoop.makePromise(of: NegotiationResult.self)
-//        let mssHandlers:[ChannelHandler] = application.upgrader.negotiate(protocols: protocols, mode: mode, promise: negotiationPromise)
-//        self.channel.pipeline.addHandler(mssHandlers.first!, name: "upgrader", position: .last).whenComplete { result in
-//            switch result {
-//            case .failure(let error):
-//                negotiationPromise.fail(error)
-//            case .success:
-//                self.logger.trace("Installed MSS Handlers and began negotiation")
-//            }
-//        }
-//        return negotiationPromise.futureResult
-//    }
-
-//    internal func secureConnection(proto:String, promise:EventLoopPromise<SecuredResult>) -> EventLoopFuture<Void> {
-//        guard let secUpgrader = self.application.security.upgrader(forKey: proto) else {
-//            return self.channel.eventLoop.makeFailedFuture(BasicConnectionLight.Errors.invalidProtocolNegotatied)
-//        }
-//
-//        return secUpgrader.upgradeConnection(self, securedPromise: promise)
-//    }
-
-//    internal func muxConnection(proto:String, promise:EventLoopPromise<Muxer>) -> EventLoopFuture<Void> {
-//        guard let muxUpgrader = self.application.muxers.upgrader(forKey: proto) else {
-//            return self.channel.eventLoop.makeFailedFuture(BasicConnectionLight.Errors.invalidProtocolNegotatied)
-//        }
-//
-//        return muxUpgrader.upgradeConnection(self, muxedPromise: promise)
-//    }
-//}
