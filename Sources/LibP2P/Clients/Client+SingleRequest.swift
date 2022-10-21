@@ -1,6 +1,6 @@
 //
 //  Client+SingleRequest.swift
-//  
+//
 //
 //  Created by Brandon Toms on 5/1/22.
 //
@@ -9,9 +9,9 @@ import NIOCore
 import Foundation
 
 extension Application {
-    // We need a method on libp2p that acts as a request / response mechanism for streams
-    /// ex: newRequest(to, forProtocol:, withRequest: ) -> EventLoopFuture<Response>
-    /// the stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
+    /// A method on libp2p that acts as a request / response mechanism for streams
+    ///
+    /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
     public func newRequest(to ma:Multiaddr, forProtocol proto:String, withRequest request:Data, style:SingleRequest.Style = .responseExpected, withHandlers handlers:HandlerConfig = .rawHandlers([]), andMiddleware middleware:MiddlewareConfig = .custom(nil), withTimeout timeout:TimeAmount = .seconds(3)) -> EventLoopFuture<Data> {
         let promise = self.eventLoopGroup.next().makePromise(of: Data.self)
         //let singleRequest =
@@ -19,6 +19,9 @@ extension Application {
         return promise.futureResult
     }
     
+    /// A method on libp2p that acts as a request / response mechanism for streams
+    ///
+    /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
     public func newRequest(to peer:PeerID, forProtocol proto:String, withRequest request:Data, style:SingleRequest.Style = .responseExpected, withHandlers handlers:HandlerConfig = .rawHandlers([]), andMiddleware middleware:MiddlewareConfig = .custom(nil), withTimeout timeout:TimeAmount = .seconds(3)) -> EventLoopFuture<Data> {
         let el = self.eventLoopGroup.next()
         
@@ -73,20 +76,20 @@ extension Application {
             self.promise = self.eventloop.makePromise(of: Data.self)
         }
         
-        deinit {
-            print("Single Request Deinitialized")
-        }
+        //deinit {
+        //    print("Single Request Deinitialized")
+        //}
         
         func resume(style:Style = .responseExpected) -> EventLoopFuture<Data> {
             guard !hasBegun, let host = host else { return self.eventloop.makeFailedFuture(Errors.NoHost) }
             hasBegun = true
             
             do {
-                try host.newStream(to: self.multiaddr, forProtocol: self.proto, withHandlers: handlers, andMiddleware: middleware) { req -> EventLoopFuture<Response> in
+                try host.newStream(to: self.multiaddr, forProtocol: self.proto, withHandlers: handlers, andMiddleware: middleware) { req -> EventLoopFuture<RawResponse> in
                     switch req.event {
                     case .ready:
                         // If the stream is ready and we have data to send... let's send it...
-                        return req.eventLoop.makeSucceededFuture(Response(payload: req.allocator.buffer(bytes: self.request.bytes))).always { _ in
+                        return req.eventLoop.makeSucceededFuture(RawResponse(payload: req.allocator.buffer(bytes: self.request.bytes))).always { _ in
                             if style == .noResponseExpected {
                                 self.hasCompleted = true
                                 req.shouldClose()
@@ -119,7 +122,7 @@ extension Application {
                         req.shouldClose()
                     }
                     
-                    return req.eventLoop.makeSucceededFuture(Response(payload: req.allocator.buffer(bytes: [])))
+                    return req.eventLoop.makeSucceededFuture(RawResponse(payload: req.allocator.buffer(bytes: [])))
                 }
                 
                 /// Enforce a 3 second timeout on the request...
