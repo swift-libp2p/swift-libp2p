@@ -35,9 +35,10 @@ extension Application {
         // BUG in SwiftNIO (please report), unleakable promise leaked.:474: Fatal error: leaking promise created at (file: "BUG in SwiftNIO (please report), unleakable promise leaked.", line: 474)
         return self.resolveAddressForBestTransport(to, on: el).flatMap { ma -> EventLoopFuture<Void> in
             self.connections.getConnectionsTo(ma, onlyMuxed: false, on: el).flatMap { existingConnections -> EventLoopFuture<Void> in
+                self.logger.trace("We have \(existingConnections.count) existing connections")
                 if let capableConn = existingConnections.first(where: { $0.isMuxed == true || $0.state != .closed}) {
 
-                    guard let capableConn = capableConn as? BasicConnectionLight else { return el.makeFailedFuture(Errors.noTransportForMultiaddr(ma)) }
+                    guard let capableConn = capableConn as? AppConnection else { return el.makeFailedFuture(Errors.noTransportForMultiaddr(ma)) }
                     /// We have an existing capable (muxed) connection, lets reuse it!
                     self.logger.trace("Reusing Existing Connection[\(capableConn.id.uuidString.prefix(5))]")
                     capableConn.newStream(forProtocol: proto, withHandlers: handlers, andMiddleware: middleware, closure: closure)
@@ -53,8 +54,8 @@ extension Application {
                     }
                     self.logger.trace("Found Transport for dialing peer \(transport)")
                     return transport.dial(address: ma).flatMap { connection -> EventLoopFuture<Void> in
-                        guard let conn = connection as? BasicConnectionLight else { return connection.channel.eventLoop.makeFailedFuture( Errors.noTransportForMultiaddr(ma) ) }
-                        self.logger.trace("Asking BasicConnectionLight to open a new stream for `\(proto)`")
+                        guard let conn = connection as? AppConnection else { return connection.channel.eventLoop.makeFailedFuture( Errors.noTransportForMultiaddr(ma) ) }
+                        self.logger.trace("Asking Connection to open a new stream for `\(proto)`")
                         conn.newStream(forProtocol: proto, withHandlers: handlers, andMiddleware: middleware, closure: closure)
                         return connection.channel.eventLoop.makeSucceededVoidFuture()
                     }
@@ -95,7 +96,7 @@ extension Application {
             self.connections.getConnectionsTo(ma, onlyMuxed: false, on: el).flatMap { existingConnections -> EventLoopFuture<Void> in
                 if let capableConn = existingConnections.first(where: { $0.isMuxed == true || $0.state != .closed}) {
 
-                    guard let capableConn = capableConn as? BasicConnectionLight else { return self.eventLoopGroup.any().makeFailedFuture(Errors.noTransportForMultiaddr(ma)) }
+                    guard let capableConn = capableConn as? CapableConnection else { return self.eventLoopGroup.any().makeFailedFuture(Errors.noTransportForMultiaddr(ma)) }
                     /// We have an existing capable (muxed) connection, lets reuse it!
                     self.logger.notice("Reusing Existing Connection[\(capableConn.id.uuidString.prefix(5))]")
                     capableConn.newStream(forProtocol: proto)
@@ -111,8 +112,8 @@ extension Application {
                     }
                     self.logger.trace("Found Transport for dialing peer \(transport)")
                     return transport.dial(address: ma).flatMap { connection -> EventLoopFuture<Void> in
-                        guard let conn = connection as? BasicConnectionLight else { return connection.channel.eventLoop.makeFailedFuture( Errors.noTransportForMultiaddr(ma) ) }
-                        self.logger.trace("Asking BasicConnectionLight to open a new stream for `\(proto)`")
+                        guard let conn = connection as? CapableConnection else { return connection.channel.eventLoop.makeFailedFuture( Errors.noTransportForMultiaddr(ma) ) }
+                        self.logger.trace("Asking Connection to open a new stream for `\(proto)`")
                         conn.newStream(forProtocol: proto)
                         return connection.channel.eventLoop.makeSucceededVoidFuture()
                     }
