@@ -1,13 +1,13 @@
 //
 //  Client+Utils.swift
-//  
-//  
+//
+//
 //  Modified by Brandon Toms on 5/1/22.
 //
 
 extension Application {
     
-    public func newStream(to:PeerID, forProtocol proto:String, withHandlers handlers:HandlerConfig = .rawHandlers([]), andMiddleware middleware: MiddlewareConfig = .custom(nil), closure: @escaping ((Request) throws -> EventLoopFuture<Response>)) throws {
+    public func newStream(to:PeerID, forProtocol proto:String, withHandlers handlers:HandlerConfig = .rawHandlers([]), andMiddleware middleware: MiddlewareConfig = .custom(nil), closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>)) throws {
         // Do we search the peerstore? or connection manager???
         let el = self.eventLoopGroup.next()
         
@@ -30,8 +30,9 @@ extension Application {
     }
     
     /// Creates a new outbound stream (channel) to node at the specified multiaddr. This method will resuse existing connections when possible.
-    public func newStream(to:Multiaddr, forProtocol proto:String, withHandlers handlers:HandlerConfig = .rawHandlers([]), andMiddleware middleware: MiddlewareConfig = .custom(nil), closure: @escaping ((Request) throws -> EventLoopFuture<Response>)) throws {
+    public func newStream(to:Multiaddr, forProtocol proto:String, withHandlers handlers:HandlerConfig = .rawHandlers([]), andMiddleware middleware: MiddlewareConfig = .custom(nil), closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>)) throws {
         let el = self.eventLoopGroup.next()
+        // BUG in SwiftNIO (please report), unleakable promise leaked.:474: Fatal error: leaking promise created at (file: "BUG in SwiftNIO (please report), unleakable promise leaked.", line: 474)
         return self.resolveAddressForBestTransport(to, on: el).flatMap { ma -> EventLoopFuture<Void> in
             self.connections.getConnectionsTo(ma, onlyMuxed: false, on: el).flatMap { existingConnections -> EventLoopFuture<Void> in
                 if let capableConn = existingConnections.first(where: { $0.isMuxed == true || $0.state != .closed}) {
@@ -129,7 +130,7 @@ extension Application {
 //        forProtocol proto:String,
 //        withHandlers handlers:HandlerConfig = .rawHandlers([]),
 //        andMiddleware middleware: MiddlewareConfig = .custom(nil),
-//        closure: @escaping ((Request) throws -> EventLoopFuture<Response>)? = nil) -> EventLoopFuture<Void> {
+//        closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>)? = nil) -> EventLoopFuture<Void> {
 //        if let capableConn = existingConnections.first(where: { $0.isMuxed == true || $0.state != .closed}) {
 //
 //            guard let capableConn = capableConn as? BasicConnectionLight else { return self.eventLoopGroup.any().makeFailedFuture(Errors.unknownConnection) }
@@ -218,12 +219,5 @@ extension Application {
                 return self.transports.canDialAny(resolvedAddresses, on: loop)
             }
         }
-    }
-    
-    public enum Errors:Error {
-        case noTransportForMultiaddr(Multiaddr)
-        case unknownConnection
-        case unknownPeer
-        case noKnownAddressesForPeer
     }
 }
