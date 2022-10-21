@@ -30,7 +30,18 @@ public final class Application {
     var isBooted: Bool
     public private(set) var isRunning:Bool = false
     
+    /// The PeerID of our libp2p instance
     public let peerID:PeerID
+    
+    /// The PeerInfo of our libp2p instance
+    ///
+    /// The PeerInfo contains both our PeerID and our Listening Addresses
+    public var peerInfo:PeerInfo {
+        PeerInfo(
+            peer: self.peerID,
+            addresses: self.listenAddresses
+        )
+    }
 
     public struct Lifecycle {
         var handlers: [LifecycleHandler]
@@ -248,6 +259,14 @@ public final class Application {
         if !self.didShutdown {
             assertionFailure("Application.shutdown() was not called before Application deinitialized.")
         }
+    }
+    
+    public enum Errors:Error {
+        case noTransportForMultiaddr(Multiaddr)
+        case unknownConnection
+        case unknownPeer
+        case noKnownAddressesForPeer
+        case noAddressForDevice
     }
 }
 
