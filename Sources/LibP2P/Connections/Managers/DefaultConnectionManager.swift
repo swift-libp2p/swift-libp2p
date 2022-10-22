@@ -225,7 +225,9 @@ class BasicInMemoryConnectionManager:ConnectionManager {
             return bcl.map { conn in
                 //self.logger.notice("Closing Old Connection[\(conn.id)][\(conn.remoteAddr?.description ?? "???")][\(conn.remotePeer?.description ?? "???")]")
                 return self.closeConnectionWithTimeout(id: conn.id)
-            }.flatten(on: self.eventLoop)
+            }.flatten(on: self.eventLoop).always { _ in
+                if bcl.count > 0 { self.dumpConnectionManagerStats() }
+            }
         }
     }
 
@@ -344,6 +346,19 @@ class BasicInMemoryConnectionManager:ConnectionManager {
                 return str
             }.joined(separator: "\n---\n"))
             -----------------------------
+            """)
+        }
+    }
+    
+    func dumpConnectionManagerStats() {
+        eventLoop.execute { () in
+            self.logger.notice("""
+            
+            --- ConnectionManager Stats ---
+            Connections: \(self.connections.count)
+            ConHistory: \(self.connectionHistory.count)
+            ConStrCnt: \(self.connectionStreamCount.count)
+            -------------------------------
             """)
         }
     }
