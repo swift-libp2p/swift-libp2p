@@ -49,7 +49,8 @@ class BasicInMemoryConnectionManager:ConnectionManager {
         self.eventLoop = application.eventLoopGroup.next()
         self.logger = application.logger
         self.logger[metadataKey: "ConnManager"] = .string("[\(UUID().uuidString.prefix(5))]")
-
+        self.logger.logLevel = application.logger.logLevel
+        
         self.connections = [:]
         self.maxPeers = maxPeers
         self.buffer = Int(Double(maxPeers) * 0.2)
