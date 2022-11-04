@@ -39,7 +39,7 @@ let package = Package(
         // Sugary extensions for the SwiftNIO library
         .package(url: "https://github.com/vapor/async-kit.git", .exact("1.11.1")),
         // Swift Protobuf
-        .package(url: "https://github.com/apple/swift-protobuf.git", .exact("1.19.0")),
+        .package(name: "SwiftProtobuf", url: "https://github.com/apple/swift-protobuf.git", .exact("1.19.0")),
         // Swift metrics API
         .package(url: "https://github.com/apple/swift-metrics.git", from: "2.0.0"),
         // Swift Event Bus
@@ -70,7 +70,7 @@ let package = Package(
                 .product(name: "Multiaddr", package: "swift-multiaddr"),
                 .product(name: "PeerID", package: "swift-peer-id"),
                 .product(name: "AsyncKit", package: "async-kit"),
-                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+                .product(name: "SwiftProtobuf", package: "SwiftProtobuf"),
                 .product(name: "Metrics", package: "swift-metrics"),
                 .product(name: "SwiftEventBus", package: "SwiftEventBus"),
                 .product(name: "SwiftState", package: "SwiftState"),
