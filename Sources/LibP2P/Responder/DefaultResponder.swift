@@ -10,7 +10,6 @@ import NIO
 import RoutingKit
 import Foundation
 import Multiaddr
-import Backtrace
 import Metrics
 
 /// LibP2P's main `Responder` type. Combines configured channel handlers + middleware + router to create a responder.
@@ -195,13 +194,9 @@ private struct NotFoundResponder: Responder {
 }
 
 struct RouteNotFound: Error {
-    let stackTrace: StackTrace?
-
-    init() {
-        self.stackTrace = StackTrace.capture(skip: 1)
-    }
+    init() { }
 }
-//
+
 //extension RouteNotFound: AbortError {
 //    var status: HTTPResponseStatus {
 //        .notFound

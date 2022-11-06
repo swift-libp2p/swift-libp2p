@@ -26,8 +26,6 @@ let package = Package(
         .package(url: "https://github.com/vapor/console-kit.git", from: "4.0.0"),
         // Logging
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
-        // 💥 Backtraces for Swift on Linux
-        .package(url: "https://github.com/swift-server/swift-backtrace.git", from: "1.1.1"),
         // 🚍 High-performance trie-node router.
         .package(url: "https://github.com/vapor/routing-kit.git", from: "4.0.0"),
         // LibP2P Core
@@ -64,7 +62,6 @@ let package = Package(
                 .product(name: "NIOExtras", package: "swift-nio-extras"),
                 .product(name: "ConsoleKit", package: "console-kit"),
                 .product(name: "Logging", package: "swift-log"),
-                .product(name: "Backtrace", package: "swift-backtrace"),
                 .product(name: "LibP2PCore", package: "swift-libp2p-core"),
                 .product(name: "RoutingKit", package: "routing-kit"),
                 .product(name: "Multiaddr", package: "swift-multiaddr"),

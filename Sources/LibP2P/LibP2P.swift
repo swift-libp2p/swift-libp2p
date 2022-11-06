@@ -16,8 +16,6 @@
 @_exported import Foundation
 @_exported import ConsoleKit
 
-import Backtrace
-
 /// Core type representing a Libp2p application.
 /// Storage / Lifecycle Abstraction Idea
 public final class Application {
@@ -99,7 +97,6 @@ public final class Application {
         /// Create our PeerID for this application instance
         self.peerID = peerID
         
-        Backtrace.install()
         self.environment = environment
         self.eventLoopGroupProvider = eventLoopGroupProvider
         switch eventLoopGroupProvider {
