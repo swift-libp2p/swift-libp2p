@@ -222,12 +222,13 @@ class BasicInMemoryConnectionManager:ConnectionManager {
             let expiration = (factor * Double(self.maxExpiration - self.minExpiration)) + Double(self.minExpiration)
             let expirationDate = Date().addingTimeInterval( -expiration )
             let bcl:[AppConnection] = self.connections.compactMap { $0.value as? AppConnection }.filter { $0.lastActivity() < expirationDate }
+            guard bcl.count > 0 else { return }
             self.logger.notice("Pruning \(bcl.count) Connections that are older than \(Int(expiration)) seconds")
             return bcl.map { conn in
                 //self.logger.notice("Closing Old Connection[\(conn.id)][\(conn.remoteAddr?.description ?? "???")][\(conn.remotePeer?.description ?? "???")]")
                 return self.closeConnectionWithTimeout(id: conn.id)
             }.flatten(on: self.eventLoop).always { _ in
-                if bcl.count > 0 { self.dumpConnectionManagerStats() }
+                if bcl.count > 1 { self.dumpConnectionManagerStats() }
             }
         }
     }
