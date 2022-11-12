@@ -13,6 +13,14 @@ extension Application.Connections.Provider {
             }
         }
     }
+    
+    public static func `default`(maxConcurrentConnections:Int, ASCEnabled:Bool = true) -> Self {
+        .init { app in
+            app.connectionManager.use {
+                BasicInMemoryConnectionManager(application: $0, maxPeers: maxConcurrentConnections, ASCEnabled: ASCEnabled)
+            }
+        }
+    }
 }
 
 class BasicInMemoryConnectionManager:ConnectionManager {
@@ -44,7 +52,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     /// The inbound vs outbound buffer
     private var buffer:Int
     
-    internal init(application:Application, maxPeers:Int = 50) {
+    internal init(application:Application, maxPeers:Int = 100, ASCEnabled:Bool = true) {
         self.application = application
         self.eventLoop = application.eventLoopGroup.next()
         self.logger = application.logger
@@ -57,10 +65,11 @@ class BasicInMemoryConnectionManager:ConnectionManager {
         
         /// Subscribe to onDisconnect events
         self.application.events.on(self, event: .disconnected( onDisconnectedNew ))
-        self.application.events.on(self, event: .openedStream( onOpenedStream ))
-        self.application.events.on(self, event: .closedStream( onClosedStream ))
-        
-        self.logger.trace("Initialized")
+        if ASCEnabled {
+            self.application.events.on(self, event: .openedStream( onOpenedStream ))
+            self.application.events.on(self, event: .closedStream( onClosedStream ))
+        }
+        self.logger.trace("Initialized \(ASCEnabled ? "with" : "without") Automatic Stream Counting")
     }
     
     func setMaxConnections(_ maxConnections:Int) {
