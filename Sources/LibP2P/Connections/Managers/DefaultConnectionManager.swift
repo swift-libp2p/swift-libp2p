@@ -52,7 +52,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     /// The inbound vs outbound buffer
     private var buffer:Int
     
-    internal init(application:Application, maxPeers:Int = 100, ASCEnabled:Bool = true) {
+    internal init(application:Application, maxPeers:Int = 50, ASCEnabled:Bool = true) {
         self.application = application
         self.eventLoop = application.eventLoopGroup.next()
         self.logger = application.logger
