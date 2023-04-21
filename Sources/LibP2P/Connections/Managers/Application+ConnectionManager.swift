@@ -41,6 +41,8 @@ extension Application {
 
         final class Storage {
             var manager: ConnectionManager?
+            // Allow the user to specify the Connection class to use (default to ARCConnection)
+            var connType:AppConnection.Type = ARCConnection.self
             init() { }
         }
 
@@ -60,6 +62,13 @@ extension Application {
             self.storage.manager = makeManager(self.application)
         }
 
+        /// Specify the type of AppConnection to use when establishing a Connection to a remote peer.
+        /// Note: The built in options are `BasicConnectionLight` and `ARCConnection`
+        /// Note: There's also a `DummyConnection` available for embedded testing.
+        public func use(connectionType:AppConnection.Type) {
+            self.storage.connType = connectionType
+        }
+        
         let application: Application
 
         var storage: Storage {
@@ -70,8 +79,7 @@ extension Application {
         }
         
         public func generateConnection(channel: Channel, direction: ConnectionStats.Direction, remoteAddress: Multiaddr, expectedRemotePeer: PeerID?) -> AppConnection {
-            return ARCConnection(application: application, channel: channel, direction: direction, remoteAddress: remoteAddress, expectedRemotePeer: expectedRemotePeer)
-            //return BasicConnectionLight(application: application, channel: channel, direction: direction, remoteAddress: remoteAddress, expectedRemotePeer: expectedRemotePeer)
+            return self.storage.connType.init(application: application, channel: channel, direction: direction, remoteAddress: remoteAddress, expectedRemotePeer: expectedRemotePeer)
         }
     }
 }
