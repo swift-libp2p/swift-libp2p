@@ -81,5 +81,9 @@ extension Application {
         public func generateConnection(channel: Channel, direction: ConnectionStats.Direction, remoteAddress: Multiaddr, expectedRemotePeer: PeerID?) -> AppConnection {
             return self.storage.connType.init(application: application, channel: channel, direction: direction, remoteAddress: remoteAddress, expectedRemotePeer: expectedRemotePeer)
         }
+        
+        public func setIdleTimeout(_ timeout:TimeAmount) {
+            self.storage.manager?.setIdleTimeout(timeout)
+        }
     }
 }

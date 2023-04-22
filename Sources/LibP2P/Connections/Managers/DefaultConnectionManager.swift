@@ -45,10 +45,15 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     /// This Logger
     private var logger:Logger
     
+    // These params are used for Connection Pruning under heavy loads
     /// The minimum Idle connection time
-    private let minExpiration:Int = 3
+    private var minExpiration:Int = 3
     /// The maximum Idle connection time
-    private let maxExpiration:Int = 30
+    private var maxExpiration:Int = 30
+    
+    /// Idle Connection Timeout
+    private var idleTimeout:TimeAmount = .seconds(3)
+    
     /// The inbound vs outbound buffer
     private var buffer:Int
     
@@ -78,6 +83,10 @@ class BasicInMemoryConnectionManager:ConnectionManager {
             self.buffer = Int(Double(maxConnections) * 0.2)
             self.logger.notice("Max Connections updated to \(maxConnections)")
         }
+    }
+    
+    func setIdleTimeout(_ timeout:TimeAmount) {
+        self.idleTimeout = timeout
     }
     
     func getConnections(on loop:EventLoop?) -> EventLoopFuture<[Connection]> {
@@ -310,7 +319,6 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     }
     
     var alerts:[UUID:Date] = [:]
-    let idleTime:Int64 = 1000
     func onClosedStream(_ stream:LibP2PCore.Stream) {
         let _ = self.eventLoop.submit {
             guard let connection = stream.connection else { self.logger.error("New Stream doesn't have an associated connection"); return }
@@ -321,12 +329,12 @@ class BasicInMemoryConnectionManager:ConnectionManager {
                 /// Decrement our stream count
                 self.connectionStreamCount[connection.id.uuidString] = 0
                 self.alerts[connection.id] = Date()
-                /// Wait one second, if it's still at 0 after a second then we assume it's idle / unsused and we proceed to close it...
-                self.eventLoop.scheduleTask(in: .milliseconds(self.idleTime)) {
+                /// Wait for the idleTimeout, if it's still at 0 after a second then we assume it's idle / unsused and we proceed to close it...
+                self.eventLoop.scheduleTask(in: self.idleTimeout) {
                     if let alertEntry = self.alerts.removeValue(forKey: connection.id) {
-                        if Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970 > (Double(self.idleTime) * 0.0015) {
+                        if Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970 > (self.idleTimeout.milliseconds * 0.0015) {
                             self.logger.error("🚨🚨🚨 ARC Running Slow!!! 🚨🚨🚨")
-                            self.logger.error("\(Double(self.idleTime) / 1000.0) seconds took \(Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970)s")
+                            self.logger.error("\(self.idleTimeout.seconds) seconds took \(Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970)s")
                         }
                     }
                     if self.connectionStreamCount[connection.id.uuidString] == 0 {
@@ -378,5 +386,14 @@ class BasicInMemoryConnectionManager:ConnectionManager {
         case tooManyPeers
         case connectionAlreadyExists
         case failedToCloseConnection
+    }
+}
+
+extension TimeAmount {
+    var milliseconds:Double {
+        Double(self.nanoseconds) / 1_000_000
+    }
+    var seconds:Double {
+        Double(self.nanoseconds) / 1_000_000_000
     }
 }
