@@ -35,6 +35,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     
     /// Connection Stream ARC Counter
     private var connectionStreamCount:[String:Int] = [:]
+    private var connectionTimeouts:[String:Scheduled<Void>] = [:]
     
     /// The max number of connections we can have open at any given time
     private var maxPeers:Int
@@ -315,6 +316,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
             guard let connection = stream.connection else { self.logger.error("New Stream doesn't have an associated connection"); return }
             //self.logger.notice("ARC[\(connection.id.uuidString)]::Incrementing Stream Count")
             self.connectionStreamCount[connection.id.uuidString, default: 0] += 1
+            if let existingTimeoutTask = self.connectionTimeouts.removeValue(forKey: connection.id.uuidString) { existingTimeoutTask.cancel() }
         }
     }
     
@@ -329,8 +331,10 @@ class BasicInMemoryConnectionManager:ConnectionManager {
                 /// Decrement our stream count
                 self.connectionStreamCount[connection.id.uuidString] = 0
                 self.alerts[connection.id] = Date()
-                /// Wait for the idleTimeout, if it's still at 0 after a second then we assume it's idle / unsused and we proceed to close it...
-                self.eventLoop.scheduleTask(in: self.idleTimeout) {
+                // Clear existing idle timeout for the connection if one exists...
+                if let existingTimeoutTask = self.connectionTimeouts.removeValue(forKey: connection.id.uuidString) { existingTimeoutTask.cancel() }
+                // Wait for the idleTimeout, if it's still at 0 after a second then we assume it's idle / unsused and we proceed to close it...
+                self.connectionTimeouts[connection.id.uuidString] = self.eventLoop.scheduleTask(in: self.idleTimeout) {
                     if let alertEntry = self.alerts.removeValue(forKey: connection.id) {
                         if Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970 > (self.idleTimeout.milliseconds * 0.0015) {
                             self.logger.error("🚨🚨🚨 ARC Running Slow!!! 🚨🚨🚨")
