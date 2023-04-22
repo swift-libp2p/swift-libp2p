@@ -321,7 +321,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     var alerts:[UUID:Date] = [:]
     func onClosedStream(_ stream:LibP2PCore.Stream) {
         let _ = self.eventLoop.submit {
-            guard let connection = stream.connection else { self.logger.error("New Stream doesn't have an associated connection"); return }
+            guard let connection = stream.connection as? AppConnection else { self.logger.error("New Stream doesn't have an associated connection"); return }
             guard connection.status != .closed else { return }
             guard let streamCount = self.connectionStreamCount[connection.id.uuidString] else { self.logger.error("Unbalanced Stream Open/Closed Count"); return }
             //self.logger.notice("ARC[\(connection.id.uuidString)]::Decrementing Stream Count \(streamCount) - 1")
@@ -337,7 +337,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
                             self.logger.error("\(self.idleTimeout.seconds) seconds took \(Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970)s")
                         }
                     }
-                    if self.connectionStreamCount[connection.id.uuidString] == 0 {
+                    if self.connectionStreamCount[connection.id.uuidString] == 0 && connection.lastActive > self.idleTimeout {
                         connection.close().whenComplete { _ in self.logger.notice("Closed Connection using Automatic Reference Counting!") }
                         if let c = self.connections.removeValue(forKey: connection.id.uuidString) {
                             if let pid = c.remotePeer {
