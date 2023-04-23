@@ -94,6 +94,8 @@ public final class Application {
     public init(
         _ environment: Environment = .development,
         peerID:PeerID = try! PeerID(.Ed25519),
+        maxConncurrentConnections:Int = 50,
+        enableAutomaticStreamCounting:Bool = true,
         eventLoopGroupProvider: EventLoopGroupProvider = .createNew
     ) {
         /// Create our PeerID for this application instance
@@ -139,7 +141,7 @@ public final class Application {
         
         // ConnectionManager
         self.connectionManager.initialize()
-        self.connectionManager.use(.default)
+        self.connectionManager.use(.default(maxConcurrentConnections: maxConncurrentConnections, ASCEnabled: enableAutomaticStreamCounting))
         
         // PeerstoreManager
         self.peerstore.initialize()

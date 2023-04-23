@@ -5,6 +5,8 @@
 //  Created by Brandon Toms on 10/18/22.
 //
 
+import NIOCore
+
 /// AppConnection Protocol
 ///
 /// - Note: Our Connection Protocol is defined in LibP2PCore where we don't have access to Application specific structs, classes and protocols. Therefore we extend the core Connection protocol with some handy features available at the Application Layer
@@ -20,6 +22,8 @@ public protocol AppConnection:Connection, CustomStringConvertible {
     func newStream(forProtocol proto: String, withHandlers: HandlerConfig, andMiddleware: MiddlewareConfig, closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>))
     
     func lastActivity() -> Date
+    
+    var lastActive:TimeAmount { get }
 }
 
 extension AppConnection {

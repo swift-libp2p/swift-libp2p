@@ -39,7 +39,7 @@ internal func handlePingRequest(_ req:Request) -> Response<ByteBuffer> {
 
 private func handleOutboundPing(_ req:Request) -> ByteBuffer? {
     guard let manager = req.application.identify as? Identify else {
-        req.logger.error("Identify::Unknown IdentityManager. Unable to contruct identify message")
+        req.logger.error("Identify::Unknown IdentityManager. Unable to contruct ping message")
         return nil
     }
     
@@ -48,7 +48,7 @@ private func handleOutboundPing(_ req:Request) -> ByteBuffer? {
 
 private func handleOutboundPingResponse(_ req:Request, pingResponse:[UInt8]) {
     guard let manager = req.application.identify as? Identify else {
-        req.logger.error("Identify::Unknown IdentityManager. Unable to contruct identify message")
+        req.logger.error("Identify::Unknown IdentityManager. Unable to contruct ping message")
         return
     }
     

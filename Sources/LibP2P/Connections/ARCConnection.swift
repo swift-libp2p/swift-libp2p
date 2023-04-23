@@ -720,6 +720,10 @@ extension ARCConnection {
             return connActivity < strActivity ? strActivity : connActivity
         }
     }
+    
+    public var lastActive: TimeAmount {
+        .seconds(Int64(Date().timeIntervalSince(self.lastActivity())))
+    }
 }
 
 extension ARCConnection {

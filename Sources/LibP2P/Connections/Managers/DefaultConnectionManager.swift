@@ -13,6 +13,14 @@ extension Application.Connections.Provider {
             }
         }
     }
+    
+    public static func `default`(maxConcurrentConnections:Int, ASCEnabled:Bool = true) -> Self {
+        .init { app in
+            app.connectionManager.use {
+                BasicInMemoryConnectionManager(application: $0, maxPeers: maxConcurrentConnections, ASCEnabled: ASCEnabled)
+            }
+        }
+    }
 }
 
 class BasicInMemoryConnectionManager:ConnectionManager {
@@ -27,6 +35,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     
     /// Connection Stream ARC Counter
     private var connectionStreamCount:[String:Int] = [:]
+    private var connectionTimeouts:[String:Scheduled<Void>] = [:]
     
     /// The max number of connections we can have open at any given time
     private var maxPeers:Int
@@ -37,37 +46,48 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     /// This Logger
     private var logger:Logger
     
+    // These params are used for Connection Pruning under heavy loads
     /// The minimum Idle connection time
-    private let minExpiration:Int = 3
+    private var minExpiration:Int = 3
     /// The maximum Idle connection time
-    private let maxExpiration:Int = 30
+    private var maxExpiration:Int = 30
+    
+    /// Idle Connection Timeout
+    private var idleTimeout:TimeAmount = .seconds(3)
+    
     /// The inbound vs outbound buffer
     private var buffer:Int
     
-    internal init(application:Application, maxPeers:Int = 50) {
+    internal init(application:Application, maxPeers:Int = 50, ASCEnabled:Bool = true) {
         self.application = application
         self.eventLoop = application.eventLoopGroup.next()
         self.logger = application.logger
         self.logger[metadataKey: "ConnManager"] = .string("[\(UUID().uuidString.prefix(5))]")
-
+        self.logger.logLevel = application.logger.logLevel
+        
         self.connections = [:]
         self.maxPeers = maxPeers
         self.buffer = Int(Double(maxPeers) * 0.2)
         
         /// Subscribe to onDisconnect events
         self.application.events.on(self, event: .disconnected( onDisconnectedNew ))
-        self.application.events.on(self, event: .openedStream( onOpenedStream ))
-        self.application.events.on(self, event: .closedStream( onClosedStream ))
-        
-        self.logger.trace("Initialized")
+        if ASCEnabled {
+            self.application.events.on(self, event: .openedStream( onOpenedStream ))
+            self.application.events.on(self, event: .closedStream( onClosedStream ))
+        }
+        self.logger.trace("Initialized \(ASCEnabled ? "with" : "without") Automatic Stream Counting")
     }
     
     func setMaxConnections(_ maxConnections:Int) {
         let _ = self.eventLoop.submit {
             self.maxPeers = maxConnections
             self.buffer = Int(Double(maxConnections) * 0.2)
-            self.logger.notice("Max Connections updated to \(maxConnections)")
+            self.logger.info("Max Connections updated to \(maxConnections)")
         }
+    }
+    
+    func setIdleTimeout(_ timeout:TimeAmount) {
+        self.idleTimeout = timeout
     }
     
     func getConnections(on loop:EventLoop?) -> EventLoopFuture<[Connection]> {
@@ -133,15 +153,15 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     
     private func dumpConnectionMetricsRandomSample() {
         let _ = eventLoop.submit {
-            self.logger.notice("Oldest 4 Connections")
-            self.logger.notice("Date: \(Date())")
+            self.logger.debug("Oldest 4 Connections")
+            self.logger.debug("Date: \(Date())")
             let bcl:[AppConnection] = self.connections.compactMap { $0.value as? AppConnection }
             bcl.sorted { lhs, rhs in
                 lhs.lastActivity() < rhs.lastActivity()
             }.prefix(4).forEach {
-                self.logger.notice("\($0.id) -> \($0.lastActivity())")
+                self.logger.debug("\($0.id) -> \($0.lastActivity())")
                 if Date().timeIntervalSince1970 - $0.lastActivity().timeIntervalSince1970 > 5 {
-                    self.logger.notice("\($0.description)")
+                    self.logger.debug("\($0.description)")
                 }
                 //self.logger.notice("Last Active: \($0.lastActivity())")
                 //self.logger.notice("\($0.streamHistory)")
@@ -221,11 +241,14 @@ class BasicInMemoryConnectionManager:ConnectionManager {
             let expiration = (factor * Double(self.maxExpiration - self.minExpiration)) + Double(self.minExpiration)
             let expirationDate = Date().addingTimeInterval( -expiration )
             let bcl:[AppConnection] = self.connections.compactMap { $0.value as? AppConnection }.filter { $0.lastActivity() < expirationDate }
-            self.logger.notice("Pruning \(bcl.count) Connections that are older than \(Int(expiration)) seconds")
+            guard bcl.count > 0 else { return self.eventLoop.makeSucceededVoidFuture() }
+            self.logger.debug("Pruning \(bcl.count) Connections that are older than \(Int(expiration)) seconds")
             return bcl.map { conn in
                 //self.logger.notice("Closing Old Connection[\(conn.id)][\(conn.remoteAddr?.description ?? "???")][\(conn.remotePeer?.description ?? "???")]")
                 return self.closeConnectionWithTimeout(id: conn.id)
-            }.flatten(on: self.eventLoop)
+            }.flatten(on: self.eventLoop).always { _ in
+                if bcl.count > 1 { self.dumpConnectionManagerStats() }
+            }
         }
     }
 
@@ -293,14 +316,14 @@ class BasicInMemoryConnectionManager:ConnectionManager {
             guard let connection = stream.connection else { self.logger.error("New Stream doesn't have an associated connection"); return }
             //self.logger.notice("ARC[\(connection.id.uuidString)]::Incrementing Stream Count")
             self.connectionStreamCount[connection.id.uuidString, default: 0] += 1
+            if let existingTimeoutTask = self.connectionTimeouts.removeValue(forKey: connection.id.uuidString) { existingTimeoutTask.cancel() }
         }
     }
     
     var alerts:[UUID:Date] = [:]
-    let idleTime:Int64 = 1000
     func onClosedStream(_ stream:LibP2PCore.Stream) {
         let _ = self.eventLoop.submit {
-            guard let connection = stream.connection else { self.logger.error("New Stream doesn't have an associated connection"); return }
+            guard let connection = stream.connection as? AppConnection else { self.logger.error("New Stream doesn't have an associated connection"); return }
             guard connection.status != .closed else { return }
             guard let streamCount = self.connectionStreamCount[connection.id.uuidString] else { self.logger.error("Unbalanced Stream Open/Closed Count"); return }
             //self.logger.notice("ARC[\(connection.id.uuidString)]::Decrementing Stream Count \(streamCount) - 1")
@@ -308,16 +331,18 @@ class BasicInMemoryConnectionManager:ConnectionManager {
                 /// Decrement our stream count
                 self.connectionStreamCount[connection.id.uuidString] = 0
                 self.alerts[connection.id] = Date()
-                /// Wait one second, if it's still at 0 after a second then we assume it's idle / unsused and we proceed to close it...
-                self.eventLoop.scheduleTask(in: .milliseconds(self.idleTime)) {
+                // Clear existing idle timeout for the connection if one exists...
+                if let existingTimeoutTask = self.connectionTimeouts.removeValue(forKey: connection.id.uuidString) { existingTimeoutTask.cancel() }
+                // Wait for the idleTimeout, if it's still at 0 after a second then we assume it's idle / unsused and we proceed to close it...
+                self.connectionTimeouts[connection.id.uuidString] = self.eventLoop.scheduleTask(in: self.idleTimeout) {
                     if let alertEntry = self.alerts.removeValue(forKey: connection.id) {
-                        if Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970 > (Double(self.idleTime) * 0.0015) {
+                        if Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970 > (self.idleTimeout.milliseconds * 0.0015) {
                             self.logger.error("🚨🚨🚨 ARC Running Slow!!! 🚨🚨🚨")
-                            self.logger.error("\(Double(self.idleTime) / 1000.0) seconds took \(Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970)s")
+                            self.logger.error("\(self.idleTimeout.seconds) seconds took \(Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970)s")
                         }
                     }
-                    if self.connectionStreamCount[connection.id.uuidString] == 0 {
-                        connection.close().whenComplete { _ in self.logger.notice("Closed Connection using Automatic Reference Counting!") }
+                    if self.connectionStreamCount[connection.id.uuidString] == 0 && connection.lastActive > self.idleTimeout {
+                        connection.close().whenComplete { _ in self.logger.debug("Closed Connection using Automatic Reference Counting!") }
                         if let c = self.connections.removeValue(forKey: connection.id.uuidString) {
                             if let pid = c.remotePeer {
                                 self.connectionHistory[pid.b58String, default: []].append( c.stats )
@@ -335,7 +360,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     
     func dumpConnectionHistory() {
         eventLoop.execute { () in
-            self.logger.info("""
+            self.logger.debug("""
             
             --- Connection History <\(self.connectionHistory.count)> ---
             \(self.connectionHistory.map { kv in
@@ -348,9 +373,31 @@ class BasicInMemoryConnectionManager:ConnectionManager {
         }
     }
     
+    func dumpConnectionManagerStats() {
+        eventLoop.execute { () in
+            self.logger.debug("""
+            
+            --- ConnectionManager Stats ---
+            Connections: \(self.connections.count)
+            ConHistory: \(self.connectionHistory.count)
+            ConStrCnt: \(self.connectionStreamCount.count)
+            -------------------------------
+            """)
+        }
+    }
+    
     public enum Errors:Error {
         case tooManyPeers
         case connectionAlreadyExists
         case failedToCloseConnection
+    }
+}
+
+extension TimeAmount {
+    var milliseconds:Double {
+        Double(self.nanoseconds) / 1_000_000
+    }
+    var seconds:Double {
+        Double(self.nanoseconds) / 1_000_000_000
     }
 }
