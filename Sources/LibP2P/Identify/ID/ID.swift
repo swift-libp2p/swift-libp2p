@@ -275,7 +275,17 @@ extension Identify {
     
     // - TODO:  This doesn't handle multiple parallel outbound pings to the same peer
     func initiateOutboundPingTo(peer:PeerID) -> EventLoopFuture<TimeAmount> {
-        guard self.pingCache[peer.bytes] == nil else { return application!.eventLoopGroup.next().makeFailedFuture(Errors.timedOut) }
+        if let outstandingPing = self.pingCache[peer.bytes] {
+            // If the outstanding ping has been in flight for more than 3 seconds, fail the promise
+            if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime > 3_000_000_000 {
+                outstandingPing.promise?.fail(Errors.timedOut)
+            } else if let promise = outstandingPing.promise {
+                // If the outstanding ping hasn't timed out yet, just return the results of the existing promise
+                return promise.futureResult
+            }
+            self.pingCache.removeValue(forKey: peer.bytes)
+        }
+        //guard self.pingCache[peer.bytes] == nil else { return application!.eventLoopGroup.next().makeFailedFuture(Errors.timedOut) }
         let promise = application!.eventLoopGroup.next().makePromise(of: TimeAmount.self)
         self.pingCache[peer.bytes] = PendingPing(peer: "", startTime: 0, promise: promise)
         try! application!.newStream(to: peer, forProtocol: Identify.Multicodecs.PING)
@@ -288,7 +298,17 @@ extension Identify {
             self.logger.warning("Identify::Failed to ping addr `\(addr)`. A valid peerID is neccessary")
             return application!.eventLoopGroup.next().makeFailedFuture(Errors.timedOut)
         }
-        guard self.pingCache[peer.bytes] == nil else { return application!.eventLoopGroup.next().makeFailedFuture(Errors.timedOut) }
+        if let outstandingPing = self.pingCache[peer.bytes] {
+            // If the outstanding ping has been in flight for more than 3 seconds, fail the promise
+            if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime > 3_000_000_000 {
+                outstandingPing.promise?.fail(Errors.timedOut)
+            } else if let promise = outstandingPing.promise {
+                // If the outstanding ping hasn't timed out yet, just return the results of the existing promise
+                return promise.futureResult
+            }
+            self.pingCache.removeValue(forKey: peer.bytes)
+        }
+        //guard self.pingCache[peer.bytes] == nil else { return application!.eventLoopGroup.next().makeFailedFuture(Errors.timedOut) }
         let promise = application!.eventLoopGroup.next().makePromise(of: TimeAmount.self)
         self.pingCache[peer.bytes] = PendingPing(peer: "", startTime: 0, promise: promise)
         try! application!.newStream(to: addr, forProtocol: Identify.Multicodecs.PING)
