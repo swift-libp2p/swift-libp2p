@@ -82,7 +82,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
         let _ = self.eventLoop.submit {
             self.maxPeers = maxConnections
             self.buffer = Int(Double(maxConnections) * 0.2)
-            self.logger.notice("Max Connections updated to \(maxConnections)")
+            self.logger.info("Max Connections updated to \(maxConnections)")
         }
     }
     
@@ -153,15 +153,15 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     
     private func dumpConnectionMetricsRandomSample() {
         let _ = eventLoop.submit {
-            self.logger.notice("Oldest 4 Connections")
-            self.logger.notice("Date: \(Date())")
+            self.logger.debug("Oldest 4 Connections")
+            self.logger.debug("Date: \(Date())")
             let bcl:[AppConnection] = self.connections.compactMap { $0.value as? AppConnection }
             bcl.sorted { lhs, rhs in
                 lhs.lastActivity() < rhs.lastActivity()
             }.prefix(4).forEach {
-                self.logger.notice("\($0.id) -> \($0.lastActivity())")
+                self.logger.debug("\($0.id) -> \($0.lastActivity())")
                 if Date().timeIntervalSince1970 - $0.lastActivity().timeIntervalSince1970 > 5 {
-                    self.logger.notice("\($0.description)")
+                    self.logger.debug("\($0.description)")
                 }
                 //self.logger.notice("Last Active: \($0.lastActivity())")
                 //self.logger.notice("\($0.streamHistory)")
@@ -242,7 +242,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
             let expirationDate = Date().addingTimeInterval( -expiration )
             let bcl:[AppConnection] = self.connections.compactMap { $0.value as? AppConnection }.filter { $0.lastActivity() < expirationDate }
             guard bcl.count > 0 else { return self.eventLoop.makeSucceededVoidFuture() }
-            self.logger.notice("Pruning \(bcl.count) Connections that are older than \(Int(expiration)) seconds")
+            self.logger.debug("Pruning \(bcl.count) Connections that are older than \(Int(expiration)) seconds")
             return bcl.map { conn in
                 //self.logger.notice("Closing Old Connection[\(conn.id)][\(conn.remoteAddr?.description ?? "???")][\(conn.remotePeer?.description ?? "???")]")
                 return self.closeConnectionWithTimeout(id: conn.id)
@@ -342,7 +342,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
                         }
                     }
                     if self.connectionStreamCount[connection.id.uuidString] == 0 && connection.lastActive > self.idleTimeout {
-                        connection.close().whenComplete { _ in self.logger.notice("Closed Connection using Automatic Reference Counting!") }
+                        connection.close().whenComplete { _ in self.logger.debug("Closed Connection using Automatic Reference Counting!") }
                         if let c = self.connections.removeValue(forKey: connection.id.uuidString) {
                             if let pid = c.remotePeer {
                                 self.connectionHistory[pid.b58String, default: []].append( c.stats )
@@ -360,7 +360,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     
     func dumpConnectionHistory() {
         eventLoop.execute { () in
-            self.logger.info("""
+            self.logger.debug("""
             
             --- Connection History <\(self.connectionHistory.count)> ---
             \(self.connectionHistory.map { kv in
@@ -375,7 +375,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     
     func dumpConnectionManagerStats() {
         eventLoop.execute { () in
-            self.logger.notice("""
+            self.logger.debug("""
             
             --- ConnectionManager Stats ---
             Connections: \(self.connections.count)
