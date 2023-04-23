@@ -98,7 +98,7 @@ extension Application {
 
                     guard let capableConn = capableConn as? AppConnection else { return self.eventLoopGroup.any().makeFailedFuture(Errors.noTransportForMultiaddr(ma)) }
                     /// We have an existing capable (muxed) connection, lets reuse it!
-                    self.logger.notice("Reusing Existing Connection[\(capableConn.id.uuidString.prefix(5))]")
+                    self.logger.trace("Reusing Existing Connection[\(capableConn.id.uuidString.prefix(5))]")
                     capableConn.newStream(forProtocol: proto)
 
                     return capableConn.channel.eventLoop.makeSucceededVoidFuture()
@@ -106,7 +106,7 @@ extension Application {
                 } else {
 
                     /// Go ahead and open a new connection...
-                    self.logger.notice("Attempting to open new Connection")
+                    self.logger.trace("Attempting to open new Connection")
                     guard let transport = try? self.transports.findBest(forMultiaddr: ma) else {
                         return self.eventLoopGroup.any().makeFailedFuture(Errors.noTransportForMultiaddr(ma))
                     }
