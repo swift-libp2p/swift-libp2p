@@ -17,6 +17,8 @@ public final class Identify: IdentityManager, CustomStringConvertible {
     var localPeerID:PeerID
     private var logger:Logger
     
+    private let el:EventLoop
+    
     public enum Errors:Error {
         case timedOut
     }
@@ -49,6 +51,7 @@ public final class Identify: IdentityManager, CustomStringConvertible {
         self.application = application
         self.localPeerID = application.peerID
         self.logger = application.logger
+        self.el = application.eventLoopGroup.next()
         
         /// Register our protocol route handler on the application...
         try! routes(application)
@@ -275,116 +278,124 @@ extension Identify {
     
     // - TODO:  This doesn't handle multiple parallel outbound pings to the same peer
     func initiateOutboundPingTo(peer:PeerID) -> EventLoopFuture<TimeAmount> {
-        if let outstandingPing = self.pingCache[peer.bytes] {
-            // If the outstanding ping has been in flight for more than 3 seconds, fail the promise
-            if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime > 3_000_000_000 {
-                outstandingPing.promise?.fail(Errors.timedOut)
-            } else if let promise = outstandingPing.promise {
-                // If the outstanding ping hasn't timed out yet, just return the results of the existing promise
-                return promise.futureResult
+        el.flatSubmit {
+            if let outstandingPing = self.pingCache[peer.bytes] {
+                // If the outstanding ping has been in flight for more than 3 seconds, fail the promise
+                if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime > 3_000_000_000 {
+                    print("We have an outstanding ping thats older than 3 seconds")
+                    outstandingPing.promise?.fail(Errors.timedOut)
+                } else if let promise = outstandingPing.promise {
+                    // If the outstanding ping hasn't timed out yet, just return the results of the existing promise
+                    return promise.futureResult
+                }
+                self.pingCache.removeValue(forKey: peer.bytes)
             }
-            self.pingCache.removeValue(forKey: peer.bytes)
+            //guard self.pingCache[peer.bytes] == nil else { return application!.eventLoopGroup.next().makeFailedFuture(Errors.timedOut) }
+            let promise = self.application!.eventLoopGroup.next().makePromise(of: TimeAmount.self)
+            self.pingCache[peer.bytes] = PendingPing(peer: "", startTime: DispatchTime.now().uptimeNanoseconds, promise: promise)
+            try! self.application!.newStream(to: peer, forProtocol: Identify.Multicodecs.PING)
+            return promise.futureResult
         }
-        //guard self.pingCache[peer.bytes] == nil else { return application!.eventLoopGroup.next().makeFailedFuture(Errors.timedOut) }
-        let promise = application!.eventLoopGroup.next().makePromise(of: TimeAmount.self)
-        self.pingCache[peer.bytes] = PendingPing(peer: "", startTime: 0, promise: promise)
-        try! application!.newStream(to: peer, forProtocol: Identify.Multicodecs.PING)
-        return promise.futureResult
     }
     
     // - TODO:  This doesn't handle multiple parallel outbound pings to the same peer
     func initiateOutboundPingTo(addr:Multiaddr) -> EventLoopFuture<TimeAmount> {
-        guard let cid = addr.getPeerID(), let peer = try? PeerID(cid: cid) else {
-            self.logger.warning("Identify::Failed to ping addr `\(addr)`. A valid peerID is neccessary")
-            return application!.eventLoopGroup.next().makeFailedFuture(Errors.timedOut)
-        }
-        if let outstandingPing = self.pingCache[peer.bytes] {
-            // If the outstanding ping has been in flight for more than 3 seconds, fail the promise
-            if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime > 3_000_000_000 {
-                outstandingPing.promise?.fail(Errors.timedOut)
-            } else if let promise = outstandingPing.promise {
-                // If the outstanding ping hasn't timed out yet, just return the results of the existing promise
-                return promise.futureResult
+        el.flatSubmit {
+            guard let cid = addr.getPeerID(), let peer = try? PeerID(cid: cid) else {
+                self.logger.warning("Identify::Failed to ping addr `\(addr)`. A valid peerID is neccessary")
+                return self.el.makeFailedFuture(Errors.timedOut)
             }
-            self.pingCache.removeValue(forKey: peer.bytes)
+            if let outstandingPing = self.pingCache[peer.bytes] {
+                // If the outstanding ping has been in flight for more than 3 seconds, fail the promise
+                if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime > 3_000_000_000 {
+                    print("We have an outstanding ping thats older than 3 seconds")
+                    outstandingPing.promise?.fail(Errors.timedOut)
+                } else if let promise = outstandingPing.promise {
+                    // If the outstanding ping hasn't timed out yet, just return the results of the existing promise
+                    return promise.futureResult
+                }
+                self.pingCache.removeValue(forKey: peer.bytes)
+            }
+            //guard self.pingCache[peer.bytes] == nil else { return application!.eventLoopGroup.next().makeFailedFuture(Errors.timedOut) }
+            let promise = self.application!.eventLoopGroup.next().makePromise(of: TimeAmount.self)
+            self.pingCache[peer.bytes] = PendingPing(peer: "", startTime: DispatchTime.now().uptimeNanoseconds, promise: promise)
+            try! self.application!.newStream(to: addr, forProtocol: Identify.Multicodecs.PING)
+            return promise.futureResult
         }
-        //guard self.pingCache[peer.bytes] == nil else { return application!.eventLoopGroup.next().makeFailedFuture(Errors.timedOut) }
-        let promise = application!.eventLoopGroup.next().makePromise(of: TimeAmount.self)
-        self.pingCache[peer.bytes] = PendingPing(peer: "", startTime: 0, promise: promise)
-        try! application!.newStream(to: addr, forProtocol: Identify.Multicodecs.PING)
-        return promise.futureResult
     }
     
     func handleOutboundPing(_ req:Request) -> ByteBuffer? {
         guard let remotePeer = req.remotePeer else { req.logger.error("Identify::Outbound Ping failed due to unauthenticated stream"); req.shouldClose(); return nil }
-        let bytes:[UInt8]
+        let bytes:[UInt8] = try! LibP2PCrypto.randomBytes(length: 32)
+        let startTime = DispatchTime.now().uptimeNanoseconds
         /// Check to see if this ping was initiated by our IndetifyManager...
-        if let initiatedPing = self.pingCache.removeValue(forKey: remotePeer.bytes) {
-            bytes = try! LibP2PCrypto.randomBytes(length: 32)
-            self.pingCache[bytes] = PendingPing(peer: remotePeer.b58String, startTime: DispatchTime.now().uptimeNanoseconds, promise: initiatedPing.promise)
-        } else { /// Otherwise just perform the ping for metrics...
-            bytes = try! LibP2PCrypto.randomBytes(length: 32)
-            self.pingCache[bytes] = .init(peer: remotePeer.b58String, startTime: DispatchTime.now().uptimeNanoseconds)
+        el.execute {
+            if let initiatedPing = self.pingCache.removeValue(forKey: remotePeer.bytes) {
+                self.pingCache[bytes] = PendingPing(peer: remotePeer.b58String, startTime: startTime, promise: initiatedPing.promise)
+            } else { /// Otherwise just perform the ping for metrics...
+                self.pingCache[bytes] = .init(peer: remotePeer.b58String, startTime: startTime)
+            }
         }
         return req.allocator.buffer(bytes: bytes)
     }
     
     func handleOutboundPingResponse(_ req:Request, pingResponse:[UInt8]) {
-        guard let pendingPing = self.pingCache.removeValue(forKey: pingResponse) else {
-            req.logger.error("Identify::Unknown PendingPing Response")
-            return
-        }
-        
-        /// Determine to total round trip time in nanoseconds
-        let toc = DispatchTime.now().uptimeNanoseconds - pendingPing.startTime
-        
-        /// Succeed pending promise if one exists...
-        pendingPing.promise?.succeed(.nanoseconds( toc > Int64.max ? Int64.max : Int64(toc)))
-        
-        /// A not so nice hack to determine if the ping established a new connection or not
-        let isConnection:Bool = (toc / 1_000_000_000) >= 1 ? true : false
-        
-        req.logger.trace("Identify::Ping updating \(isConnection ? "connection" : "stream") latency")
-        
-        /// Update our peers metadata
-        req.application.peers.getMetadata(forPeer: req.remotePeer!).flatMap { metadata -> EventLoopFuture<Void> in
-            let new:MetadataBook.LatencyMetadata
-            if let existingLatencyData = metadata[MetadataBook.Keys.Latency.rawValue],
-               var latencyData = try? JSONDecoder().decode(MetadataBook.LatencyMetadata.self, from: Data(existingLatencyData)) {
-                if isConnection {
-                    latencyData.newConnectionLatencyValue(toc)
-                } else {
-                    latencyData.newStreamLatencyValue(toc)
-                }
-                new = latencyData
-            } else {
-                /// No (or invalid) Latency data, lets start a new entry
-                if isConnection {
-                    new = MetadataBook.LatencyMetadata(
-                        streamLatency: 0,
-                        connectionLatency: toc,
-                        streamCount: 0,
-                        connectionCount: 1
-                    )
-                } else {
-                    new = MetadataBook.LatencyMetadata(
-                        streamLatency: toc,
-                        connectionLatency: 0,
-                        streamCount: 1,
-                        connectionCount: 0
-                    )
-                }
+        el.execute {
+            guard let pendingPing = self.pingCache.removeValue(forKey: pingResponse) else {
+                req.logger.error("Identify::Unknown PendingPing Response")
+                return
             }
             
-            /// Encode New Latency Data and store it...
-            let newData = try! JSONEncoder().encode(new)
+            /// Determine to total round trip time in nanoseconds
+            let toc = DispatchTime.now().uptimeNanoseconds - pendingPing.startTime
             
-            /// Store it!
-            return req.application.peers.add(metaKey: MetadataBook.Keys.Latency, data: newData.bytes, toPeer: req.remotePeer!)
-        }.whenComplete({ _ in
-            req.logger.trace("Identify::Ping Time to Peer<\(pendingPing.peer.prefix(7))> == \(toc)ns")
-        })
-        
+            /// Succeed pending promise if one exists...
+            pendingPing.promise?.succeed(.nanoseconds( toc > Int64.max ? Int64.max : Int64(toc)))
+            
+            /// A not so nice hack to determine if the ping established a new connection or not
+            let isConnection:Bool = (toc / 1_000_000_000) >= 1 ? true : false
+            
+            req.logger.trace("Identify::Ping updating \(isConnection ? "connection" : "stream") latency")
+            
+            /// Update our peers metadata
+            req.application.peers.getMetadata(forPeer: req.remotePeer!).flatMap { metadata -> EventLoopFuture<Void> in
+                let new:MetadataBook.LatencyMetadata
+                if let existingLatencyData = metadata[MetadataBook.Keys.Latency.rawValue],
+                   var latencyData = try? JSONDecoder().decode(MetadataBook.LatencyMetadata.self, from: Data(existingLatencyData)) {
+                    if isConnection {
+                        latencyData.newConnectionLatencyValue(toc)
+                    } else {
+                        latencyData.newStreamLatencyValue(toc)
+                    }
+                    new = latencyData
+                } else {
+                    /// No (or invalid) Latency data, lets start a new entry
+                    if isConnection {
+                        new = MetadataBook.LatencyMetadata(
+                            streamLatency: 0,
+                            connectionLatency: toc,
+                            streamCount: 0,
+                            connectionCount: 1
+                        )
+                    } else {
+                        new = MetadataBook.LatencyMetadata(
+                            streamLatency: toc,
+                            connectionLatency: 0,
+                            streamCount: 1,
+                            connectionCount: 0
+                        )
+                    }
+                }
+                
+                /// Encode New Latency Data and store it...
+                let newData = try! JSONEncoder().encode(new)
+                
+                /// Store it!
+                return req.application.peers.add(metaKey: MetadataBook.Keys.Latency, data: newData.bytes, toPeer: req.remotePeer!)
+            }.whenComplete({ _ in
+                req.logger.trace("Identify::Ping Time to Peer<\(pendingPing.peer.prefix(7))> == \(toc)ns")
+            })
+        }
     }
     
 }
