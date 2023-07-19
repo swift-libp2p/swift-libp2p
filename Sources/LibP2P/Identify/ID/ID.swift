@@ -133,7 +133,7 @@ extension Identify {
             return
         } catch {
             connection.logger.warning("Identify::Failed to consume Remote IdentifyMessage -> \(error)")
-            connection.logger.trace("\(payload)")
+            connection.logger.trace("\(payload.toHexString())")
             return
         }
     }
@@ -162,8 +162,8 @@ extension Identify {
 
             return
         } catch {
-            connection.logger.warning("Identify::Push::Failed to consume Remote IdentifyMessage -> \(error)")
-            connection.logger.trace("\(payload)")
+            connection.logger.warning("Identify::Push::Failed to consume Remote PushIdentifyMessage -> \(error)")
+            connection.logger.trace("\(payload.toHexString())")
             return
         }
     }
