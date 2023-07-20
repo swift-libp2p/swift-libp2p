@@ -433,7 +433,7 @@ internal final class BasicInMemoryPeerStore:PeerStore {
         return getPeer(withID: record.peerID.b58String).map { compPeer in
             if !compPeer.records.contains(where: { $0.sequenceNumber == record.sequenceNumber }) {
                 compPeer.records.append(record)
-            } else { self.logger.warning("PeerStore::Warning::Skipping Duplicate PeerRecord Entry") }
+            } else { self.logger.debug("PeerStore::Skipping Duplicate PeerRecord Entry - Sequence Number: \(record.sequenceNumber)") }
         }.hop(to: on ?? eventLoop)
     }
     

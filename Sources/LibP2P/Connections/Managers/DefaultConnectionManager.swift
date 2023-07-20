@@ -129,7 +129,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
             if connection.direction == .inbound {
                 /// Allow inbound connections up until maxConnections - buffer  ( 100 - 20 )
                 guard self.connections.count < self.maxPeers - self.buffer else {
-                    self.logger.error("Preventing new \(connection.direction) connection due to max connection limit reached \(self.connections.count)")
+                    self.logger.warning("Preventing new \(connection.direction) connection due to max connection limit reached \(self.connections.count)")
                     let _ = self.debouncedPrune()
                     //self.dumpConnectionMetricsRandomSample()
                     throw Errors.tooManyPeers
@@ -296,7 +296,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
                 return self.pruneClosedConnections().flatMap {
                     self.pruneOldConnections().flatMap {
                         self.pruneConenctionHistory(maxEntries: 100).map {
-                            self.logger.notice("\(self.connections.count) / \(self.maxPeers) Connections")
+                            self.logger.info("\(self.connections.count) / \(self.maxPeers) Connections")
                         }
                     }
                 }.whenComplete { _ in
@@ -337,8 +337,8 @@ class BasicInMemoryConnectionManager:ConnectionManager {
                 self.connectionTimeouts[connection.id.uuidString] = self.eventLoop.scheduleTask(in: self.idleTimeout) {
                     if let alertEntry = self.alerts.removeValue(forKey: connection.id) {
                         if Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970 > (self.idleTimeout.milliseconds * 0.0015) {
-                            self.logger.error("🚨🚨🚨 ARC Running Slow!!! 🚨🚨🚨")
-                            self.logger.error("\(self.idleTimeout.seconds) seconds took \(Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970)s")
+                            self.logger.warning("🚨🚨🚨 ARC Running Slow!!! 🚨🚨🚨")
+                            self.logger.warning("\(self.idleTimeout.seconds) seconds took \(Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970)s")
                         }
                     }
                     if self.connectionStreamCount[connection.id.uuidString] == 0 && connection.lastActive > self.idleTimeout {
