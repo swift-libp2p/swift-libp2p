@@ -127,6 +127,9 @@ extension Application {
         private func onDisconnected(connection:Connection, peer:PeerID?) {
             //self.application.logger.trace("Topology::On Peer Disconnected")
             guard let peer = peer ?? connection.remotePeer else { return }
+            guard self.application.isRunning && !self.application.didShutdown else { return }
+            guard !self.storage.registrations.isEmpty && self.storage.registrations.contains(where: { $0.handler.onDisconnect != nil }) else { return }
+            self.application.logger.trace("Application::TopologyRegistration::OnDisconnect::Attempting to get Peers Protocols")
             self.application.peers.getProtocols(forPeer: peer, on: nil).whenComplete { result in
                 switch result {
                 case .failure:
