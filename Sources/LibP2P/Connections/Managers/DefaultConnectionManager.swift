@@ -58,6 +58,14 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     /// The inbound vs outbound buffer
     private var buffer:Int
     
+    private enum State {
+        case running
+        case shuttingDown
+    }
+    private var state:State = .running {
+        didSet { precondition(oldValue == .running && state == .shuttingDown, "Invalid State Transition") }
+    }
+    
     internal init(application:Application, maxPeers:Int = 50, ASCEnabled:Bool = true) {
         self.application = application
         self.eventLoop = application.eventLoopGroup.next()
@@ -125,7 +133,8 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     }
     
     func addConnection(_ connection:Connection, on loop:EventLoop?) -> EventLoopFuture<Void> {
-        eventLoop.submit { () in
+        guard self.state == .running else { return self.eventLoop.makeFailedFuture(Errors.tooManyPeers) }
+        return eventLoop.submit { () in
             if connection.direction == .inbound {
                 /// Allow inbound connections up until maxConnections - buffer  ( 100 - 20 )
                 guard self.connections.count < self.maxPeers - self.buffer else {
@@ -199,7 +208,9 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     }
     
     func closeAllConnections() -> EventLoopFuture<Void> {
-        connections.map {
+        guard self.state == .running else { return self.eventLoop.makeSucceededVoidFuture() }
+        self.state = .shuttingDown
+        return connections.map {
             $0.value.close()
         }.flatten(on: eventLoop).always { _ in
             self.connections.forEach {
@@ -207,6 +218,8 @@ class BasicInMemoryConnectionManager:ConnectionManager {
                 self.connectionHistory[pid.b58String, default: []].append($0.value.stats)
             }
             self.connections = [:]
+            self.pruneTask?.cancel()
+            self.pruneTask = nil
         }
     }
     
@@ -290,9 +303,14 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     
     private var pruneTask:Scheduled<Void>? = nil
     private func debouncedPrune() -> EventLoopFuture<Void> {
-        self.eventLoop.flatSubmit {
+        guard self.application.isRunning && !self.application.didShutdown && self.state == .running else {
+            if let pt = self.pruneTask { pt.cancel(); self.pruneTask = nil }
+            return self.eventLoop.makeSucceededVoidFuture()
+        }
+        return self.eventLoop.flatSubmit {
             guard self.pruneTask == nil else { /*self.logger.notice("Debouncing Prune");*/ return self.eventLoop.makeSucceededVoidFuture() }
-            self.pruneTask = self.eventLoop.scheduleTask(in: .milliseconds(100), {
+            self.pruneTask = self.eventLoop.scheduleTask(in: .milliseconds(100), { [weak self] in
+                guard let self = self, self.application.isRunning, !self.application.didShutdown else { return }
                 return self.pruneClosedConnections().flatMap {
                     self.pruneOldConnections().flatMap {
                         self.pruneConenctionHistory(maxEntries: 100).map {
@@ -308,7 +326,11 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     }
     
     func onDisconnectedNew(_ connection:Connection, peer:PeerID?) -> Void {
-        let _ = debouncedPrune()
+        guard self.application.isRunning && !self.application.didShutdown else { return }
+        guard self.state == .running else { return }
+        debouncedPrune().whenComplete { res in
+            self.logger.trace("Done with debounced prune \(res)")
+        }
     }
     
     func onOpenedStream(_ stream:LibP2PCore.Stream) {

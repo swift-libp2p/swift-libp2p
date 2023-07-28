@@ -175,8 +175,8 @@ public class BasicConnectionLight:AppConnection {
                 try self.stateMachine.secureConnection()
                 self.stats.encryption = security.securityCodec
                 
-                if let rPeer = self.remotePeer, let rAddy = self.remoteAddr {
-                    let pInfo = PeerInfo(peer: rPeer, addresses: [rAddy])
+                if let rPeer = self.remotePeer {
+                    let pInfo = PeerInfo(peer: rPeer, addresses: [])
                     self.application.events.post(.remotePeer(pInfo))
                 } else {
                     self.logger.warning("Post Security handshake without knowledge of RemotePeer and/or RemoteAddress")
