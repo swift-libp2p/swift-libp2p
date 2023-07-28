@@ -111,6 +111,7 @@ lib.shutdown()
 | **Transport** |
 | [`swift-libp2p-tcp`](//github.com/swift-libp2p/swift-libp2p-tcp) | 🟢 | TCP transport (embedded) | N/A |
 | [`swift-libp2p-udp`](//github.com/swift-libp2p/swift-libp2p-udp) | 🟡 | UDP transport (embedded) | N/A |
+| `swift-libp2p-quic` | 🔴 | TODO: QUIC transport | N/A |
 | [`swift-libp2p-websocket`](//github.com/swift-libp2p/swift-libp2p-websocket) | 🟢 | WebSocket transport | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-websocket/actions/workflows/build+test.yml/badge.svg) |
 | `swift-libp2p-http` | 🔴 | TODO: HTTP1 transport | N/A |
 | `swift-libp2p-http2` | 🔴 | TODO: HTTP2 transport | N/A |
@@ -126,13 +127,11 @@ lib.shutdown()
 | **NAT Traversal** |
 | - | - | - | N/A |
 | **Peerstore** |
-| `swift-libp2p-peerstore` | 🔴 | TODO: Reference implementation of peer metadata storage component  (embedded) | N/A |
+| [`swift-libp2p-peerstore`](https://github.com/swift-libp2p/swift-libp2p/blob/main/Sources/LibP2P/Peerstore/DefaultPeerstore.swift) | 🟡 | Reference implementation of peer metadata storage component  (embedded) | N/A |
 | **Connection Manager** |
-| `swift-libp2p-connection-manager` | 🔴 | TODO: Reference implementation of connection manager  (embedded) | N/A |
+| [`swift-libp2p-connection-manager`](https://github.com/swift-libp2p/swift-libp2p/blob/main/Sources/LibP2P/Connections/Managers/DefaultConnectionManager.swift) | 🟡 | Reference implementation of connection manager  (embedded) | N/A |
 | **Routing** |
-| `swift-libp2p-record` | 🔴 | TODO: Record type and validator logic | N/A |
-| `swift-libp2p-kad-dht` | 🔴 | TODO: Kademlia-like router | N/A |
-| `swift-libp2p-kbucket` | 🔴 | TODO: Kademlia routing table helper types | N/A |
+| [`swift-libp2p-kad-dht`](https://github.com/swift-libp2p/swift-libp2p-kad-dht) | 🟡 | Kademlia Distributed Hash Table | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-kad-dht/actions/workflows/build+test.yml/badge.svg) |
 | **Pubsub** |
 | `swift-libp2p-pubsub` | 🔴 | TODO: Multiple pubsub implementations | N/A |
 | **RPC** |
