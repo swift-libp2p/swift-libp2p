@@ -120,7 +120,7 @@ public class ARCConnection:AppConnection {
         /// Append an eventbus notification onto our parent channel's close future
         self.channel.closeFuture.whenComplete { [weak self] res in
             guard let self = self else { return }
-            self.logger.trace("ARCConnection:CloseFuture")
+            self.logger.trace("Channel -> CloseFuture")
             self.stats.status = .closed
             
             /// Should ensure that we actually connected before posting a disconnect event
@@ -129,7 +129,11 @@ public class ARCConnection:AppConnection {
                 //self.application.events.unregister(self)
             }
             
+            self.muxer?.onStream = nil
+            self.muxer?.onStreamEnd = nil
+            self.muxer?._connection = nil
             self.muxer = nil
+            self.registry = [:]
             self.inboundMuxedChildChannelInitializer = nil
             self.outboundMuxedChildChannelInitializer = nil
         }
@@ -139,8 +143,15 @@ public class ARCConnection:AppConnection {
     
     deinit {
         /// We had a leaking promise get triggered here... When our connection deinitializes before the securedPromise / muxedPromise are completed...
-        self.securedPromise.fail(Application.Connections.Errors.timedOut)
-        self.muxedPromise.fail(Application.Connections.Errors.timedOut)
+        switch self.state {
+        case .raw:
+            self.securedPromise.fail(Application.Connections.Errors.timedOut)
+            self.muxedPromise.fail(Application.Connections.Errors.timedOut)
+        case .secured:
+            self.muxedPromise.fail(Application.Connections.Errors.timedOut)
+        default:
+            break
+        }
         self.logger.trace("Deinitialized")
     }
 

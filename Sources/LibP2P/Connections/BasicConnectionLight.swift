@@ -120,7 +120,11 @@ public class BasicConnectionLight:AppConnection {
                 //self.application.events.unregister(self)
             }
             
+            self.muxer?.onStream = nil
+            self.muxer?.onStreamEnd = nil
+            self.muxer?._connection = nil
             self.muxer = nil
+            self.registry = [:]
             self.inboundMuxedChildChannelInitializer = nil
             self.outboundMuxedChildChannelInitializer = nil
         }
@@ -130,8 +134,15 @@ public class BasicConnectionLight:AppConnection {
     
     deinit {
         /// We had a leaking promise get triggered here... When our connection deinitializes before the securedPromise / muxedPromise are completed...
-        self.securedPromise.fail(Application.Connections.Errors.timedOut)
-        self.muxedPromise.fail(Application.Connections.Errors.timedOut)
+        switch self.state {
+        case .raw:
+            self.securedPromise.fail(Application.Connections.Errors.timedOut)
+            self.muxedPromise.fail(Application.Connections.Errors.timedOut)
+        case .secured:
+            self.muxedPromise.fail(Application.Connections.Errors.timedOut)
+        default:
+            break
+        }
         self.logger.trace("Deinitialized")
     }
 
