@@ -32,6 +32,9 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     
     /// A dictionary keyed by the RemotePeer's b58String containing a list of ConnectionStats (one for each connection established to the peer)
     private var connectionHistory:[String:[ConnectionStats]] = [:]
+    private let maxConnectionHistoryCount:Int = 10
+    private var totalConnectionCounter:UInt64 = 0
+    private var totalStreamCounter:UInt64 = 0
     
     /// Connection Stream ARC Counter
     private var connectionStreamCount:[String:Int] = [:]
@@ -58,6 +61,10 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     /// The inbound vs outbound buffer
     private var buffer:Int
     
+    /// Connection Pruning Task
+    private var pruneTask:Scheduled<Void>? = nil
+    private let pruneDebounceValue:TimeAmount = .milliseconds(100)
+    
     private enum State {
         case running
         case shuttingDown
@@ -66,7 +73,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
         didSet { precondition(oldValue == .running && state == .shuttingDown, "Invalid State Transition") }
     }
     
-    internal init(application:Application, maxPeers:Int = 50, ASCEnabled:Bool = true) {
+    internal init(application:Application, maxPeers:Int = 50, ASCEnabled:Bool = false) {
         self.application = application
         self.eventLoop = application.eventLoopGroup.next()
         self.logger = application.logger
@@ -82,6 +89,8 @@ class BasicInMemoryConnectionManager:ConnectionManager {
         if ASCEnabled {
             self.application.events.on(self, event: .openedStream( onOpenedStream ))
             self.application.events.on(self, event: .closedStream( onClosedStream ))
+        } else {
+            self.application.events.on(self, event: .openedStream( onOpenedStreamCounter ))
         }
         self.logger.trace("Initialized \(ASCEnabled ? "with" : "without") Automatic Stream Counting")
     }
@@ -154,6 +163,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
             }
             guard self.connections[connection.id.uuidString] == nil else { throw Errors.connectionAlreadyExists }
             self.connections[connection.id.uuidString] = connection
+            self.totalConnectionCounter += 1
             /// Kick off a prune if we're close to our max peer count
             if self.connections.count > (self.maxPeers - self.buffer) { let _ = self.debouncedPrune() }
             return
@@ -289,7 +299,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
         }
     }
     
-    private func pruneConenctionHistory(maxEntries:Int) -> EventLoopFuture<Void> {
+    private func pruneConnectionHistory(maxEntries:Int) -> EventLoopFuture<Void> {
         self.eventLoop.submit {
             if self.connectionHistory.count > maxEntries {
                 (0..<self.connectionHistory.count - maxEntries).forEach { _ in
@@ -298,10 +308,14 @@ class BasicInMemoryConnectionManager:ConnectionManager {
                     }
                 }
             }
+            self.connectionHistory.forEach { key, value in
+                if value.count > 10 {
+                    self.connectionHistory.updateValue(Array(value.suffix(10)), forKey: key)
+                }
+            }
         }
     }
     
-    private var pruneTask:Scheduled<Void>? = nil
     private func debouncedPrune() -> EventLoopFuture<Void> {
         guard self.application.isRunning && !self.application.didShutdown && self.state == .running else {
             if let pt = self.pruneTask { pt.cancel(); self.pruneTask = nil }
@@ -309,12 +323,12 @@ class BasicInMemoryConnectionManager:ConnectionManager {
         }
         return self.eventLoop.flatSubmit {
             guard self.pruneTask == nil else { /*self.logger.notice("Debouncing Prune");*/ return self.eventLoop.makeSucceededVoidFuture() }
-            self.pruneTask = self.eventLoop.scheduleTask(in: .milliseconds(100), { [weak self] in
+            self.pruneTask = self.eventLoop.scheduleTask(in: self.pruneDebounceValue, { [weak self] in
                 guard let self = self, self.application.isRunning, !self.application.didShutdown else { return }
                 return self.pruneClosedConnections().flatMap {
                     self.pruneOldConnections().flatMap {
-                        self.pruneConenctionHistory(maxEntries: 100).map {
-                            self.logger.info("\(self.connections.count) / \(self.maxPeers) Connections")
+                        self.pruneConnectionHistory(maxEntries: self.maxConnectionHistoryCount).map {
+                            self.logger.debug("\(self.connections.count) / \(self.maxPeers) Connections")
                         }
                     }
                 }.whenComplete { _ in
@@ -333,11 +347,18 @@ class BasicInMemoryConnectionManager:ConnectionManager {
         }
     }
     
+    func onOpenedStreamCounter(_ stream:LibP2PCore.Stream) {
+        let _ = self.eventLoop.submit {
+            self.totalStreamCounter += 1
+        }
+    }
+    
     func onOpenedStream(_ stream:LibP2PCore.Stream) {
         let _ = self.eventLoop.submit {
             guard let connection = stream.connection else { self.logger.error("New Stream doesn't have an associated connection"); return }
             //self.logger.notice("ARC[\(connection.id.uuidString)]::Incrementing Stream Count")
             self.connectionStreamCount[connection.id.uuidString, default: 0] += 1
+            self.totalStreamCounter += 1
             if let existingTimeoutTask = self.connectionTimeouts.removeValue(forKey: connection.id.uuidString) { existingTimeoutTask.cancel() }
         }
     }
@@ -345,7 +366,7 @@ class BasicInMemoryConnectionManager:ConnectionManager {
     var alerts:[UUID:Date] = [:]
     func onClosedStream(_ stream:LibP2PCore.Stream) {
         let _ = self.eventLoop.submit {
-            guard let connection = stream.connection as? AppConnection else { self.logger.error("New Stream doesn't have an associated connection"); return }
+            guard let connection = stream.connection as? AppConnection else { self.logger.error("Closed Stream doesn't have an associated connection"); return }
             guard connection.status != .closed else { return }
             guard let streamCount = self.connectionStreamCount[connection.id.uuidString] else { self.logger.error("Unbalanced Stream Open/Closed Count"); return }
             //self.logger.notice("ARC[\(connection.id.uuidString)]::Decrementing Stream Count \(streamCount) - 1")
@@ -378,6 +399,14 @@ class BasicInMemoryConnectionManager:ConnectionManager {
                 self.connectionStreamCount[connection.id.uuidString, default: streamCount] -= 1
             }
         }
+    }
+    
+    func getTotalConnectionCount() -> EventLoopFuture<UInt64> {
+        self.eventLoop.submit { self.totalConnectionCounter }
+    }
+    
+    func getTotalStreamCount() -> EventLoopFuture<UInt64> {
+        self.eventLoop.submit { self.totalStreamCounter }
     }
     
     func dumpConnectionHistory() {
