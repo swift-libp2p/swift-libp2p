@@ -85,5 +85,19 @@ extension Application {
         public func setIdleTimeout(_ timeout:TimeAmount) {
             self.storage.manager?.setIdleTimeout(timeout)
         }
+        
+        public func getTotalConnectionCount() -> EventLoopFuture<UInt64> {
+            if let basicMan = self.storage.manager as? BasicInMemoryConnectionManager {
+                return basicMan.getTotalConnectionCount()
+            }
+            return self.application.eventLoopGroup.next().makeFailedFuture(Errors.notImplementedYet)
+        }
+        
+        public func getTotalStreamCount() -> EventLoopFuture<UInt64> {
+            if let basicMan = self.storage.manager as? BasicInMemoryConnectionManager {
+                return basicMan.getTotalStreamCount()
+            }
+            return self.application.eventLoopGroup.next().makeFailedFuture(Errors.notImplementedYet)
+        }
     }
 }
