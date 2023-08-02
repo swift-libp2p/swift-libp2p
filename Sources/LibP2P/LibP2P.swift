@@ -95,7 +95,7 @@ public final class Application {
         _ environment: Environment = .development,
         peerID:PeerID = try! PeerID(.Ed25519),
         maxConncurrentConnections:Int = 50,
-        enableAutomaticStreamCounting:Bool = true,
+        enableAutomaticStreamCounting:Bool = false,
         eventLoopGroupProvider: EventLoopGroupProvider = .createNew
     ) {
         /// Create our PeerID for this application instance
