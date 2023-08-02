@@ -49,6 +49,7 @@ internal final class BasicInMemoryPeerStore:PeerStore {
     private var logger:Logger
     
     private var maxPeers:Int = 5000
+    private var maxRecordsPerPeer:Int = 3
     private var isPruning:Bool = false
     
     /// - Note: Should the peerstore be responsible for emiting certain events?
@@ -434,6 +435,9 @@ internal final class BasicInMemoryPeerStore:PeerStore {
             if !compPeer.records.contains(where: { $0.sequenceNumber == record.sequenceNumber }) {
                 compPeer.records.append(record)
             } else { self.logger.debug("PeerStore::Skipping Duplicate PeerRecord Entry - Sequence Number: \(record.sequenceNumber)") }
+            if compPeer.records.count > self.maxRecordsPerPeer {
+                compPeer.records = Array(compPeer.records.sorted(by: {$0.sequenceNumber > $1.sequenceNumber}).prefix(self.maxRecordsPerPeer))
+            }
         }.hop(to: on ?? eventLoop)
     }
     
