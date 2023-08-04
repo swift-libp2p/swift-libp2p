@@ -133,7 +133,7 @@ lib.shutdown()
 | **Routing** |
 | [`swift-libp2p-kad-dht`](https://github.com/swift-libp2p/swift-libp2p-kad-dht) | 🟡 | Kademlia Distributed Hash Table | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-kad-dht/actions/workflows/build+test.yml/badge.svg) |
 | **Pubsub** |
-| `swift-libp2p-pubsub` | 🔴 | TODO: Multiple pubsub implementations | N/A |
+| [`swift-libp2p-pubsub`](https://github.com/swift-libp2p/swift-libp2p-pubsub) | 🟡 | Core PubSub Protocols & FloodSub and GossipSub Routers | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-pubsub/actions/workflows/build+test.yml/badge.svg) |
 | **RPC** |
 | `swift-libp2p-rpc` | 🔴 | TODO: A simple RPC library for libp2p | N/A |
 | **Utilities/miscellaneous** |
