@@ -293,12 +293,12 @@ extension Application {
         
         /// On Verified Remote Peer Subscription
         ///
-        /// This is repsonsible for adding a Verifired Remote Peer to our PeerStore
+        /// This is responsible for adding a Verified Remote Peer to our PeerStore
         self.events.on(self, event: .remotePeer( onRemotePeer ))
         
         /// On Verified Remote Peer Subscription
         ///
-        /// This is repsonsible for adding a Verifired Remote Peer to our PeerStore
+        /// This is responsible for adding a Verified Remote Peer to our PeerStore
         func onRemotePeer(_ peer:PeerInfo) -> Void {
             guard peer.peer != self.peerID else { return }
             logger.debug("Verified Remote Peer")
