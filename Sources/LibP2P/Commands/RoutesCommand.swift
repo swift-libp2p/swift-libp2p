@@ -98,7 +98,8 @@ public final class RoutesCommand: Command {
                                 )
 
                                 // let spacerString = ""// String(repeating: " ", count: handlerDescription.count)
-                                if (handler.self is _ChannelInboundHandler) && (handler.self is _ChannelOutboundHandler) {
+                                if (handler.self is _ChannelInboundHandler) && (handler.self is _ChannelOutboundHandler)
+                                {
                                     topString.append(handlerDescription)
                                     //middleString.append( handlerDescription )
                                     bottomString.append(handlerDescription)
