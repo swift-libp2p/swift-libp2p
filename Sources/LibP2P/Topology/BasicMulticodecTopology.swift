@@ -151,7 +151,7 @@ public class BasicMulticodecTopology {  //:MulticodecTopology {
     }
 
     deinit {
-        /// Sanity check to make sure we're deinitializing our objects correctly
+        /// Check to make sure we're deinitializing our objects correctly
         logger.info("BasicMutlicodecTopology::Deiniting")
         //SwiftEventBus.unregister(self)
         application.events.unregister(self)
