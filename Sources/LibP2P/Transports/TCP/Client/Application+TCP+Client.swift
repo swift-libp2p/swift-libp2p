@@ -30,12 +30,12 @@ extension Application.TCP {
     public struct Client {
         let application: Application
 
-//        public var shared: TCPClient {
-//            guard let tcp = self.application.transports.transport(for: TCP.self) as? TCP else {
-//                fatalError("Unable to fetch TCP Transport")
-//            }
-//            return tcp.sharedClient
-//        }
+        //        public var shared: TCPClient {
+        //            guard let tcp = self.application.transports.transport(for: TCP.self) as? TCP else {
+        //                fatalError("Unable to fetch TCP Transport")
+        //            }
+        //            return tcp.sharedClient
+        //        }
         public var shared: TCPClient {
             let lock = self.application.locks.lock(for: Key.self)
             lock.lock()

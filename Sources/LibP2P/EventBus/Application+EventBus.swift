@@ -23,19 +23,19 @@ extension Application {
         }
         return eventBus
     }
-    
+
     public struct Events {
         public struct Provider {
-            let run: (Application) -> ()
+            let run: (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> ()) {
+            public init(_ run: @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
         final class Storage {
             var eventBus: EventBus?
-            init() { }
+            init() {}
         }
 
         struct Key: StorageKey {
@@ -64,4 +64,3 @@ extension Application {
         }
     }
 }
-

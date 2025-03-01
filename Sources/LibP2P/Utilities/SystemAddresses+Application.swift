@@ -18,7 +18,7 @@ extension Application {
         let devices = try System.enumerateDevices().filter({ device in
             guard device.name == name && device.address != nil else { return false }
             guard let ma = try? device.address?.toMultiaddr().tcpAddress else { return false }
-            
+
             return ma.ip4
         })
         guard let device = devices.first else { throw Errors.noAddressForDevice }

@@ -51,7 +51,7 @@ public final class Identify: IdentityManager, CustomStringConvertible {
     }
 
     public var description: String {
-        return "IPFS Identify[\(self.localPeerID.description)]"
+        "IPFS Identify[\(self.localPeerID.description)]"
     }
 
     public init(application: Application) {
@@ -81,17 +81,17 @@ public final class Identify: IdentityManager, CustomStringConvertible {
     }
 
     public func ping(peer: PeerID) -> EventLoopFuture<TimeAmount> {
-        return self.application!.eventLoopGroup.next().flatSubmit { //} .flatScheduleTask(deadline: .now() + .seconds(3)) {
+        self.application!.eventLoopGroup.next().flatSubmit {  //} .flatScheduleTask(deadline: .now() + .seconds(3)) {
             self.application!.logger.trace("Identify::Attempting to ping \(peer)")
             return self.initiateOutboundPingTo(peer: peer)
         }
     }
 
     public func ping(addr: Multiaddr) -> EventLoopFuture<TimeAmount> {
-        return self.application!.eventLoopGroup.next().flatSubmit { //ScheduleTask(deadline: .now() + .seconds(3)) {
+        self.application!.eventLoopGroup.next().flatSubmit {  //ScheduleTask(deadline: .now() + .seconds(3)) {
             self.application!.logger.trace("Identify::Attempting to ping \(addr)")
             return self.initiateOutboundPingTo(addr: addr)
-        } //.futureResult
+        }  //.futureResult//.futureResult
     }
 
     internal func onNewConnection(_ connection: Connection) {
@@ -108,7 +108,9 @@ public final class Identify: IdentityManager, CustomStringConvertible {
     /// - reference to the channel ?? No reference to channel, this notification gets fired after the channel has been closed...
     internal func onDisconnected(_ connection: Connection, _ remotePeerID: PeerID?) {
         // Take this opportunity to do any finalization / cleanup work regarding this peer...
-        connection.logger.trace("Identify::Connection to peer was closed, clean up / finalize any outstanding Identify data")
+        connection.logger.trace(
+            "Identify::Connection to peer was closed, clean up / finalize any outstanding Identify data"
+        )
     }
 }
 
@@ -123,8 +125,14 @@ extension Identify {
             /// Ensure the Payload is an IdentifyMessage
             let remoteIdentify = try IdentifyMessage(contiguousBytes: payload)
             /// and that is valid
-            let signedEnvelope = try SealedEnvelope(marshaledEnvelope: remoteIdentify.signedPeerRecord.bytes, verifiedWithPublicKey: remoteIdentify.publicKey.bytes)
-            let peerRecord = try PeerRecord(marshaledData: Data(signedEnvelope.rawPayload), withPublicKey: remoteIdentify.publicKey)
+            let signedEnvelope = try SealedEnvelope(
+                marshaledEnvelope: remoteIdentify.signedPeerRecord.bytes,
+                verifiedWithPublicKey: remoteIdentify.publicKey.bytes
+            )
+            let peerRecord = try PeerRecord(
+                marshaledData: Data(signedEnvelope.rawPayload),
+                withPublicKey: remoteIdentify.publicKey
+            )
 
             connection.logger.debug("Identify::\n\(signedEnvelope)")
             connection.logger.debug("Identify::\n\(peerRecord)")
@@ -133,7 +141,11 @@ extension Identify {
             self.updateIdentifiedPeerInPeerStore(peerRecord, identifyMessage: remoteIdentify, connection: connection)
 
             /// Publish the identifiedPeer event
-            self.application?.events.post(.identifiedPeer(IdentifiedPeer(peer: peerRecord.peerID, identity: try! remoteIdentify.serializedData().bytes)))
+            self.application?.events.post(
+                .identifiedPeer(
+                    IdentifiedPeer(peer: peerRecord.peerID, identity: try! remoteIdentify.serializedData().bytes)
+                )
+            )
 
             connection.logger.trace("Identify::Successfully Identified Remote Peer using the Identify Protocol")
 
@@ -156,8 +168,14 @@ extension Identify {
             /// Ensure the Payload is an IdentifyMessage
             let remoteIdentify = try IdentifyMessage(contiguousBytes: payload)
             /// and that is valid
-            let signedEnvelope = try SealedEnvelope(marshaledEnvelope: remoteIdentify.signedPeerRecord.bytes, verifiedWithPublicKey: remoteIdentify.publicKey.bytes)
-            let peerRecord = try PeerRecord(marshaledData: Data(signedEnvelope.rawPayload), withPublicKey: remoteIdentify.publicKey)
+            let signedEnvelope = try SealedEnvelope(
+                marshaledEnvelope: remoteIdentify.signedPeerRecord.bytes,
+                verifiedWithPublicKey: remoteIdentify.publicKey.bytes
+            )
+            let peerRecord = try PeerRecord(
+                marshaledData: Data(signedEnvelope.rawPayload),
+                withPublicKey: remoteIdentify.publicKey
+            )
 
             connection.logger.debug("Identify::Push::\n\(signedEnvelope)")
             connection.logger.debug("Identify::Push::\n\(peerRecord)")
@@ -165,7 +183,9 @@ extension Identify {
             connection.logger.trace("Identify::Push::Updating PeerStore with Identified Peer")
             self.updateIdentifiedPeerInPeerStore(peerRecord, identifyMessage: remoteIdentify, connection: connection)
 
-            connection.logger.trace("Identify::Push::Successfully Updated Identified Remote Peer using the Identify Push Protocol")
+            connection.logger.trace(
+                "Identify::Push::Successfully Updated Identified Remote Peer using the Identify Push Protocol"
+            )
 
             return
         } catch {
@@ -186,11 +206,15 @@ extension Identify {
 
         if req.addr.isInternalAddress {
             /// A computer on our network is reaching out to us, respond with internal addresses...
-            req.logger.trace("Identify::A computer on our network is reaching out to us, responding with internal addresses...")
+            req.logger.trace(
+                "Identify::A computer on our network is reaching out to us, responding with internal addresses..."
+            )
             listenAddrs = req.application.listenAddresses
         } else {
             /// A computer outside of our network is asking for our ID, respond with externally reachable addresses only...
-            req.logger.trace("Identify::A computer outside of our network is asking for our ID, responding with externally reachable addresses only...")
+            req.logger.trace(
+                "Identify::A computer outside of our network is asking for our ID, responding with externally reachable addresses only..."
+            )
             listenAddrs = req.application.listenAddresses.stripInternalAddresses()
         }
 
@@ -199,8 +223,8 @@ extension Identify {
         //let registeredProtos = self.libp2p?.registeredProtocols.compactMap { $0.protocolString() } ?? []
         let registeredProtos = req.application.routes.all.compactMap { $0.description }
         id.protocols = registeredProtos
-        id.protocolVersion = "ipfs/0.1.0" //req.application.core.protocolVersion
-        id.agentVersion = "swift-ipfs/0.1.0" //req.application.core.agentVersion
+        id.protocolVersion = "ipfs/0.1.0"  //req.application.core.protocolVersion
+        id.agentVersion = "swift-ipfs/0.1.0"  //req.application.core.agentVersion
         id.observedAddr = try req.remoteAddress?.toMultiaddr().binaryPacked() ?? Data()
         id.listenAddrs = try listenAddrs.map {
             guard !$0.protocols().contains(.p2p) else { return try $0.binaryPacked() }
@@ -208,7 +232,9 @@ extension Identify {
         }
 
         //Construct our PeerRecord and sign it with out PeerID private key
-        let peerRecordEnvelope = try PeerRecord(peerID: self.localPeerID, multiaddrs: listenAddrs).seal(withPrivateKey: self.localPeerID)
+        let peerRecordEnvelope = try PeerRecord(peerID: self.localPeerID, multiaddrs: listenAddrs).seal(
+            withPrivateKey: self.localPeerID
+        )
         id.signedPeerRecord = try Data(peerRecordEnvelope.marshal())
 
         // Marshal the Identify message and prepare for sending..
@@ -220,8 +246,15 @@ extension Identify {
 
 /// PeerStore Update Methods
 extension Identify {
-    private func updateIdentifiedPeerInPeerStore(_ peerRecord: PeerRecord, identifyMessage: IdentifyMessage, connection: Connection) {
-        guard let application = application else { connection.logger.error("Identify::Lost reference to our Application"); return }
+    private func updateIdentifiedPeerInPeerStore(
+        _ peerRecord: PeerRecord,
+        identifyMessage: IdentifyMessage,
+        connection: Connection
+    ) {
+        guard let application = application else {
+            connection.logger.error("Identify::Lost reference to our Application")
+            return
+        }
         let identifiedPeer = peerRecord.peerID
         guard identifiedPeer != application.peerID else { return }
         connection.logger.trace("Identify::Identified Remote Peer")
@@ -242,13 +275,21 @@ extension Identify {
             }
             return nil
         }
-        tasks.append(application.peers.add(addresses: listeningAddresses, toPeer: identifiedPeer, on: connection.channel.eventLoop))
+        tasks.append(
+            application.peers.add(
+                addresses: listeningAddresses,
+                toPeer: identifiedPeer,
+                on: connection.channel.eventLoop
+            )
+        )
 
         // Update our peers known protocols
         let protocols = identifyMessage.protocols.compactMap { SemVerProtocol($0) }
         connection.logger.trace("Identify::Adding known protocols to peer \(identifiedPeer.b58String)")
         connection.logger.trace("Identify::\(protocols.map({ $0.stringValue }).joined(separator: ","))")
-        tasks.append(application.peers.add(protocols: protocols, toPeer: identifiedPeer, on: connection.channel.eventLoop))
+        tasks.append(
+            application.peers.add(protocols: protocols, toPeer: identifiedPeer, on: connection.channel.eventLoop)
+        )
 
         // Add the PeerRecord to our Records list
         tasks.append(application.peers.add(record: peerRecord, on: connection.channel.eventLoop))
@@ -257,24 +298,63 @@ extension Identify {
         connection.logger.trace("Identify::Adding Metadata to peer \(identifiedPeer.b58String)")
         connection.logger.trace("Identify::AgentVersion: \(identifyMessage.agentVersion)")
         if identifyMessage.hasAgentVersion, let agentVersion = identifyMessage.agentVersion.data(using: .utf8) {
-            tasks.append(application.peers.add(metaKey: .AgentVersion, data: agentVersion.bytes, toPeer: identifiedPeer, on: connection.channel.eventLoop))
+            tasks.append(
+                application.peers.add(
+                    metaKey: .AgentVersion,
+                    data: agentVersion.bytes,
+                    toPeer: identifiedPeer,
+                    on: connection.channel.eventLoop
+                )
+            )
         }
         connection.logger.trace("Identify::ProtocolVersion: \(identifyMessage.protocolVersion)")
-        if identifyMessage.hasProtocolVersion, let protocolVersion = identifyMessage.protocolVersion.data(using: .utf8) {
-            tasks.append(application.peers.add(metaKey: .ProtocolVersion, data: protocolVersion.bytes, toPeer: identifiedPeer, on: connection.channel.eventLoop))
+        if identifyMessage.hasProtocolVersion, let protocolVersion = identifyMessage.protocolVersion.data(using: .utf8)
+        {
+            tasks.append(
+                application.peers.add(
+                    metaKey: .ProtocolVersion,
+                    data: protocolVersion.bytes,
+                    toPeer: identifiedPeer,
+                    on: connection.channel.eventLoop
+                )
+            )
         }
-        connection.logger.trace("Identify::ObservedAddress: \((try? Multiaddr(identifyMessage.observedAddr).description) ?? "NIL")")
-        if identifyMessage.hasObservedAddr, let ma = try? Multiaddr(identifyMessage.observedAddr).description.data(using: .utf8) {
-            tasks.append(application.peers.add(metaKey: .ObservedAddress, data: ma.bytes, toPeer: identifiedPeer, on: connection.channel.eventLoop))
+        connection.logger.trace(
+            "Identify::ObservedAddress: \((try? Multiaddr(identifyMessage.observedAddr).description) ?? "NIL")"
+        )
+        if identifyMessage.hasObservedAddr,
+            let ma = try? Multiaddr(identifyMessage.observedAddr).description.data(using: .utf8)
+        {
+            tasks.append(
+                application.peers.add(
+                    metaKey: .ObservedAddress,
+                    data: ma.bytes,
+                    toPeer: identifiedPeer,
+                    on: connection.channel.eventLoop
+                )
+            )
         }
 
         // -TODO: Our Connection should do this when we complete our security handshake, also we should remove this here...
-        tasks.append(application.peers.add(metaKey: .LastHandshake, data: String(Date().timeIntervalSince1970).bytes, toPeer: identifiedPeer, on: connection.channel.eventLoop))
+        tasks.append(
+            application.peers.add(
+                metaKey: .LastHandshake,
+                data: String(Date().timeIntervalSince1970).bytes,
+                toPeer: identifiedPeer,
+                on: connection.channel.eventLoop
+            )
+        )
 
         // Wait for the metadata to be updated then alert the application of the changes...
         tasks.flatten(on: connection.channel.eventLoop).whenComplete { _ in
-            connection.logger.trace("Identify::Done Adding Metadata to PeerStore. Alerting Application to Remote Peer Protocol Change.")
-            application.events.post(.remotePeerProtocolChange(RemotePeerProtocolChange(peer: identifiedPeer, protocols: protocols, connection: connection)))
+            connection.logger.trace(
+                "Identify::Done Adding Metadata to PeerStore. Alerting Application to Remote Peer Protocol Change."
+            )
+            application.events.post(
+                .remotePeerProtocolChange(
+                    RemotePeerProtocolChange(peer: identifiedPeer, protocols: protocols, connection: connection)
+                )
+            )
         }
     }
 }
@@ -298,7 +378,11 @@ extension Identify {
             }
             //guard self.pingCache[peer.bytes] == nil else { return application!.eventLoopGroup.next().makeFailedFuture(Errors.timedOut) }
             let promise = self.application!.eventLoopGroup.next().makePromise(of: TimeAmount.self)
-            self.pingCache[peer.bytes] = PendingPing(peer: "", startTime: DispatchTime.now().uptimeNanoseconds, promise: promise)
+            self.pingCache[peer.bytes] = PendingPing(
+                peer: "",
+                startTime: DispatchTime.now().uptimeNanoseconds,
+                promise: promise
+            )
             try! self.application!.newStream(to: peer, forProtocol: Identify.Multicodecs.PING)
             return promise.futureResult
         }
@@ -324,21 +408,34 @@ extension Identify {
             }
             //guard self.pingCache[peer.bytes] == nil else { return application!.eventLoopGroup.next().makeFailedFuture(Errors.timedOut) }
             let promise = self.application!.eventLoopGroup.next().makePromise(of: TimeAmount.self)
-            self.pingCache[peer.bytes] = PendingPing(peer: "", startTime: DispatchTime.now().uptimeNanoseconds, promise: promise)
+            self.pingCache[peer.bytes] = PendingPing(
+                peer: "",
+                startTime: DispatchTime.now().uptimeNanoseconds,
+                promise: promise
+            )
             try! self.application!.newStream(to: addr, forProtocol: Identify.Multicodecs.PING)
             return promise.futureResult
         }
     }
 
     func handleOutboundPing(_ req: Request) -> ByteBuffer? {
-        guard let remotePeer = req.remotePeer else { req.logger.error("Identify::Outbound Ping failed due to unauthenticated stream"); req.shouldClose(); return nil }
+        guard let remotePeer = req.remotePeer else {
+            req.logger.error("Identify::Outbound Ping failed due to unauthenticated stream")
+            req.shouldClose()
+            return nil
+        }
         let bytes: [UInt8] = try! LibP2PCrypto.randomBytes(length: 32)
         let startTime = DispatchTime.now().uptimeNanoseconds
         /// Check to see if this ping was initiated by our IndetifyManager...
         self.el.execute {
             if let initiatedPing = self.pingCache.removeValue(forKey: remotePeer.bytes) {
-                self.pingCache[bytes] = PendingPing(peer: remotePeer.b58String, startTime: startTime, promise: initiatedPing.promise)
-            } else { /// Otherwise just perform the ping for metrics...
+                self.pingCache[bytes] = PendingPing(
+                    peer: remotePeer.b58String,
+                    startTime: startTime,
+                    promise: initiatedPing.promise
+                )
+            } else {
+                /// Otherwise just perform the ping for metrics...
                 self.pingCache[bytes] = .init(peer: remotePeer.b58String, startTime: startTime)
             }
         }
@@ -356,7 +453,7 @@ extension Identify {
             let toc = DispatchTime.now().uptimeNanoseconds - pendingPing.startTime
 
             /// Succeed pending promise if one exists...
-            pendingPing.promise?.succeed(.nanoseconds( toc > Int64.max ? Int64.max : Int64(toc)))
+            pendingPing.promise?.succeed(.nanoseconds(toc > Int64.max ? Int64.max : Int64(toc)))
 
             /// A not so nice hack to determine if the ping established a new connection or not
             let isConnection: Bool = (toc / 1_000_000_000) >= 1 ? true : false
@@ -367,7 +464,11 @@ extension Identify {
             req.application.peers.getMetadata(forPeer: req.remotePeer!).flatMap { metadata -> EventLoopFuture<Void> in
                 let new: MetadataBook.LatencyMetadata
                 if let existingLatencyData = metadata[MetadataBook.Keys.Latency.rawValue],
-                   var latencyData = try? JSONDecoder().decode(MetadataBook.LatencyMetadata.self, from: Data(existingLatencyData)) {
+                    var latencyData = try? JSONDecoder().decode(
+                        MetadataBook.LatencyMetadata.self,
+                        from: Data(existingLatencyData)
+                    )
+                {
                     if isConnection {
                         latencyData.newConnectionLatencyValue(toc)
                     } else {
@@ -397,7 +498,11 @@ extension Identify {
                 let newData = try! JSONEncoder().encode(new)
 
                 /// Store it!
-                return req.application.peers.add(metaKey: MetadataBook.Keys.Latency, data: newData.bytes, toPeer: req.remotePeer!)
+                return req.application.peers.add(
+                    metaKey: MetadataBook.Keys.Latency,
+                    data: newData.bytes,
+                    toPeer: req.remotePeer!
+                )
             }.whenComplete({ _ in
                 req.logger.trace("Identify::Ping Time to Peer<\(pendingPing.peer.prefix(7))> == \(toc)ns")
             })

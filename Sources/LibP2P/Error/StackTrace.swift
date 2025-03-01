@@ -16,11 +16,12 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
+import Foundation
+
 #if os(Linux)
 import Backtrace
 import CBacktrace
 #endif
-import Foundation
 
 extension Optional where Wrapped == StackTrace {
     public static func capture(skip: Int = 0) -> Self {
@@ -52,18 +53,24 @@ public struct StackTrace {
             }
         }
         var context = Context()
-        backtrace_full(self.state, /* skip: */ 1, { data, pc, filename, lineno, function in
-            let frame = RawFrame(
-                file: filename.flatMap { String(cString: $0) } ?? "unknown",
-                mangledFunction: function.flatMap { String(cString: $0) } ?? "unknown"
-            )
-            data!.assumingMemoryBound(to: Context.self)
-                .pointee.frames.append(frame)
-            return 0
-        }, { _, cMessage, _ in
-            let message = cMessage.flatMap { String(cString: $0) } ?? "unknown"
-            fatalError("Failed to capture Linux stacktrace: \(message)")
-        }, &context)
+        backtrace_full(
+            self.state, /* skip: */
+            1,
+            { data, pc, filename, lineno, function in
+                let frame = RawFrame(
+                    file: filename.flatMap { String(cString: $0) } ?? "unknown",
+                    mangledFunction: function.flatMap { String(cString: $0) } ?? "unknown"
+                )
+                data!.assumingMemoryBound(to: Context.self)
+                    .pointee.frames.append(frame)
+                return 0
+            },
+            { _, cMessage, _ in
+                let message = cMessage.flatMap { String(cString: $0) } ?? "unknown"
+                fatalError("Failed to capture Linux stacktrace: \(message)")
+            },
+            &context
+        )
         return context.frames
         #else
         return Thread.callStackSymbols.dropFirst(1).map { line in
@@ -103,7 +110,7 @@ public struct StackTrace {
     let rawFrames: [RawFrame]
 
     public func description(max: Int = 16) -> String {
-        return self.frames[..<min(self.frames.count, max)].readable
+        self.frames[..<min(self.frames.count, max)].readable
     }
 }
 

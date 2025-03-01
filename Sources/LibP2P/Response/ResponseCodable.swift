@@ -44,7 +44,7 @@ public protocol RequestDecodable {
 
 extension Request: RequestDecodable {
     public static func decodeRequest(_ request: Request) -> EventLoopFuture<Request> {
-        return request.eventLoop.makeSucceededFuture(request)
+        request.eventLoop.makeSucceededFuture(request)
     }
 }
 
@@ -52,7 +52,7 @@ extension Request: RequestDecodable {
 extension RawResponse: ResponseEncodable {
     // See `ResponseEncodable`.
     public func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse> {
-        return request.eventLoop.makeSucceededFuture(self)
+        request.eventLoop.makeSucceededFuture(self)
     }
 }
 
@@ -104,9 +104,8 @@ extension Array: ResponseEncodable where Element == UInt8 {
 extension EventLoopFuture: ResponseEncodable where Value: ResponseEncodable {
     // See `ResponseEncodable`.
     public func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse> {
-        return self.flatMap { t in
-            return t.encodeResponse(for: request)
+        self.flatMap { t in
+            t.encodeResponse(for: request)
         }
     }
 }
-

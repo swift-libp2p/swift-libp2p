@@ -16,8 +16,8 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import Logging
 import Foundation
+import Logging
 
 //extension Logger {
 //    /// Reports an `Error` to this `Logger`.

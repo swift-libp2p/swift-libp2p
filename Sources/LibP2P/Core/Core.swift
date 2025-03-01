@@ -16,11 +16,11 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import NIO
 import ConsoleKit
+import NIO
 
 extension Application {
-    
+
     public var console: Console {
         get { self.core.storage.console }
         set { self.core.storage.console = newValue }
@@ -69,10 +69,10 @@ extension Application {
         set { self.core.storage.running.current = newValue }
     }
 
-//    public var directory: DirectoryConfiguration {
-//        get { self.core.storage.directory }
-//        set { self.core.storage.directory = newValue }
-//    }
+    //    public var directory: DirectoryConfiguration {
+    //        get { self.core.storage.directory }
+    //        set { self.core.storage.directory = newValue }
+    //    }
 
     internal var core: Core {
         .init(application: self)

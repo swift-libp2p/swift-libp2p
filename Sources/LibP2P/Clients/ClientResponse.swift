@@ -22,5 +22,3 @@ public struct ClientResponse {
         self.payload = payload
     }
 }
-
-

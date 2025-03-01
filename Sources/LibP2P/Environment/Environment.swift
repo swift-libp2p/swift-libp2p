@@ -16,9 +16,9 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
+import COperatingSystem
 import ConsoleKit
 import Foundation
-import COperatingSystem
 
 /// The environment the application is running in, i.e., production, dev, etc. All `Container`s will have
 /// an `Environment` that can be used to dynamically register and configure services.
@@ -35,7 +35,7 @@ import COperatingSystem
 ///
 public struct Environment: Equatable {
     // MARK: - Detection
-    
+
     /// Detects the environment from `CommandLine.arguments`. Invokes `detect(from:)`.
     /// - parameters:
     ///     - arguments: Command line arguments to detect environment from.
@@ -44,7 +44,7 @@ public struct Environment: Equatable {
         var commandInput = CommandInput(arguments: arguments)
         return try Environment.detect(from: &commandInput)
     }
-    
+
     /// Detects the environment from `CommandInput`. Parses the `--env` flag, with the
     /// `LIBP2P_ENV` environment variable as a fallback.
     /// - parameters:
@@ -52,25 +52,24 @@ public struct Environment: Equatable {
     /// - returns: The detected environment, or default env.
     public static func detect(from commandInput: inout CommandInput) throws -> Environment {
         self.sanitize(commandInput: &commandInput)
-        
+
         struct EnvironmentSignature: CommandSignature {
             @Option(name: "env", short: "e", help: "Change the application's environment")
             var environment: String?
         }
 
         var env: Environment
-        switch try EnvironmentSignature(from: &commandInput).environment ??
-            Environment.process.LIBP2P_ENV
+        switch try EnvironmentSignature(from: &commandInput).environment ?? Environment.process.LIBP2P_ENV
         {
-            case "prod", "production": env = .production
-            case "dev", "development", .none: env = .development
-            case "test", "testing": env = .testing
-            case .some(let name): env = .init(name: name)
+        case "prod", "production": env = .production
+        case "dev", "development", .none: env = .development
+        case "test", "testing": env = .testing
+        case .some(let name): env = .init(name: name)
         }
         env.commandInput = commandInput
         return env
     }
-    
+
     /// Performs stripping of user defaults overrides where and when appropriate.
     private static func sanitize(commandInput: inout CommandInput) {
         #if Xcode
@@ -79,8 +78,9 @@ public struct Environment: Equatable {
         // followed by a value argument. Since this is mainly just to get around Xcode's habit of
         // passing a bunch of these when no other arguments are specified in a test scheme, we ignore
         // any that don't match the Apple patterns and assume the app knows what it's doing.
-        while (commandInput.arguments.first?.prefix(6) == "-Apple" || commandInput.arguments.first?.prefix(3) == "-NS"),
-              commandInput.arguments.count > 1 {
+        while commandInput.arguments.first?.prefix(6) == "-Apple" || commandInput.arguments.first?.prefix(3) == "-NS",
+            commandInput.arguments.count > 1
+        {
             commandInput.arguments.removeFirst(2)
         }
         #elseif os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
@@ -98,7 +98,7 @@ public struct Environment: Equatable {
         }
         #endif
     }
-    
+
     /// Invokes `sanitize(commandInput:)` over a set of raw arguments and returns the
     /// resulting arguments, including the executable path.
     private static func sanitizeArguments(_ arguments: [String] = CommandLine.arguments) -> [String] {
@@ -106,7 +106,7 @@ public struct Environment: Equatable {
         sanitize(commandInput: &commandInput)
         return commandInput.executablePath + commandInput.arguments
     }
-    
+
     // MARK: - Presets
 
     /// An environment for deploying your application to consumers.
@@ -129,19 +129,19 @@ public struct Environment: Equatable {
 
     /// Gets a key from the process environment
     public static func get(_ key: String) -> String? {
-        return ProcessInfo.processInfo.environment[key]
+        ProcessInfo.processInfo.environment[key]
     }
 
     /// The current process of the environment.
     public static var process: Process {
-        return Process()
+        Process()
     }
-    
+
     // MARK: - Equatable
 
     /// See `Equatable`
-    public static func ==(lhs: Environment, rhs: Environment) -> Bool {
-        return lhs.name == rhs.name
+    public static func == (lhs: Environment, rhs: Environment) -> Bool {
+        lhs.name == rhs.name
     }
 
     // MARK: - Properties
@@ -166,10 +166,10 @@ public struct Environment: Equatable {
 
     /// Exposes the `Environment`'s `arguments` property as a `CommandInput`.
     public var commandInput: CommandInput {
-        get { return CommandInput(arguments: arguments) }
+        get { CommandInput(arguments: arguments) }
         set { arguments = newValue.executablePath + newValue.arguments }
     }
-    
+
     // MARK: - Init
 
     /// Create a new `Environment`.

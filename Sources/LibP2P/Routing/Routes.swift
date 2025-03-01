@@ -18,7 +18,7 @@
 
 public final class Routes: RoutesBuilder, CustomStringConvertible {
     public var all: [Route]
-    
+
     /// Default value used by `HTTPBodyStreamStrategy.collect` when `maxSize` is `nil`.
     public var defaultMaxBodySize: ByteCount
     /// Default routing behavior of `DefaultResponder` is case-sensitive; configure to `true` prior to
@@ -26,7 +26,7 @@ public final class Routes: RoutesBuilder, CustomStringConvertible {
     public var caseInsensitive: Bool
 
     public var description: String {
-        return self.all.description
+        self.all.description
     }
 
     public init() {
@@ -38,8 +38,8 @@ public final class Routes: RoutesBuilder, CustomStringConvertible {
     public func add(_ route: Route) {
         self.all.append(route)
     }
-    
-    public var registeredProtocols:[SemVerProtocol] {
+
+    public var registeredProtocols: [SemVerProtocol] {
         self.all.compactMap { SemVerProtocol($0.description) }
     }
 }

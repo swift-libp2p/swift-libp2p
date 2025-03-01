@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-
 extension Application.Identify.Provider {
     public static var `default`: Self {
         .init { app in

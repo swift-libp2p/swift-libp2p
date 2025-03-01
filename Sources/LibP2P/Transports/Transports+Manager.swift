@@ -13,30 +13,34 @@
 //===----------------------------------------------------------------------===//
 
 extension Application.Transports {
-    
+
     public func findBest(forMultiaddr ma: Multiaddr) throws -> Transport {
-        guard let t = self.storage.transports.first(where: { $0.value.canDial(address: ma) }) else { throw Errors.noTransportsForMultiaddr(ma) }
+        guard let t = self.storage.transports.first(where: { $0.value.canDial(address: ma) }) else {
+            throw Errors.noTransportsForMultiaddr(ma)
+        }
         return t.value
     }
-    
+
     public func getAll() -> [Transport] {
-        return self.storage.transports.map { $0.value }
+        self.storage.transports.map { $0.value }
     }
-    
+
     /// Traverses our available transports in search for one who's capabale of dialing the provided multiaddr
-    public func canDial(_ ma:Multiaddr, on: EventLoop) -> EventLoopFuture<Bool> {
+    public func canDial(_ ma: Multiaddr, on: EventLoop) -> EventLoopFuture<Bool> {
         guard let _ = try? self.findBest(forMultiaddr: ma) else { return on.makeSucceededFuture(false) }
         return on.makeSucceededFuture(true)
     }
-    
+
     /// Traverses our available transports in search for one who's capabale of dialing the provided multiaddr
-    public func canDialAny(_ mas:[Multiaddr], on: EventLoop) -> EventLoopFuture<Multiaddr> {
-        guard let ma = mas.first(where: { ma in
-            (try? self.findBest(forMultiaddr: ma)) != nil
-        }) else { return on.makeFailedFuture(Errors.noTransportsForMultiaddrs(mas)) }
+    public func canDialAny(_ mas: [Multiaddr], on: EventLoop) -> EventLoopFuture<Multiaddr> {
+        guard
+            let ma = mas.first(where: { ma in
+                (try? self.findBest(forMultiaddr: ma)) != nil
+            })
+        else { return on.makeFailedFuture(Errors.noTransportsForMultiaddrs(mas)) }
         return on.makeSucceededFuture(ma)
     }
-    
+
     /// Strips out local/internal addresses that are annouced by peers (I'm not sure why they include these addresses)
     ///
     /// Example:
@@ -58,10 +62,14 @@ extension Application.Transports {
     ///     ]
     /// )
     /// ```
-    public func dialableAddress(_ mas:[Multiaddr], externalAddressesOnly:Bool = true, on: EventLoop) -> EventLoopFuture<[Multiaddr]> {
+    public func dialableAddress(
+        _ mas: [Multiaddr],
+        externalAddressesOnly: Bool = true,
+        on: EventLoop
+    ) -> EventLoopFuture<[Multiaddr]> {
         let promise = on.makePromise(of: [Multiaddr].self)
-        var dialableAddresses:[Multiaddr] = []
-        
+        var dialableAddresses: [Multiaddr] = []
+
         let _ = mas.map { ma in
             self.canDial(ma, on: on).map { canDial in
                 if canDial {
@@ -74,22 +82,22 @@ extension Application.Transports {
         }.flatten(on: on).map {
             promise.succeed(dialableAddresses)
         }
-        
+
         return promise.futureResult
     }
-    
-    public func stripInternalAddresses(_ mas:[Multiaddr]) -> [Multiaddr] {
-        return mas.filter { !$0.isInternalAddress }
+
+    public func stripInternalAddresses(_ mas: [Multiaddr]) -> [Multiaddr] {
+        mas.filter { !$0.isInternalAddress }
     }
-    
-    public enum Errors:Error {
+
+    public enum Errors: Error {
         case noTransportsForMultiaddr(Multiaddr)
         case noTransportsForMultiaddrs([Multiaddr])
     }
 }
 
 extension Multiaddr {
-    public var isInternalAddress:Bool {
+    public var isInternalAddress: Bool {
         let desc = self.description
         return desc.contains("127.0.0.1") || desc.contains("::1") || desc.contains("192.168.")
     }

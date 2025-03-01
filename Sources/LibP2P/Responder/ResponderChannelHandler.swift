@@ -46,7 +46,10 @@ final class ResponderChannelHandler: ChannelInboundHandler, RemovableChannelHand
     }
 
     func serialize(_ response: RawResponse, for request: Request, context: ChannelHandlerContext) {
-        guard response.payload.readableBytes > 0 else { self.logger.trace("Dropping Empty Response"); return }
+        guard response.payload.readableBytes > 0 else {
+            self.logger.trace("Dropping Empty Response")
+            return
+        }
         context.write(self.wrapOutboundOut(response), promise: nil)
     }
 

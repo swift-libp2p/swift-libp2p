@@ -43,27 +43,27 @@ extension Array where Element == Middleware {
     }
 }
 
-public extension Middleware {
+extension Middleware {
     /// Wraps a `Responder` in a single `Middleware` creating a new `Responder`.
-    func makeResponder(chainingTo responder: Responder) -> Responder {
-        return BasicMiddlewareResponder(middleware: self, responder: responder)
+    public func makeResponder(chainingTo responder: Responder) -> Responder {
+        BasicMiddlewareResponder(middleware: self, responder: responder)
     }
 }
 
 private struct BasicMiddlewareResponder: Responder {
     var middleware: Middleware
     var responder: Responder
-    
+
     init(middleware: Middleware, responder: Responder) {
         self.middleware = middleware
         self.responder = responder
     }
-    
+
     func respond(to request: Request) -> EventLoopFuture<RawResponse> {
-        return self.middleware.respond(to: request, chainingTo: self.responder)
+        self.middleware.respond(to: request, chainingTo: self.responder)
     }
-    
-    public func pipelineConfig(for protocol: String, on connection:Connection) -> [ChannelHandler]? {
-        return nil
+
+    public func pipelineConfig(for protocol: String, on connection: Connection) -> [ChannelHandler]? {
+        nil
     }
 }

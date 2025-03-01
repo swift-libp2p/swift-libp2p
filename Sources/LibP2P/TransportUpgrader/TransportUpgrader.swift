@@ -14,12 +14,16 @@
 
 import NIOCore
 
-
 public protocol TransportUpgrader {
-    func installHandlers(on channel:Channel)
-    
-    func negotiate(protocols: [String], mode:LibP2P.Mode, logger:Logger, promise: EventLoopPromise<(`protocol`:String, leftoverBytes:ByteBuffer?)>) -> [ChannelHandler]
-    
+    func installHandlers(on channel: Channel)
+
+    func negotiate(
+        protocols: [String],
+        mode: LibP2P.Mode,
+        logger: Logger,
+        promise: EventLoopPromise<(`protocol`: String, leftoverBytes: ByteBuffer?)>
+    ) -> [ChannelHandler]
+
     func printSelf()
 }
 
@@ -31,7 +35,7 @@ extension Application {
     public var transportUpgraders: TransportUpgraders {
         .init(application: self)
     }
-    
+
     public var upgrader: TransportUpgrader {
         guard let makeUpgrader = self.transportUpgraders.storage.makeUpgrader else {
             fatalError("No transport upgrader configured. Configure with app.transportUpgraders.use(...)")
@@ -41,18 +45,18 @@ extension Application {
 
     public struct TransportUpgraders {
         public struct Provider {
-            let run: (Application) -> ()
+            let run: (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> ()) {
+            public init(_ run: @escaping (Application) -> Void) {
                 self.run = run
             }
         }
-        
+
         final class Storage {
             var makeUpgrader: ((Application) -> TransportUpgrader)?
-            init() { }
+            init() {}
         }
-        
+
         struct Key: StorageKey {
             typealias Value = Storage
         }
@@ -60,7 +64,7 @@ extension Application {
         func initialize() {
             self.application.storage[Key.self] = .init()
         }
-        
+
         public func use(_ provider: Provider) {
             provider.run(self.application)
         }
@@ -70,7 +74,7 @@ extension Application {
         }
 
         public let application: Application
-        
+
         var storage: Storage {
             guard let storage = self.application.storage[Key.self] else {
                 fatalError("Transport Upgraders not initialized. Initialize with app.transportUpgraders.initialize()")

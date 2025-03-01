@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-internal func handleDeltaRequest(_ req:Request) -> Response<ByteBuffer> {
+internal func handleDeltaRequest(_ req: Request) -> Response<ByteBuffer> {
     guard req.streamDirection == .inbound else {
         req.logger.error("Identify::Delta::Error - We dont support outbound /p2p/id/delta messages on this handler")
         return .close
@@ -32,26 +32,26 @@ internal func handleDeltaRequest(_ req:Request) -> Response<ByteBuffer> {
     return .close
 }
 
-private func handleDeltaMessage(_ req:Request) {
-    guard let message = try? IdentifyMessage(contiguousBytes: Array<UInt8>(req.payload.readableBytesView)) else {
+private func handleDeltaMessage(_ req: Request) {
+    guard let message = try? IdentifyMessage(contiguousBytes: [UInt8](req.payload.readableBytesView)) else {
         req.logger.error("Identify::Delta::Failed to decode Delta IdentifyMessage")
         return
     }
-    
+
     guard message.hasDelta else {
         req.logger.error("Identify::Delta::No Delta present within IdentifyMessage")
         return
     }
-    
+
     let delta = message.delta
-    
+
     guard !delta.addedProtocols.isEmpty && !delta.rmProtocols.isEmpty else {
         req.logger.error("Identify::Delta::Empty Delta message, nothing to do...")
         return
     }
-    
-    var tasks:[EventLoopFuture<Void>] = []
-    
+
+    var tasks: [EventLoopFuture<Void>] = []
+
     // Remove old protocols
     if !delta.rmProtocols.isEmpty {
         tasks.append(
@@ -64,7 +64,7 @@ private func handleDeltaMessage(_ req:Request) {
             )
         )
     }
-    
+
     // Add new protocols
     if !delta.addedProtocols.isEmpty {
         tasks.append(
@@ -77,7 +77,7 @@ private func handleDeltaMessage(_ req:Request) {
             )
         )
     }
-    
+
     // Get new set of supported protocols
     tasks.flatten(on: req.eventLoop).flatMap { Void -> EventLoopFuture<[SemVerProtocol]> in
         req.application.peers.getProtocols(forPeer: req.remotePeer!, on: req.eventLoop)

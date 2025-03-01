@@ -20,26 +20,62 @@ extension Application {
     /// A method on libp2p that acts as a request / response mechanism for streams
     ///
     /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
-    public func newRequest(to ma: Multiaddr, forProtocol proto: String, withRequest request: Data, style: SingleBufferingRequest.Style = .responseExpected, withHandlers handlers: HandlerConfig = .rawHandlers([]), andMiddleware middleware: MiddlewareConfig = .custom(nil), withTimeout timeout: TimeAmount = .seconds(3)) -> EventLoopFuture<Data> {
+    public func newRequest(
+        to ma: Multiaddr,
+        forProtocol proto: String,
+        withRequest request: Data,
+        style: SingleBufferingRequest.Style = .responseExpected,
+        withHandlers handlers: HandlerConfig = .rawHandlers([]),
+        andMiddleware middleware: MiddlewareConfig = .custom(nil),
+        withTimeout timeout: TimeAmount = .seconds(3)
+    ) -> EventLoopFuture<Data> {
         let promise = self.eventLoopGroup.next().makePromise(of: Data.self)
         //let singleRequest =
-        promise.completeWith( SingleBufferingRequest(to: ma, overProtocol: proto, withRequest: request, withHandlers: handlers, andMiddleware: middleware, on: self.eventLoopGroup.next(), host: self, withTimeout: timeout).resume(style: style) )
+        promise.completeWith(
+            SingleBufferingRequest(
+                to: ma,
+                overProtocol: proto,
+                withRequest: request,
+                withHandlers: handlers,
+                andMiddleware: middleware,
+                on: self.eventLoopGroup.next(),
+                host: self,
+                withTimeout: timeout
+            ).resume(style: style)
+        )
         return promise.futureResult
     }
 
     /// A method on libp2p that acts as a request / response mechanism for streams
     ///
     /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
-    public func newRequest(to peer: PeerID, forProtocol proto: String, withRequest request: Data, style: SingleBufferingRequest.Style = .responseExpected, withHandlers handlers: HandlerConfig = .rawHandlers([]), andMiddleware middleware: MiddlewareConfig = .custom(nil), withTimeout timeout: TimeAmount = .seconds(3)) -> EventLoopFuture<Data> {
+    public func newRequest(
+        to peer: PeerID,
+        forProtocol proto: String,
+        withRequest request: Data,
+        style: SingleBufferingRequest.Style = .responseExpected,
+        withHandlers handlers: HandlerConfig = .rawHandlers([]),
+        andMiddleware middleware: MiddlewareConfig = .custom(nil),
+        withTimeout timeout: TimeAmount = .seconds(3)
+    ) -> EventLoopFuture<Data> {
         let el = self.eventLoopGroup.next()
 
         return self.peers.getAddresses(forPeer: peer, on: el).flatMap { addresses -> EventLoopFuture<Data> in
-            guard !addresses.isEmpty else { return el.makeFailedFuture( Errors.noKnownAddressesForPeer ) }
+            guard !addresses.isEmpty else { return el.makeFailedFuture(Errors.noKnownAddressesForPeer) }
 
             // Check to see if we have a transport thats capable of dialing any of these addresses...
             // - TODO: Maybe instead of just returning the first transport found, we return the best transport (like one that's already muxed, or with low latency, or recently interacted with)
             return self.transports.canDialAny(addresses, on: el).flatMap { match -> EventLoopFuture<Data> in
-                let singleRequest = SingleBufferingRequest(to: match, overProtocol: proto, withRequest: request, withHandlers: handlers, andMiddleware: middleware, on: self.eventLoopGroup.next(), host: self, withTimeout: timeout)
+                let singleRequest = SingleBufferingRequest(
+                    to: match,
+                    overProtocol: proto,
+                    withRequest: request,
+                    withHandlers: handlers,
+                    andMiddleware: middleware,
+                    on: self.eventLoopGroup.next(),
+                    host: self,
+                    withTimeout: timeout
+                )
                 return singleRequest.resume(style: style)
             }
         }
@@ -72,7 +108,16 @@ extension Application {
             case noResponseExpected
         }
 
-        init(to ma: Multiaddr, overProtocol proto: String, withRequest request: Data, withHandlers handlers: HandlerConfig = .rawHandlers([]), andMiddleware middleware: MiddlewareConfig = .custom(nil), on el: EventLoop, host: Application, withTimeout timeout: TimeAmount = .seconds(3)) {
+        init(
+            to ma: Multiaddr,
+            overProtocol proto: String,
+            withRequest request: Data,
+            withHandlers handlers: HandlerConfig = .rawHandlers([]),
+            andMiddleware middleware: MiddlewareConfig = .custom(nil),
+            on el: EventLoop,
+            host: Application,
+            withTimeout timeout: TimeAmount = .seconds(3)
+        ) {
             self.eventloop = el
             self.host = host
             self.multiaddr = ma
@@ -93,40 +138,47 @@ extension Application {
             self.hasBegun = true
 
             do {
-                try host.newStream(to: self.multiaddr, forProtocol: self.proto, withHandlers: self.handlers, andMiddleware: self.middleware) { req -> EventLoopFuture<RawResponse> in
+                try host.newStream(
+                    to: self.multiaddr,
+                    forProtocol: self.proto,
+                    withHandlers: self.handlers,
+                    andMiddleware: self.middleware
+                ) { req -> EventLoopFuture<RawResponse> in
                     switch req.event {
-                        case .ready:
-                            // If the stream is ready and we have data to send... let's send it...
-                            return req.eventLoop.makeSucceededFuture(RawResponse(payload: req.allocator.buffer(bytes: self.request.bytes))).always { _ in
-                                if style == .noResponseExpected {
-                                    self.hasCompleted = true
-                                    req.shouldClose()
-                                    self.timeoutTask?.cancel()
-                                    self.promise.succeed(Data())
-                                }
-                            }
-
-                        case .data(let response):
-                            self.hasCompleted = true
-                            req.shouldClose()
-                            self.timeoutTask?.cancel()
-                            self.promise.succeed(Data(response.readableBytesView))
-
-                        case .closed:
-                            if !self.hasCompleted {
+                    case .ready:
+                        // If the stream is ready and we have data to send... let's send it...
+                        return req.eventLoop.makeSucceededFuture(
+                            RawResponse(payload: req.allocator.buffer(bytes: self.request.bytes))
+                        ).always { _ in
+                            if style == .noResponseExpected {
                                 self.hasCompleted = true
-                                req.logger.error("Stream Closed before we got our response")
-                                self.promise.fail(Errors.FailedToOpenStream)
+                                req.shouldClose()
+                                self.timeoutTask?.cancel()
+                                self.promise.succeed(Data())
                             }
-                            self.timeoutTask?.cancel()
-                            req.shouldClose()
+                        }
 
-                        case .error(let error):
+                    case .data(let response):
+                        self.hasCompleted = true
+                        req.shouldClose()
+                        self.timeoutTask?.cancel()
+                        self.promise.succeed(Data(response.readableBytesView))
+
+                    case .closed:
+                        if !self.hasCompleted {
                             self.hasCompleted = true
-                            req.logger.error("Stream Error - \(error)")
-                            self.promise.fail(error)
-                            self.timeoutTask?.cancel()
-                            req.shouldClose()
+                            req.logger.error("Stream Closed before we got our response")
+                            self.promise.fail(Errors.FailedToOpenStream)
+                        }
+                        self.timeoutTask?.cancel()
+                        req.shouldClose()
+
+                    case .error(let error):
+                        self.hasCompleted = true
+                        req.logger.error("Stream Error - \(error)")
+                        self.promise.fail(error)
+                        self.timeoutTask?.cancel()
+                        req.shouldClose()
                     }
 
                     return req.eventLoop.makeSucceededFuture(RawResponse(payload: req.allocator.buffer(bytes: [])))
@@ -181,7 +233,16 @@ extension Application {
             case noResponseExpected
         }
 
-        init(to ma: Multiaddr, overProtocol proto: String, withRequest request: Data, withHandlers handlers: HandlerConfig = .rawHandlers([]), andMiddleware middleware: MiddlewareConfig = .custom(nil), on el: EventLoop, host: Application, withTimeout timeout: TimeAmount = .seconds(3)) {
+        init(
+            to ma: Multiaddr,
+            overProtocol proto: String,
+            withRequest request: Data,
+            withHandlers handlers: HandlerConfig = .rawHandlers([]),
+            andMiddleware middleware: MiddlewareConfig = .custom(nil),
+            on el: EventLoop,
+            host: Application,
+            withTimeout timeout: TimeAmount = .seconds(3)
+        ) {
             self.eventloop = el
             self.host = host
             self.multiaddr = ma
@@ -202,71 +263,80 @@ extension Application {
             self.hasBegun = true
 
             do {
-                try host.newStream(to: self.multiaddr, forProtocol: self.proto, withHandlers: self.handlers, andMiddleware: self.middleware) { req -> EventLoopFuture<RawResponse> in
+                try host.newStream(
+                    to: self.multiaddr,
+                    forProtocol: self.proto,
+                    withHandlers: self.handlers,
+                    andMiddleware: self.middleware
+                ) { req -> EventLoopFuture<RawResponse> in
                     switch req.event {
-                        case .ready:
-                            // If the stream is ready and we have data to send... let's send it...
-                            return req.eventLoop.makeSucceededFuture(RawResponse(payload: req.allocator.buffer(bytes: self.request.bytes))).always { _ in
-                                if style == .noResponseExpected {
-                                    self.hasCompleted = true
-                                    self.cancelTimeoutTask()
-                                    req.shouldClose()
-                                    self.promise.succeed(Data())
-                                }
-                            }
-
-                        case .data(let response):
-                            if self.chunks == 0 {
-                                //Check if the response is uVarInt length prefixed....
-                                if let prefix = response.getBytes(at: response.readerIndex, length: 8) {
-                                    let varInt = uVarInt(prefix)
-                                    if varInt.value > 0 && varInt.value < 40960 && response.readableBytes > 2000 {
-                                        if Int(varInt.value) + varInt.bytesRead > response.readableBytes {
-                                            // We need to buffer...
-                                            self.lengthPrefixed = varInt.value
-                                            self.buffer = response
-                                            self.chunks += 1
-                                            // Stay Open...
-                                            self.resetTimeoutTask()
-                                            return req.eventLoop.makeSucceededFuture(RawResponse(payload: req.allocator.buffer(bytes: [])))
-                                        }
-                                    }
-                                }
-
+                    case .ready:
+                        // If the stream is ready and we have data to send... let's send it...
+                        return req.eventLoop.makeSucceededFuture(
+                            RawResponse(payload: req.allocator.buffer(bytes: self.request.bytes))
+                        ).always { _ in
+                            if style == .noResponseExpected {
                                 self.hasCompleted = true
                                 self.cancelTimeoutTask()
                                 req.shouldClose()
-                                self.promise.succeed(Data(response.readableBytesView))
-                            } else {
-                                // Append the next response onto the buffer and check to see if we've meet the length prefix
-                                self.chunks += 1
-                                self.buffer!.writeBytes(response.readableBytesView)
-                                if self.buffer!.readableBytes >= Int(self.lengthPrefixed!) {
-                                    self.hasCompleted = true
-                                    self.cancelTimeoutTask()
-                                    req.shouldClose()
-                                    self.promise.succeed(Data(self.buffer!.readableBytesView))
-                                } else {
-                                    // Stay open
-                                    self.resetTimeoutTask()
+                                self.promise.succeed(Data())
+                            }
+                        }
+
+                    case .data(let response):
+                        if self.chunks == 0 {
+                            //Check if the response is uVarInt length prefixed....
+                            if let prefix = response.getBytes(at: response.readerIndex, length: 8) {
+                                let varInt = uVarInt(prefix)
+                                if varInt.value > 0 && varInt.value < 40960 && response.readableBytes > 2000 {
+                                    if Int(varInt.value) + varInt.bytesRead > response.readableBytes {
+                                        // We need to buffer...
+                                        self.lengthPrefixed = varInt.value
+                                        self.buffer = response
+                                        self.chunks += 1
+                                        // Stay Open...
+                                        self.resetTimeoutTask()
+                                        return req.eventLoop.makeSucceededFuture(
+                                            RawResponse(payload: req.allocator.buffer(bytes: []))
+                                        )
+                                    }
                                 }
                             }
 
-                        case .closed:
-                            if !self.hasCompleted {
-                                self.hasCompleted = true
-                                req.logger.error("Stream Closed before we got our response")
-                                self.promise.fail(Errors.FailedToOpenStream)
-                            }
-                            self.cancelTimeoutTask()
-                            req.shouldClose()
-
-                        case .error(let error):
                             self.hasCompleted = true
-                            req.logger.error("Stream Error - \(error)")
-                            self.promise.fail(error)
                             self.cancelTimeoutTask()
                             req.shouldClose()
+                            self.promise.succeed(Data(response.readableBytesView))
+                        } else {
+                            // Append the next response onto the buffer and check to see if we've meet the length prefix
+                            self.chunks += 1
+                            self.buffer!.writeBytes(response.readableBytesView)
+                            if self.buffer!.readableBytes >= Int(self.lengthPrefixed!) {
+                                self.hasCompleted = true
+                                self.cancelTimeoutTask()
+                                req.shouldClose()
+                                self.promise.succeed(Data(self.buffer!.readableBytesView))
+                            } else {
+                                // Stay open
+                                self.resetTimeoutTask()
+                            }
+                        }
+
+                    case .closed:
+                        if !self.hasCompleted {
+                            self.hasCompleted = true
+                            req.logger.error("Stream Closed before we got our response")
+                            self.promise.fail(Errors.FailedToOpenStream)
+                        }
+                        self.cancelTimeoutTask()
+                        req.shouldClose()
+
+                    case .error(let error):
+                        self.hasCompleted = true
+                        req.logger.error("Stream Error - \(error)")
+                        self.promise.fail(error)
+                        self.cancelTimeoutTask()
+                        req.shouldClose()
                     }
 
                     return req.eventLoop.makeSucceededFuture(RawResponse(payload: req.allocator.buffer(bytes: [])))

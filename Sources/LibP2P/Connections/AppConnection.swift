@@ -17,35 +17,56 @@ import NIOCore
 /// AppConnection Protocol
 ///
 /// - Note: Our Connection Protocol is defined in LibP2PCore where we don't have access to Application specific structs, classes and protocols. Therefore we extend the core Connection protocol with some handy features available at the Application Layer
-public protocol AppConnection:Connection, CustomStringConvertible {
-    var application:Application { get }
-    var logger:Logger { get }
-    
-    init(application:Application, channel: Channel, direction: ConnectionStats.Direction, remoteAddress:Multiaddr, expectedRemotePeer:PeerID?)
-    
+public protocol AppConnection: Connection, CustomStringConvertible {
+    var application: Application { get }
+    var logger: Logger { get }
+
+    init(
+        application: Application,
+        channel: Channel,
+        direction: ConnectionStats.Direction,
+        remoteAddress: Multiaddr,
+        expectedRemotePeer: PeerID?
+    )
+
     func initializeChannel() -> EventLoopFuture<Void>
-    
+
     //func newStream(forProtocol proto:String, withResponder responder:Responder)
-    func newStream(forProtocol proto: String, withHandlers: HandlerConfig, andMiddleware: MiddlewareConfig, closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>))
-    
+    func newStream(
+        forProtocol proto: String,
+        withHandlers: HandlerConfig,
+        andMiddleware: MiddlewareConfig,
+        closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>)
+    )
+
     func lastActivity() -> Date
-    
-    var lastActive:TimeAmount { get }
+
+    var lastActive: TimeAmount { get }
 }
 
 extension AppConnection {
-    
+
     /// This method returns immediately after installing the upgrader and completes a promise upon protocol negotiation
-    internal func negotiateProtocol(fromSet protocols:[String], mode: LibP2P.Mode, logger: Logger, promise:EventLoopPromise<NegotiationResult>) -> EventLoopFuture<Void> {
-        let mssHandlers:[ChannelHandler] = application.upgrader.negotiate(protocols: protocols, mode: mode, logger: logger, promise: promise)
+    internal func negotiateProtocol(
+        fromSet protocols: [String],
+        mode: LibP2P.Mode,
+        logger: Logger,
+        promise: EventLoopPromise<NegotiationResult>
+    ) -> EventLoopFuture<Void> {
+        let mssHandlers: [ChannelHandler] = application.upgrader.negotiate(
+            protocols: protocols,
+            mode: mode,
+            logger: logger,
+            promise: promise
+        )
         return self.channel.pipeline.addHandler(mssHandlers.first!, name: "upgrader", position: .last)
     }
-    
+
     /// Satisifies the Promise by Negotiating and installing a Security Module
     /// - Note: this method returns immediately after installing the negotiation ChannelHandlers
-    internal func secureConnection(promise:EventLoopPromise<SecuredResult>) -> EventLoopFuture<Void> {
+    internal func secureConnection(promise: EventLoopPromise<SecuredResult>) -> EventLoopFuture<Void> {
         let negotiationPromise = self.channel.eventLoop.makePromise(of: NegotiationResult.self)
-        
+
         negotiationPromise.futureResult.whenComplete { res in
             switch res {
             case .failure(let error):
@@ -55,7 +76,7 @@ extension AppConnection {
                     promise.fail(Application.Connections.Errors.invalidProtocolNegotatied)
                     return
                 }
-                
+
                 // - TODO: we might want to be more specific here with the position we're adding our handlers...
                 secUpgrader.upgradeConnection(self, position: .last, securedPromise: promise).flatMap {
                     self.channel.pipeline.removeHandler(name: "upgrader")
@@ -69,16 +90,21 @@ extension AppConnection {
                 }
             }
         }
-        
-        return negotiateProtocol(fromSet: self.application.security.available, mode: self.mode, logger: logger, promise: negotiationPromise)
+
+        return negotiateProtocol(
+            fromSet: self.application.security.available,
+            mode: self.mode,
+            logger: logger,
+            promise: negotiationPromise
+        )
     }
-    
+
     /// Satisifies the Promise by Negotiating and installing a Muxer
     /// - Note: this method returns immediately after installing the negotiation ChannelHandlers
-    internal func muxConnection(promise:EventLoopPromise<Muxer>) -> EventLoopFuture<Void> {
+    internal func muxConnection(promise: EventLoopPromise<Muxer>) -> EventLoopFuture<Void> {
         let negotiationPromise = self.channel.eventLoop.makePromise(of: NegotiationResult.self)
         //let muxedPromise = self.channel.eventLoop.makePromise(of: Muxer.self)
-        
+
         negotiationPromise.futureResult.whenComplete { res in
             switch res {
             case .failure(let error):
@@ -88,7 +114,7 @@ extension AppConnection {
                     promise.fail(Application.Connections.Errors.invalidProtocolNegotatied)
                     return
                 }
-            
+
                 muxUpgrader.upgradeConnection(self, muxedPromise: promise).flatMap {
                     self.channel.pipeline.removeHandler(name: "upgrader")
                 }.whenComplete { res in
@@ -101,8 +127,13 @@ extension AppConnection {
                 }
             }
         }
-        
-        return negotiateProtocol(fromSet: self.application.muxers.available, mode: self.mode, logger: logger, promise: negotiationPromise)
+
+        return negotiateProtocol(
+            fromSet: self.application.muxers.available,
+            mode: self.mode,
+            logger: logger,
+            promise: negotiationPromise
+        )
     }
 }
 
@@ -140,4 +171,3 @@ extension AppConnection {
 //        }
 //    }
 //}
-

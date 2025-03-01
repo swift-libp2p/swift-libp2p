@@ -16,24 +16,23 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-
+import Backtrace
+import Foundation
+import Metrics
+import Multiaddr
 import NIO
 import RoutingKit
-import Foundation
-import Multiaddr
-import Backtrace
-import Metrics
 
 /// LibP2P's main `Responder` type. Combines configured channel handlers + middleware + router to create a responder.
 internal struct DefaultResponder: Responder {
     private let router: TrieRouter<CachedRoute2>
     private let notFoundResponder: Responder
 
-//    private struct CachedRoute {
-//        let route: Route
-//        let responder: Responder
-//    }
-    
+    //    private struct CachedRoute {
+    //        let route: Route
+    //        let responder: Responder
+    //    }
+
     private struct CachedRoute2 {
         let route: Route
         let handlers: [Application.ChildChannelHandlers.Provider]
@@ -42,10 +41,11 @@ internal struct DefaultResponder: Responder {
 
     /// Creates a new `ApplicationResponder`
     public init(routes: Routes, middleware: [Middleware] = []) {
-        let options = routes.caseInsensitive ?
-            Set(arrayLiteral: TrieRouter<CachedRoute2>.ConfigurationOption.caseInsensitive) : []
+        let options =
+            routes.caseInsensitive
+            ? Set(arrayLiteral: TrieRouter<CachedRoute2>.ConfigurationOption.caseInsensitive) : []
         let router = TrieRouter(CachedRoute2.self, options: options)
-        
+
         for route in routes.all {
             // Make a copy of the route to cache middleware chaining.
             let cached = CachedRoute2(
@@ -78,51 +78,55 @@ internal struct DefaultResponder: Responder {
         } else {
             response = self.notFoundResponder.respond(to: request)
         }
-        return response
-        .always { result in
-            let status: UInt
-            switch result {
-            case .success:
-                status = 0
-            case .failure:
-                status = 500
+        return
+            response
+            .always { result in
+                let status: UInt
+                switch result {
+                case .success:
+                    status = 0
+                case .failure:
+                    status = 500
+                }
+                //print("Request: \(request.route?.description ?? "NIL") - \(request.streamDirection) - \(request.event)")
+                //print("Time: \(DispatchTime.now().uptimeNanoseconds - startTime) ns")
+                self.updateMetrics(
+                    for: request,
+                    startTime: startTime,
+                    statusCode: status
+                )
             }
-            //print("Request: \(request.route?.description ?? "NIL") - \(request.streamDirection) - \(request.event)")
-            //print("Time: \(DispatchTime.now().uptimeNanoseconds - startTime) ns")
-            self.updateMetrics(
-                for: request,
-                startTime: startTime,
-                statusCode: status
-            )
-        }
     }
-    
+
     /// Used to check if we can handle a request at the specifed path
     ///  - returns: A list of ChannelHandler middleware to be installed on the pipeline before calling the responder...
-//    public func canRespond(to request: Request) -> [ChannelHandler]? {
-//        if let cachedRoute = self.getRoute(for: request) {
-//            return cachedRoute.handlers.reduce(into: Array<ChannelHandler>(), { partialResult, provider in
-//                partialResult.append(contentsOf: provider.run(request.connection))
-//            })
-//        } else {
-//            return nil
-//        }
-//    }
+    //    public func canRespond(to request: Request) -> [ChannelHandler]? {
+    //        if let cachedRoute = self.getRoute(for: request) {
+    //            return cachedRoute.handlers.reduce(into: Array<ChannelHandler>(), { partialResult, provider in
+    //                partialResult.append(contentsOf: provider.run(request.connection))
+    //            })
+    //        } else {
+    //            return nil
+    //        }
+    //    }
 
-    public func pipelineConfig(for protocol:String, on connection:Connection) -> [ChannelHandler]? {
+    public func pipelineConfig(for protocol: String, on connection: Connection) -> [ChannelHandler]? {
         if let cachedRoute = self.getRoute(for: `protocol`) {
-            return cachedRoute.handlers.reduce(into: Array<ChannelHandler>(), { partialResult, provider in
-                partialResult.append(contentsOf: provider.run(connection))
-            })
+            return cachedRoute.handlers.reduce(
+                into: [ChannelHandler](),
+                { partialResult, provider in
+                    partialResult.append(contentsOf: provider.run(connection))
+                }
+            )
         } else {
             print("Failed to fetch pipeline config for protocol `\(`protocol`)`")
             return nil
         }
     }
-    
+
     /// Gets a `Route` from the underlying `TrieRouter`.
     private func getRoute(for request: Request) -> CachedRoute2? {
-//        let pathComponents = request.addr.pathComponents
+        //        let pathComponents = request.addr.pathComponents
         let pathComponents = request.protocol
             .split(separator: "/")
             .map(String.init)
@@ -133,11 +137,12 @@ internal struct DefaultResponder: Responder {
             parameters: &request.parameters
         )
     }
-    
+
     /// Added this method to help return ChannelHandler configs for the given protocol route
-    private func getRoute(for protocol:String) -> CachedRoute2? {
+    private func getRoute(for protocol: String) -> CachedRoute2? {
         var params = Parameters()
-        let pathComponents = `protocol`
+        let pathComponents =
+            `protocol`
             .split(separator: "/")
             .map(String.init)
         return self.router.route(
@@ -169,7 +174,7 @@ internal struct DefaultResponder: Responder {
         }
         let dimensions = [
             //("method", methodForMetrics),
-            ("path", pathForMetrics),
+            ("path", pathForMetrics)
             //("status", statusCode.description),
         ]
         Counter(label: "requests_total", dimensions: dimensions).increment()
@@ -184,11 +189,11 @@ internal struct DefaultResponder: Responder {
     }
 }
 
-public extension Multiaddr {
-    
+extension Multiaddr {
+
     /// Multiaddr don't even support custom protocols at the moment (it check `echo` against the Codecs list, doesn't find it, and fails)
     /// "ip4/1.1.1.1/tcp/10000/p2p/Qm..123/echo/1.0.0"
-    var pathComponents:[String] {
+    public var pathComponents: [String] {
         // TODO: Implement me
         print("Extracting Path Components from Multiaddr: \(self.description)")
         return [self.addresses.last!.description]
@@ -199,9 +204,9 @@ private struct NotFoundResponder: Responder {
     func respond(to request: Request) -> EventLoopFuture<RawResponse> {
         request.eventLoop.makeFailedFuture(RouteNotFound())
     }
-    
+
     public func pipelineConfig(for protocol: String, on connection: Connection) -> [ChannelHandler]? {
-        return nil
+        nil
     }
 }
 

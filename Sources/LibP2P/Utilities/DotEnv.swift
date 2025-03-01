@@ -16,15 +16,15 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
+import Logging
+import NIO
+import NIOConcurrencyHelpers
+
 #if os(Linux)
 import Glibc
 #else
 import Darwin
 #endif
-
-import NIO
-import NIOConcurrencyHelpers
-import Logging
 
 /// Reads dotenv (`.env`) files and loads them into the current process.
 ///
@@ -164,7 +164,7 @@ public struct DotEnvFile {
         on eventLoop: EventLoop,
         overwrite: Bool = false
     ) -> EventLoopFuture<Void> {
-        return self.read(path: path, fileio: fileio, on: eventLoop)
+        self.read(path: path, fileio: fileio, on: eventLoop)
             .map { $0.load(overwrite: overwrite) }
     }
 
@@ -190,13 +190,12 @@ public struct DotEnvFile {
         fileio: NonBlockingFileIO,
         on eventLoop: EventLoop
     ) -> EventLoopFuture<DotEnvFile> {
-        return fileio.openFile(path: path, eventLoop: eventLoop).flatMap { arg -> EventLoopFuture<ByteBuffer> in
-            return fileio.read(fileRegion: arg.1, allocator: .init(), eventLoop: eventLoop)
-                .flatMapThrowing
-            { buffer in
-                try arg.0.close()
-                return buffer
-            }
+        fileio.openFile(path: path, eventLoop: eventLoop).flatMap { arg -> EventLoopFuture<ByteBuffer> in
+            fileio.read(fileRegion: arg.1, allocator: .init(), eventLoop: eventLoop)
+                .flatMapThrowing { buffer in
+                    try arg.0.close()
+                    return buffer
+                }
         }.map { buffer in
             var parser = Parser(source: buffer)
             return .init(lines: parser.parse())
@@ -213,7 +212,7 @@ public struct DotEnvFile {
 
         /// `CustomStringConvertible` conformance.
         public var description: String {
-            return "\(self.key)=\(self.value)"
+            "\(self.key)=\(self.value)"
         }
     }
 
@@ -270,7 +269,7 @@ extension DotEnvFile {
                 return self.parseNext()
             case .newLine:
                 // empty line, skip
-                self.pop() // \n
+                self.pop()  // \n
                 // then parse next
                 return self.parseNext()
             default:
@@ -282,7 +281,7 @@ extension DotEnvFile {
         private mutating func skipComment() {
             let commentLength: Int
             if let toNewLine = self.countDistance(to: .newLine) {
-                commentLength = toNewLine + 1 // include newline
+                commentLength = toNewLine + 1  // include newline
             } else {
                 commentLength = self.source.readableBytes
             }
@@ -296,7 +295,7 @@ extension DotEnvFile {
             guard let key = self.source.readString(length: keyLength) else {
                 return nil
             }
-            self.pop() // =
+            self.pop()  // =
             guard let value = self.parseLineValue() else {
                 return nil
             }
@@ -339,7 +338,7 @@ extension DotEnvFile {
         }
 
         private func peek() -> UInt8? {
-            return self.source.getInteger(at: self.source.readerIndex)
+            self.source.getInteger(at: self.source.readerIndex)
         }
 
         private mutating func pop() {
@@ -367,20 +366,20 @@ extension DotEnvFile {
     }
 }
 
-private extension UInt8 {
-    static var newLine: UInt8 {
-        return 0xA
+extension UInt8 {
+    fileprivate static var newLine: UInt8 {
+        0xA
     }
 
-    static var space: UInt8 {
-        return 0x20
+    fileprivate static var space: UInt8 {
+        0x20
     }
 
-    static var octothorpe: UInt8 {
-        return 0x23
+    fileprivate static var octothorpe: UInt8 {
+        0x23
     }
 
-    static var equal: UInt8 {
-        return 0x3D
+    fileprivate static var equal: UInt8 {
+        0x3D
     }
 }

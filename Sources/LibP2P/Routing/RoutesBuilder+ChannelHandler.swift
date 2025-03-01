@@ -30,7 +30,7 @@ extension RoutesBuilder {
     ///     - middleware: Variadic `ChannelHandler` to configure the `Router` with.
     /// - returns: New `Router` configured with `ChannelHandlers`.
     public func grouped(_ handlers: Application.ChildChannelHandlers.Provider...) -> RoutesBuilder {
-        return self.grouped(handlers)
+        self.grouped(handlers)
     }
 
     /// Creates a new `Router` whos pipeline will be configred with the supplied variadic `ChannelHandlers`.
@@ -43,8 +43,11 @@ extension RoutesBuilder {
     /// - parameters:
     ///     - middleware: Variadic `ChannelHandler` to configure the `Router` with.
     ///     - configure: Closure to configure the newly created `Router`.
-    public func group(_ handlers: Application.ChildChannelHandlers.Provider..., configure: (RoutesBuilder) throws -> ()) rethrows {
-        return try self.group(handlers, configure: configure)
+    public func group(
+        _ handlers: Application.ChildChannelHandlers.Provider...,
+        configure: (RoutesBuilder) throws -> Void
+    ) rethrows {
+        try self.group(handlers, configure: configure)
     }
 
     /// Creates a new `Router` whos pipeline will be configred with the supplied array of `ChannelHandler`.
@@ -62,7 +65,7 @@ extension RoutesBuilder {
         }
         return ChannelHandlerGroup(root: self, handlers: handlers)
     }
-    
+
     /// Creates a new `Router` whos pipeline will be configred with the supplied array of `ChannelHandler`.
     ///
     ///     let group = router.grouped([.foo, .bar])
@@ -72,7 +75,8 @@ extension RoutesBuilder {
     /// - parameters:
     ///     - handlers: Array of `[ChannelHandler]` to configure the `Router` with.
     /// - returns: New `Router` configured with `ChannelHandlers`.
-    public func grouped(_ path:[PathComponent], handlers: [Application.ChildChannelHandlers.Provider]) -> RoutesBuilder {
+    public func grouped(_ path: [PathComponent], handlers: [Application.ChildChannelHandlers.Provider]) -> RoutesBuilder
+    {
         guard handlers.count > 0 else {
             return self
         }
@@ -89,15 +93,26 @@ extension RoutesBuilder {
     /// - parameters:
     ///     - handlers: Array of `[ChannelHandler]` to configure the `Router` with.
     ///     - configure: Closure to configure the newly created `Router`.
-    public func group(_ handlers: [Application.ChildChannelHandlers.Provider], configure: (RoutesBuilder) throws -> ()) rethrows {
+    public func group(
+        _ handlers: [Application.ChildChannelHandlers.Provider],
+        configure: (RoutesBuilder) throws -> Void
+    ) rethrows {
         try configure(ChannelHandlerGroup(root: self, handlers: handlers))
     }
-    
-    public func group(_ path:[PathComponent], handlers: [Application.ChildChannelHandlers.Provider], configure: (RoutesBuilder) throws -> ()) rethrows {
+
+    public func group(
+        _ path: [PathComponent],
+        handlers: [Application.ChildChannelHandlers.Provider],
+        configure: (RoutesBuilder) throws -> Void
+    ) rethrows {
         try configure(ChannelHandlerGroup(root: self, path: path, handlers: handlers))
     }
-    
-    public func group(_ path:PathComponent ..., handlers: [Application.ChildChannelHandlers.Provider], configure: (RoutesBuilder) throws -> ()) rethrows {
+
+    public func group(
+        _ path: PathComponent...,
+        handlers: [Application.ChildChannelHandlers.Provider],
+        configure: (RoutesBuilder) throws -> Void
+    ) rethrows {
         try configure(ChannelHandlerGroup(root: self, path: path, handlers: handlers))
     }
 }
@@ -110,24 +125,24 @@ private final class ChannelHandlerGroup: RoutesBuilder {
 
     /// Additional components.
     let path: [PathComponent]
-    
+
     /// Additional middleware.
     var handlers: [Application.ChildChannelHandlers.Provider]
 
     /// Creates a new `PathGroup`.
-    init(root: RoutesBuilder, path:[PathComponent] = [], handlers: [Application.ChildChannelHandlers.Provider]) {
+    init(root: RoutesBuilder, path: [PathComponent] = [], handlers: [Application.ChildChannelHandlers.Provider]) {
         self.root = root
         self.handlers = handlers
         self.path = path
     }
-    
+
     /// See `HTTPRoutesBuilder`.
     func add(_ route: Route) {
         //route.responder = self.handlers.makeResponder(chainingTo: route.responder)
         //self.handlers.append(contentsOf: route.handlers)
         route.path = self.path + route.path
-        route.handlers.insert(contentsOf: self.handlers, at: 0) //(contentsOf: self.handlers)
+        route.handlers.insert(contentsOf: self.handlers, at: 0)  //(contentsOf: self.handlers)
         self.root.add(route)
-        
+
     }
 }

@@ -26,16 +26,16 @@ import ConsoleKit
 public final class BootCommand: Command {
     /// See `Command`.
     public struct Signature: CommandSignature {
-        public init() { }
+        public init() {}
     }
 
     /// See `Command`.
     public var help: String {
-        return "Boots the application's providers."
+        "Boots the application's providers."
     }
 
     /// Create a new `BootCommand`.
-    public init() { }
+    public init() {}
 
     /// See `Command`.
     public func run(using context: CommandContext, signature: Signature) throws {

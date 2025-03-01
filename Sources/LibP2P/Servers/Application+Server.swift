@@ -20,21 +20,23 @@ extension Application {
     /// Conforms to Libp2p listen protocol
     ///
     /// - Note: This is the same as using app.servers.use(...)
-    public func listen(_ serverProvider:Servers.Provider) {
+    public func listen(_ serverProvider: Servers.Provider) {
         self.servers.use(serverProvider)
     }
-    
-//    public var listenAddresses:[Multiaddr] {
-//        self.servers.allServers.reduce(into: Array<Multiaddr>()) { partialResult, server in
-//            partialResult.append(server.listeningAddress)
-//        }
-//    }
-    
-    public var listenAddresses:[Multiaddr] {
-        return self.servers.allServers.reduce(into: Array<Multiaddr>()) { partialResult, server in
+
+    //    public var listenAddresses:[Multiaddr] {
+    //        self.servers.allServers.reduce(into: Array<Multiaddr>()) { partialResult, server in
+    //            partialResult.append(server.listeningAddress)
+    //        }
+    //    }
+
+    public var listenAddresses: [Multiaddr] {
+        self.servers.allServers.reduce(into: [Multiaddr]()) { partialResult, server in
             partialResult.append(server.listeningAddress)
         }.map { ma in
-            if let tcp = ma.tcpAddress, tcp.address == "0.0.0.0", let en0 = (try? self.getSystemAddress(forDevice: "en0"))?.address?.ipAddress {
+            if let tcp = ma.tcpAddress, tcp.address == "0.0.0.0",
+                let en0 = (try? self.getSystemAddress(forDevice: "en0"))?.address?.ipAddress
+            {
                 return (try? ma.swap(address: en0, forCodec: .ip4)) ?? ma
             } else {
                 return ma
@@ -44,11 +46,11 @@ extension Application {
 
     public struct Servers {
         typealias KeyedServer = (key: String, value: Server)
-        
-        public struct Provider {
-            let run: (Application) -> ()
 
-            public init(_ run: @escaping (Application) -> ()) {
+        public struct Provider {
+            let run: (Application) -> Void
+
+            public init(_ run: @escaping (Application) -> Void) {
                 self.run = run
             }
         }
@@ -58,9 +60,9 @@ extension Application {
         }
 
         final class Storage {
-            var servers:[KeyedServer] = []
+            var servers: [KeyedServer] = []
             //var makeServer: ((Application) -> Server)?
-            init() { }
+            init() {}
         }
 
         struct Key: StorageKey {
@@ -74,28 +76,31 @@ extension Application {
         public func use(_ provider: Provider) {
             provider.run(self.application)
         }
-        
-        public func use<S:Server>(_ makeServer: @escaping (Application) -> (S)) {
-            guard !self.storage.servers.contains(where: { $0.key == S.key }) else { self.application.logger.warning("`\(S.key)` Server Already Installed - Skipping"); return }
-            self.storage.servers.append( (S.key, makeServer(self.application)) )
+
+        public func use<S: Server>(_ makeServer: @escaping (Application) -> (S)) {
+            guard !self.storage.servers.contains(where: { $0.key == S.key }) else {
+                self.application.logger.warning("`\(S.key)` Server Already Installed - Skipping")
+                return
+            }
+            self.storage.servers.append((S.key, makeServer(self.application)))
         }
-        
-        public func server<S:Server>(for sec:S.Type) -> S? {
+
+        public func server<S: Server>(for sec: S.Type) -> S? {
             self.server(forKey: sec.key) as? S
         }
-        
-        public func server(forKey key:String) -> Server? {
+
+        public func server(forKey key: String) -> Server? {
             self.storage.servers.first(where: { $0.key == key })?.value
         }
-        
-        public var available:[String] {
+
+        public var available: [String] {
             self.storage.servers.map { $0.key }
         }
-        
-        internal var allServers:[Server] {
+
+        internal var allServers: [Server] {
             self.storage.servers.map { $0.value }
         }
-        
+
         public var command: ServeCommand {
             if let existing = self.application.storage.get(CommandKey.self) {
                 return existing

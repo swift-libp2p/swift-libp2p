@@ -25,19 +25,19 @@ extension Application {
         }
         return manager
     }
-    
+
     public struct PeerStores {
         public struct Provider {
-            let run: (Application) -> ()
+            let run: (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> ()) {
+            public init(_ run: @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
         final class Storage {
             var manager: PeerStore?
-            init() { }
+            init() {}
         }
 
         struct Key: StorageKey {

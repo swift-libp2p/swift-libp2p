@@ -19,18 +19,18 @@ let package = Package(
     name: "swift-libp2p",
     platforms: [
         .macOS(.v10_15),
-        .iOS(.v13)
+        .iOS(.v13),
     ],
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
         .library(
             name: "LibP2P",
-            targets: ["LibP2P"]),
+            targets: ["LibP2P"]
+        )
         //.library(name: "LibP2PCore", targets: ["LibP2PCore"])
     ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
-        // .package(url: /* package url */, from: "1.0.0"),
         // Swift NIO for all things networking
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.0.0"),
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.0.0"),
@@ -65,7 +65,7 @@ let package = Package(
         //.target(name: "CBcrypt"),
         .target(name: "COperatingSystem"),
         //.target(name: "CURLParser"),
-        
+
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
         // Targets can depend on other targets in this package, and on products in packages this package depends on.
         .target(
@@ -87,9 +87,11 @@ let package = Package(
                 .product(name: "SwiftEventBus", package: "SwiftEventBus"),
                 .product(name: "SwiftState", package: "SwiftState"),
                 .target(name: "COperatingSystem"),
-            ]),
+            ]
+        ),
         .testTarget(
             name: "LibP2PTests",
-            dependencies: ["LibP2P"]),
+            dependencies: ["LibP2P"]
+        ),
     ]
 )

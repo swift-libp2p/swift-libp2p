@@ -16,8 +16,8 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import RoutingKit
 import NIOCore
+import RoutingKit
 
 ///// Determines how an incoming HTTP request's body is collected.
 public enum PayloadStreamStrategy {
@@ -32,13 +32,17 @@ extension RoutesBuilder {
         handlers: [Application.ChildChannelHandlers.Provider] = [],
         use closure: @escaping (Request) throws -> Response
     ) -> Route
-        where Response: ResponseEncodable
-    {
-        return self.on(path, body: body, handlers: handlers, use: { request in
-            return try closure(request)
-        })
+    where Response: ResponseEncodable {
+        self.on(
+            path,
+            body: body,
+            handlers: handlers,
+            use: { request in
+                try closure(request)
+            }
+        )
     }
-    
+
     @discardableResult
     public func on<Response>(
         _ path: [PathComponent],
@@ -46,8 +50,7 @@ extension RoutesBuilder {
         handlers: [Application.ChildChannelHandlers.Provider] = [],
         use closure: @escaping (Request) throws -> Response
     ) -> Route
-        where Response: ResponseEncodable
-    {
+    where Response: ResponseEncodable {
         let responder = BasicResponder { request in
             return try closure(request)
                 .encodeResponse(for: request)

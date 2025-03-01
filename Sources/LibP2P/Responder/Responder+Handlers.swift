@@ -42,7 +42,7 @@ extension Application {
     public struct ChildChannelHandlers {
         public struct Provider {
             let run: (Connection) -> ([ChannelHandler])
-            
+
             public init(_ run: @escaping (Connection) -> ([ChannelHandler])) {
                 self.run = run
             }

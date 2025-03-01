@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-internal func handlePingRequest(_ req:Request) -> Response<ByteBuffer> {
+internal func handlePingRequest(_ req: Request) -> Response<ByteBuffer> {
     switch req.streamDirection {
     case .inbound:
         switch req.event {
@@ -24,7 +24,7 @@ internal func handlePingRequest(_ req:Request) -> Response<ByteBuffer> {
         default:
             return .close
         }
-        
+
     case .outbound:
         switch req.event {
         case .ready:
@@ -33,31 +33,31 @@ internal func handlePingRequest(_ req:Request) -> Response<ByteBuffer> {
             } else {
                 return .close
             }
-            
+
         case .data(let pingResponse):
-            handleOutboundPingResponse(req, pingResponse: Array<UInt8>(pingResponse.readableBytesView))
+            handleOutboundPingResponse(req, pingResponse: [UInt8](pingResponse.readableBytesView))
             return .close
-            
+
         default:
             return .close
         }
     }
 }
 
-private func handleOutboundPing(_ req:Request) -> ByteBuffer? {
+private func handleOutboundPing(_ req: Request) -> ByteBuffer? {
     guard let manager = req.application.identify as? Identify else {
         req.logger.error("Identify::Unknown IdentityManager. Unable to contruct ping message")
         return nil
     }
-    
+
     return manager.handleOutboundPing(req)
 }
 
-private func handleOutboundPingResponse(_ req:Request, pingResponse:[UInt8]) {
+private func handleOutboundPingResponse(_ req: Request, pingResponse: [UInt8]) {
     guard let manager = req.application.identify as? Identify else {
         req.logger.error("Identify::Unknown IdentityManager. Unable to contruct ping message")
         return
     }
-    
+
     manager.handleOutboundPingResponse(req, pingResponse: pingResponse)
 }

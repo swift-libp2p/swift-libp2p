@@ -18,10 +18,13 @@ extension Application.Servers.Provider {
             $0.servers.use { $0.tcp.server.shared }
         }
     }
-    
-    public static func tcp(host:String, port:Int) -> Self {
+
+    public static func tcp(host: String, port: Int) -> Self {
         .init {
-            $0.tcp.server.configuration = TCPServer.Configuration(address: .hostname(host, port: port), logger: $0.logger)
+            $0.tcp.server.configuration = TCPServer.Configuration(
+                address: .hostname(host, port: port),
+                logger: $0.logger
+            )
             $0.servers.use {
                 $0.tcp.server.shared
             }
@@ -33,7 +36,7 @@ extension Application.TCP {
     public var server: Server {
         .init(application: self.application)
     }
-    
+
     public struct Server {
         let application: Application
 
@@ -61,9 +64,10 @@ extension Application.TCP {
 
         public var configuration: TCPServer.Configuration {
             get {
-                self.application.storage[ConfigurationKey.self] ?? .init(
-                    logger: self.application.logger
-                )
+                self.application.storage[ConfigurationKey.self]
+                    ?? .init(
+                        logger: self.application.logger
+                    )
             }
             nonmutating set {
                 if self.application.storage.contains(Key.self) {

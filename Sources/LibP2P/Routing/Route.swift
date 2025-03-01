@@ -24,14 +24,14 @@ public final class Route: CustomStringConvertible {
     public var handlers: [Application.ChildChannelHandlers.Provider]
     public var requestType: Any.Type
     public var responseType: Any.Type
-    
+
     public var userInfo: [AnyHashable: Any]
 
     public var description: String {
         let path = self.path.map { "\($0)" }.joined(separator: "/")
         return "/\(path)"
     }
-    
+
     public init(
         path: [PathComponent],
         responder: Responder,
@@ -46,7 +46,7 @@ public final class Route: CustomStringConvertible {
         self.responseType = responseType
         self.userInfo = [:]
     }
-       
+
     @discardableResult
     public func description(_ string: String) -> Route {
         self.userInfo["description"] = string
