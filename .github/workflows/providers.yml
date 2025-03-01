@@ -1,0 +1,13 @@
+name: Test Dependency Graph
+
+on:
+  pull_request:
+    types: [labeled, synchronize]
+
+jobs:
+  test-dependants:
+    name: Tests
+    uses: swift-libp2p/github-workflows/.github/workflows/providers.yml@main
+    with:
+      # Eventually include integration test
+      dependents: "[]"
