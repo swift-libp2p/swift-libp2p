@@ -1,5 +1,18 @@
 //===----------------------------------------------------------------------===//
 //
+// This source file is part of the swift-libp2p open source project
+//
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
+//
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+//
 // This source file is part of the SwiftProtobuf open source project
 //
 // Copyright (c) 2019 Circuit Dragon, Ltd.
@@ -10,13 +23,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 //===----------------------------------------------------------------------===//
-
-//
-//  VarIntLengthPrefixHandlers.swift
-//  
-//
-//  Created by Brandon Toms on 5/1/22.
-//
 
 import NIO
 import SwiftProtobuf
