@@ -17,7 +17,7 @@ extension Application {
     func streamCountToPeer(_ ma: Multiaddr) -> EventLoopFuture<Int> {
         self.connections.getConnectionsTo(ma, onlyMuxed: true, on: nil).map({ connections -> Int in
             var streamCount = 0
-            connections.forEach { connection in
+            for connection in connections {
                 streamCount += connection.streams.count
             }
             self.logger.info(
