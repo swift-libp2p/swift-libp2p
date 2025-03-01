@@ -474,10 +474,10 @@ class BasicInMemoryConnectionManager: ConnectionManager {
 
                 --- Connection History <\(self.connectionHistory.count)> ---
                 \(self.connectionHistory.map { kv in
-                var str = "Peer: \(kv.key)"
-                str += kv.value.map { $0.description }.joined(separator: "\n")
-                return str
-            }.joined(separator: "\n---\n"))
+                    var str = "Peer: \(kv.key)"
+                    str += kv.value.map { $0.description }.joined(separator: "\n")
+                    return str
+                }.joined(separator: "\n---\n"))
                 -----------------------------
                 """
             )
