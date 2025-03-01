@@ -74,11 +74,13 @@ public final class ServeCommand: Command {
     public func run(using context: CommandContext, signature: Signature) throws {
         switch (signature.hostname, signature.port, signature.bind, signature.socketPath) {
         case (.none, .none, .none, .none):  // use defaults
-            try context.application.servers.allServers.forEach { try $0.start(address: nil) }
+            for server in context.application.servers.allServers {
+                try server.start(address: nil)
+            }
 
         case (.none, .none, .none, .some(let socketPath)):  // unix socket
-            try context.application.servers.allServers.forEach {
-                try $0.start(address: .unixDomainSocket(path: socketPath))
+            for server in context.application.servers.allServers {
+                try server.start(address: .unixDomainSocket(path: socketPath))
             }
 
         case (.none, .none, .some(let address), .none):  // bind ("hostname:port")
@@ -86,15 +88,15 @@ public final class ServeCommand: Command {
             let port = address.split(separator: ":").last.flatMap(String.init).flatMap(Int.init)
             nextPort = port
 
-            try context.application.servers.allServers.forEach {
-                try $0.start(address: .hostname(hostname, port: port))
+            for server in context.application.servers.allServers {
+                try server.start(address: .hostname(hostname, port: port))
                 nextPort? += 1
             }
 
         case (let hostname, let port, .none, .none):  // hostname / port
             nextPort = port
-            try context.application.servers.allServers.forEach {
-                try $0.start(address: .hostname(hostname, port: nextPort!))
+            for server in context.application.servers.allServers {
+                try server.start(address: .hostname(hostname, port: nextPort!))
                 nextPort! += 1
             }
 
@@ -127,10 +129,12 @@ public final class ServeCommand: Command {
     func shutdown() {
         self.didShutdown = true
         self.running?.stop()
-        self.servers.forEach {
-            $0.shutdown()
+        for server in self.servers {
+            server.shutdown()
         }
-        self.signalSources.forEach { $0.cancel() }  // clear refs
+        for signalSource in self.signalSources {
+            signalSource.cancel()  // clear refs
+        }
         self.signalSources = []
     }
 
