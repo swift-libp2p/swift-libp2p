@@ -356,7 +356,8 @@ class BasicInMemoryConnectionManager: ConnectionManager {
             return self.eventLoop.makeSucceededVoidFuture()
         }
         return self.eventLoop.flatSubmit {
-            guard self.pruneTask == nil else { /*self.logger.notice("Debouncing Prune");*/
+            // self.logger.notice("Debouncing Prune");
+            guard self.pruneTask == nil else {
                 return self.eventLoop.makeSucceededVoidFuture()
             }
             self.pruneTask = self.eventLoop.scheduleTask(

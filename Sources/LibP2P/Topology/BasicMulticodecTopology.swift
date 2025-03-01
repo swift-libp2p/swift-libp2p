@@ -124,7 +124,8 @@ public class BasicMulticodecTopology {
                     logger.warning("Failed to remove Remote Peer \(change.peer.b58String) from our topology list")
                 }
             }
-        } else {  // If we're not already tracking this peer & they support an interested protocol/codec add them to our list and notify our handlers as necessary...
+        } else {
+            // If we're not already tracking this peer & they support an interested protocol/codec add them to our list and notify our handlers as necessary...
             if protocols.matches(any: change.protocols) {
                 // They support the protocols we're interested in. So lets add them to our tracked peers and notify our handler...
                 _peers[change.peer.b58String] = change.connection

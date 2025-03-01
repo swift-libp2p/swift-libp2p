@@ -86,8 +86,8 @@ public final class RoutesCommand: Command {
                             for: route.description,
                             on: DummyConnection()
                         ) {
-                            handlers.forEach {
-                                var handlerDescription = "\(type(of: $0))"
+                            for handler in handlers {
+                                var handlerDescription = "\(type(of: handler))"
                                 handlerDescription = handlerDescription.replacingOccurrences(
                                     of: "ByteToMessageHandler",
                                     with: "B2MH"
@@ -97,16 +97,16 @@ public final class RoutesCommand: Command {
                                     with: "M2BH"
                                 )
 
-                                //                        let spacerString = ""// String(repeating: " ", count: handlerDescription.count)
-                                if ($0.self is _ChannelInboundHandler) && ($0.self is _ChannelOutboundHandler) {
+                                // let spacerString = ""// String(repeating: " ", count: handlerDescription.count)
+                                if (handler.self is _ChannelInboundHandler) && (handler.self is _ChannelOutboundHandler) {
                                     topString.append(handlerDescription)
-                                    //                            middleString.append( handlerDescription )
+                                    //middleString.append( handlerDescription )
                                     bottomString.append(handlerDescription)
-                                } else if $0.self is _ChannelInboundHandler {
+                                } else if handler.self is _ChannelInboundHandler {
                                     topString.append(handlerDescription)
                                     //middleString.append( spacerString )
                                     //bottomString.append( spacerString )
-                                } else if $0.self is _ChannelOutboundHandler {
+                                } else if handler.self is _ChannelOutboundHandler {
                                     //topString.append( spacerString )
                                     //middleString.append( spacerString )
                                     bottomString.append(handlerDescription)
