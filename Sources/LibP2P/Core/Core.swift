@@ -1,15 +1,26 @@
+//===----------------------------------------------------------------------===//
 //
-//  Core.swift
-//  
+// This source file is part of the swift-libp2p open source project
+//
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
+//
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+//
 //  Created by Vapor
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import NIO
 import ConsoleKit
+import NIO
 
 extension Application {
-    
+
     public var console: Console {
         get { self.core.storage.console }
         set { self.core.storage.console = newValue }
@@ -58,10 +69,10 @@ extension Application {
         set { self.core.storage.running.current = newValue }
     }
 
-//    public var directory: DirectoryConfiguration {
-//        get { self.core.storage.directory }
-//        set { self.core.storage.directory = newValue }
-//    }
+    //    public var directory: DirectoryConfiguration {
+    //        get { self.core.storage.directory }
+    //        set { self.core.storage.directory = newValue }
+    //    }
 
     internal var core: Core {
         .init(application: self)

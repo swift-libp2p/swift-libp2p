@@ -1,23 +1,34 @@
+//===----------------------------------------------------------------------===//
 //
-//  Security.swift
-//  
+// This source file is part of the swift-libp2p open source project
 //
-//  Created by Brandon Toms on 5/1/22.
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
 //
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
 
+import LibP2PCore
 import NIO
 import PeerID
-import LibP2PCore
 
 public protocol SecurityUpgrader {
-    
-    static var key:String { get }
-    func upgradeConnection(_ conn:Connection, position:ChannelPipeline.Position, securedPromise:EventLoopPromise<Connection.SecuredResult>) -> EventLoopFuture<Void>
+
+    static var key: String { get }
+    func upgradeConnection(
+        _ conn: Connection,
+        position: ChannelPipeline.Position,
+        securedPromise: EventLoopPromise<Connection.SecuredResult>
+    ) -> EventLoopFuture<Void>
     func printSelf()
-    
+
     //static var installer:SecurityProtocolInstaller { get }
     //func securityInstaller() -> SecurityProtocolInstaller
-    
+
 }
 
 extension Application {
@@ -28,19 +39,19 @@ extension Application {
     public struct SecurityUpgraders {
         internal typealias KeyedSecurityUpgrader = (key: String, value: ((Application) -> SecurityUpgrader))
         public struct Provider {
-            let run: (Application) -> ()
+            let run: (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> ()) {
+            public init(_ run: @escaping (Application) -> Void) {
                 self.run = run
             }
         }
-        
+
         final class Storage {
             /// Security Upgraders stored in order of preference
-            var secUpgraders:[KeyedSecurityUpgrader] = []
-            init() { }
+            var secUpgraders: [KeyedSecurityUpgrader] = []
+            init() {}
         }
-        
+
         struct Key: StorageKey {
             typealias Value = Storage
         }
@@ -48,19 +59,19 @@ extension Application {
         func initialize() {
             self.application.storage[Key.self] = .init()
         }
-        
-        public func upgrader<S:SecurityUpgrader>(for sec:S.Type) -> S? {
+
+        public func upgrader<S: SecurityUpgrader>(for sec: S.Type) -> S? {
             self.upgrader(forKey: sec.key) as? S
         }
-        
-//        public func upgrader(for sec:SecurityUpgrader.Type) -> SecurityUpgrader? {
-//            self.upgrader(forKey: sec.key)
-//        }
-        
-        public func upgrader(forKey key:String) -> SecurityUpgrader? {
+
+        //        public func upgrader(for sec:SecurityUpgrader.Type) -> SecurityUpgrader? {
+        //            self.upgrader(forKey: sec.key)
+        //        }
+
+        public func upgrader(forKey key: String) -> SecurityUpgrader? {
             self.storage.secUpgraders.first(where: { $0.key == key })?.value(self.application)
         }
-        
+
         /// Accepts a single Security Provider, these providers are ordered in the order in which they are called.
         ///
         /// **Example:**
@@ -78,7 +89,7 @@ extension Application {
         public func use(_ provider: Provider) {
             provider.run(self.application)
         }
-        
+
         /// Accepts multiple Security Providers in order of preference.
         ///
         /// **Example:**
@@ -91,35 +102,42 @@ extension Application {
         /// 1) Noise
         /// 2) Secio
         /// 3) PlaintextV2
-        public func use(_ provider: Provider ...) {
-            provider.forEach { $0.run(self.application) }
+        public func use(_ providers: Provider...) {
+            for provider in providers { provider.run(self.application) }
         }
 
-        public func use<S:SecurityUpgrader>(_ makeUpgrader: @escaping (Application) -> (S)) {
-            guard !self.storage.secUpgraders.contains(where: { $0.key == S.key }) else { self.application.logger.warning("`\(S.key)` Security Module Already Installed - Skipping"); return }
-            self.storage.secUpgraders.append( (S.key, makeUpgrader) )
+        public func use<S: SecurityUpgrader>(_ makeUpgrader: @escaping (Application) -> (S)) {
+            guard !self.storage.secUpgraders.contains(where: { $0.key == S.key }) else {
+                self.application.logger.warning("`\(S.key)` Security Module Already Installed - Skipping")
+                return
+            }
+            self.storage.secUpgraders.append((S.key, makeUpgrader))
         }
-        
+
         public let application: Application
-        
-        public var available:[String] {
+
+        public var available: [String] {
             self.storage.secUpgraders.map { $0.key }
         }
-        
-//        public var installers:[SecurityProtocolInstaller] {
-//            self.storage.secUpgraders.values.map { $0(self.application).securityInstaller() }
-//        }
-        
+
+        //        public var installers:[SecurityProtocolInstaller] {
+        //            self.storage.secUpgraders.values.map { $0(self.application).securityInstaller() }
+        //        }
+
         var storage: Storage {
             guard let storage = self.application.storage[Key.self] else {
                 fatalError("Transport Upgraders not initialized. Initialize with app.security.initialize()")
             }
             return storage
         }
-        
+
         public func dump() {
             print("*** Installed Security Modules ***")
-            print(self.storage.secUpgraders.enumerated().map { "[\($0.offset + 1)] - \($0.element.key)" }.joined(separator: "\n"))
+            print(
+                self.storage.secUpgraders.enumerated().map { "[\($0.offset + 1)] - \($0.element.key)" }.joined(
+                    separator: "\n"
+                )
+            )
             print("----------------------------------")
         }
     }

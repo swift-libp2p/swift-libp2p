@@ -1,6 +1,17 @@
+//===----------------------------------------------------------------------===//
 //
-//  Middleware.swift
-//  
+// This source file is part of the swift-libp2p open source project
+//
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
+//
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+//
 //  Created by Vapor
 //  Modified by Brandon Toms on 5/1/22.
 //
@@ -32,27 +43,27 @@ extension Array where Element == Middleware {
     }
 }
 
-public extension Middleware {
+extension Middleware {
     /// Wraps a `Responder` in a single `Middleware` creating a new `Responder`.
-    func makeResponder(chainingTo responder: Responder) -> Responder {
-        return BasicMiddlewareResponder(middleware: self, responder: responder)
+    public func makeResponder(chainingTo responder: Responder) -> Responder {
+        BasicMiddlewareResponder(middleware: self, responder: responder)
     }
 }
 
 private struct BasicMiddlewareResponder: Responder {
     var middleware: Middleware
     var responder: Responder
-    
+
     init(middleware: Middleware, responder: Responder) {
         self.middleware = middleware
         self.responder = responder
     }
-    
+
     func respond(to request: Request) -> EventLoopFuture<RawResponse> {
-        return self.middleware.respond(to: request, chainingTo: self.responder)
+        self.middleware.respond(to: request, chainingTo: self.responder)
     }
-    
-    public func pipelineConfig(for protocol: String, on connection:Connection) -> [ChannelHandler]? {
-        return nil
+
+    public func pipelineConfig(for protocol: String, on connection: Connection) -> [ChannelHandler]? {
+        nil
     }
 }

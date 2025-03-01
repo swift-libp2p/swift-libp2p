@@ -1,24 +1,35 @@
+//===----------------------------------------------------------------------===//
 //
-//  Server.swift
-//  
+// This source file is part of the swift-libp2p open source project
+//
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
+//
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+//
 //  Created by Vapor
 //  Modified by Brandon Toms on 5/1/22.
 //
 
 // TODO: Remove these deprecated methods along with ServerStartError in the major release.
 public protocol Server: LifecycleHandler {
-    static var key:String { get }
-    
+    static var key: String { get }
+
     var onShutdown: EventLoopFuture<Void> { get }
-    
+
     /// Start the server with the specified address.
     /// - Parameters:
     ///   - address: The address to start the server with.
     func start(address: BindAddress?) throws
-    
+
     func shutdown()
-    
-    var listeningAddress:Multiaddr { get }
+
+    var listeningAddress: Multiaddr { get }
 }
 
 extension Server {
@@ -26,12 +37,12 @@ extension Server {
         app.logger.trace("\(self) Will Boot!")
         try self.start()
     }
-    
+
     public func didBoot(_ app: Application) throws {
         app.logger.trace("\(self) Did Boot!")
     }
-    
-    public func shutdown(_ app:Application) {
+
+    public func shutdown(_ app: Application) {
         app.logger.trace("\(self) Shutting Down!")
         self.shutdown()
     }
@@ -58,6 +69,6 @@ internal enum ServerStartError: Error {
 
 extension Array where Element == Multiaddr {
     public func stripInternalAddresses() -> [Multiaddr] {
-        return self.filter { !$0.isInternalAddress }
+        self.filter { !$0.isInternalAddress }
     }
 }

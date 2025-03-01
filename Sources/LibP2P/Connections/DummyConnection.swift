@@ -1,11 +1,18 @@
+//===----------------------------------------------------------------------===//
 //
-//  DummyConnection.swift
-//  
+// This source file is part of the swift-libp2p open source project
 //
-//  Created by Brandon Toms on 5/1/22.
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
 //
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
 
-internal class DummyConnection:Connection {
+internal class DummyConnection: Connection {
     public var channel: Channel
 
     public var logger: Logger
@@ -26,7 +33,7 @@ internal class DummyConnection:Connection {
 
     public var tags: Any?
 
-    public var registry: [UInt64 : LibP2PCore.Stream]
+    public var registry: [UInt64: LibP2PCore.Stream]
 
     public var streams: [LibP2PCore.Stream]
 
@@ -36,9 +43,9 @@ internal class DummyConnection:Connection {
 
     public var status: ConnectionStats.Status
 
-    public var timeline: [ConnectionStats.Status : Date]
+    public var timeline: [ConnectionStats.Status: Date]
 
-    public init(peer:PeerID? = nil) {
+    public init(peer: PeerID? = nil) {
         let id = UUID()
         self.channel = EmbeddedChannel()
         self.logger = Logger(label: "DummyConnection")
@@ -57,12 +64,13 @@ internal class DummyConnection:Connection {
         self.status = .closed
         self.timeline = [:]
     }
-    
+
     public func inboundMuxedChildChannelInitializer(_ childChannel: Channel) -> EventLoopFuture<Void> {
         self.channel.eventLoop.makeFailedFuture(Errors.notImplementedYet)
     }
 
-    public func outboundMuxedChildChannelInitializer(_ childChannel: Channel, protocol: String) -> EventLoopFuture<Void> {
+    public func outboundMuxedChildChannelInitializer(_ childChannel: Channel, protocol: String) -> EventLoopFuture<Void>
+    {
         self.channel.eventLoop.makeFailedFuture(Errors.notImplementedYet)
     }
 
@@ -81,25 +89,27 @@ internal class DummyConnection:Connection {
     func newStream(forProtocol: String) {
         return
     }
-    
+
     public func removeStream(id: UInt64) -> EventLoopFuture<Void> {
         self.channel.eventLoop.makeFailedFuture(Errors.notImplementedYet)
     }
 
-    public func acceptStream(_ stream: LibP2PCore.Stream, protocol: String, metadata: [String]) -> EventLoopFuture<Bool> {
+    public func acceptStream(_ stream: LibP2PCore.Stream, protocol: String, metadata: [String]) -> EventLoopFuture<Bool>
+    {
         self.channel.eventLoop.makeFailedFuture(Errors.notImplementedYet)
     }
-    
+
     @discardableResult
-    public func hasStream(forProtocol proto:String, direction:ConnectionStats.Direction? = nil) -> LibP2PCore.Stream? {
-        return nil
+    public func hasStream(forProtocol proto: String, direction: ConnectionStats.Direction? = nil) -> LibP2PCore.Stream?
+    {
+        nil
     }
 
     public func close() -> EventLoopFuture<Void> {
         self.channel.eventLoop.makeFailedFuture(Errors.notImplementedYet)
     }
 
-    public enum Errors:Error {
+    public enum Errors: Error {
         case notImplementedYet
     }
 }

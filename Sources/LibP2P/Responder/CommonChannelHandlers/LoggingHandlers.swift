@@ -1,27 +1,34 @@
+//===----------------------------------------------------------------------===//
 //
-//  LoggingHandlers.swift
-//  
+// This source file is part of the swift-libp2p open source project
 //
-//  Created by Brandon Toms on 5/1/22.
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
 //
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
 
 import Foundation
 
 extension Application.ChildChannelHandlers.Provider {
-    
+
     /// Loggers installs a set of inbound and outbound logging handlers that simply dump all data flowing through the pipeline out to the console for debugging purposes
     public static var loggers: Self {
         .init { connection -> [ChannelHandler] in
             [InboundLoggerHandler(mode: connection.mode), OutboundLoggerHandler(mode: connection.mode)]
         }
     }
-    
+
     public static var inboundLogger: Self {
         .init { connection -> [ChannelHandler] in
             [InboundLoggerHandler(mode: connection.mode)]
         }
     }
-    
+
     public static var outboundLogger: Self {
         .init { connection -> [ChannelHandler] in
             [OutboundLoggerHandler(mode: connection.mode)]
@@ -32,19 +39,19 @@ extension Application.ChildChannelHandlers.Provider {
 public final class OutboundLoggerHandler: ChannelOutboundHandler {
     public typealias OutboundIn = ByteBuffer
     public typealias OutboundOut = ByteBuffer
-    
-    private var logger:Logger
-    
-    public init(mode:LibP2P.Mode) {
+
+    private var logger: Logger
+
+    public init(mode: LibP2P.Mode) {
         self.logger = Logger(label: "logger.outbound.\(mode)")
-        self.logger.logLevel = .trace //LOG_LEVEL
+        self.logger.logLevel = .trace  //LOG_LEVEL
     }
-    
+
     public init() {
         self.logger = Logger(label: "logger.outbound")
-        self.logger.logLevel = .trace //LOG_LEVEL
+        self.logger.logLevel = .trace  //LOG_LEVEL
     }
-    
+
     public func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
         //print("--- Outbound Logger ---")
         let buffer = unwrapOutboundIn(data)
@@ -56,10 +63,10 @@ public final class OutboundLoggerHandler: ChannelOutboundHandler {
             logger.debug("-- Outbound Data: '\(Data(readable).count)' --")
         }
         //print("--- Outbound Logger Done ---")
-        
-        context.write( wrapOutboundOut(buffer), promise: nil)
+
+        context.write(wrapOutboundOut(buffer), promise: nil)
     }
-    
+
     // Flush it out. This can make use of gathering writes if multiple buffers are pending
     public func channelWriteComplete(context: ChannelHandlerContext) {
         //print("MSS:Write Complete")
@@ -68,7 +75,7 @@ public final class OutboundLoggerHandler: ChannelOutboundHandler {
 
     public func errorCaught(context: ChannelHandlerContext, error: Error) {
         logger.error("Error: \(error)")
-        
+
         context.close(promise: nil)
     }
 }
@@ -76,19 +83,19 @@ public final class OutboundLoggerHandler: ChannelOutboundHandler {
 public final class InboundLoggerHandler: ChannelInboundHandler {
     public typealias InboundIn = ByteBuffer
     public typealias InboundOut = ByteBuffer
-    
-    private var logger:Logger
-    
-    public init(mode:LibP2P.Mode) {
+
+    private var logger: Logger
+
+    public init(mode: LibP2P.Mode) {
         self.logger = Logger(label: "logger.inbound.\(mode)")
-        self.logger.logLevel = .trace //LOG_LEVEL
+        self.logger.logLevel = .trace  //LOG_LEVEL
     }
-    
+
     public init() {
         self.logger = Logger(label: "logger.inbound")
-        self.logger.logLevel = .trace //LOG_LEVEL
+        self.logger.logLevel = .trace  //LOG_LEVEL
     }
-    
+
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         //print("--- Inbound Logger ---")
         let buffer = unwrapInboundIn(data)
@@ -100,10 +107,10 @@ public final class InboundLoggerHandler: ChannelInboundHandler {
             logger.debug("-- Inbound Data: '\(Data(readable).count)' --")
         }
         //print("--- Inbound Logger Done ---")
-        
-        context.fireChannelRead( wrapInboundOut(buffer) )
+
+        context.fireChannelRead(wrapInboundOut(buffer))
     }
-    
+
     // Flush it out. This can make use of gathering writes if multiple buffers are pending
     public func channelReadComplete(context: ChannelHandlerContext) {
         //print("InLogger:Read Complete")
@@ -113,7 +120,7 @@ public final class InboundLoggerHandler: ChannelInboundHandler {
 
     public func errorCaught(context: ChannelHandlerContext, error: Error) {
         logger.error("Error: \(error)")
-        
+
         context.close(promise: nil)
     }
 }

@@ -1,0 +1,10 @@
+.github/workflows/configs/.flake8
+**/*.yml
+*.md
+*.txt
+Package.swift
+Package.resolved
+.gitignore
+.swift-format
+.licenseignore
+.license_header_template

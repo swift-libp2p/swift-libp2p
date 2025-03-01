@@ -1,13 +1,20 @@
+//===----------------------------------------------------------------------===//
 //
-//  Application+ConnectionManager.swift
+// This source file is part of the swift-libp2p open source project
 //
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
 //
-//  Created by Brandon Toms on 5/1/22.
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
 //
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
 
-import NIOCore
-import Multiaddr
 import LibP2PCore
+import Multiaddr
+import NIOCore
 
 extension Application {
     public var connectionManager: Connections {
@@ -20,9 +27,9 @@ extension Application {
         }
         return manager
     }
-    
+
     public struct Connections {
-        public enum Errors:Error {
+        public enum Errors: Error {
             case notImplementedYet
             case invalidProtocolNegotatied
             case noResponder
@@ -30,11 +37,11 @@ extension Application {
             case noStreamForID(UInt64)
             case timedOut
         }
-        
-        public struct Provider {
-            let run: (Application) -> ()
 
-            public init(_ run: @escaping (Application) -> ()) {
+        public struct Provider {
+            let run: (Application) -> Void
+
+            public init(_ run: @escaping (Application) -> Void) {
                 self.run = run
             }
         }
@@ -42,8 +49,8 @@ extension Application {
         final class Storage {
             var manager: ConnectionManager?
             // Allow the user to specify the Connection class to use (default to ARCConnection)
-            var connType:AppConnection.Type = ARCConnection.self
-            init() { }
+            var connType: AppConnection.Type = ARCConnection.self
+            init() {}
         }
 
         struct Key: StorageKey {
@@ -65,10 +72,10 @@ extension Application {
         /// Specify the type of AppConnection to use when establishing a Connection to a remote peer.
         /// Note: The built in options are `BasicConnectionLight` and `ARCConnection`
         /// Note: There's also a `DummyConnection` available for embedded testing.
-        public func use(connectionType:AppConnection.Type) {
+        public func use(connectionType: AppConnection.Type) {
             self.storage.connType = connectionType
         }
-        
+
         let application: Application
 
         var storage: Storage {
@@ -77,22 +84,33 @@ extension Application {
             }
             return storage
         }
-        
-        public func generateConnection(channel: Channel, direction: ConnectionStats.Direction, remoteAddress: Multiaddr, expectedRemotePeer: PeerID?) -> AppConnection {
-            return self.storage.connType.init(application: application, channel: channel, direction: direction, remoteAddress: remoteAddress, expectedRemotePeer: expectedRemotePeer)
+
+        public func generateConnection(
+            channel: Channel,
+            direction: ConnectionStats.Direction,
+            remoteAddress: Multiaddr,
+            expectedRemotePeer: PeerID?
+        ) -> AppConnection {
+            self.storage.connType.init(
+                application: application,
+                channel: channel,
+                direction: direction,
+                remoteAddress: remoteAddress,
+                expectedRemotePeer: expectedRemotePeer
+            )
         }
-        
-        public func setIdleTimeout(_ timeout:TimeAmount) {
+
+        public func setIdleTimeout(_ timeout: TimeAmount) {
             self.storage.manager?.setIdleTimeout(timeout)
         }
-        
+
         public func getTotalConnectionCount() -> EventLoopFuture<UInt64> {
             if let basicMan = self.storage.manager as? BasicInMemoryConnectionManager {
                 return basicMan.getTotalConnectionCount()
             }
             return self.application.eventLoopGroup.next().makeFailedFuture(Errors.notImplementedYet)
         }
-        
+
         public func getTotalStreamCount() -> EventLoopFuture<UInt64> {
             if let basicMan = self.storage.manager as? BasicInMemoryConnectionManager {
                 return basicMan.getTotalStreamCount()

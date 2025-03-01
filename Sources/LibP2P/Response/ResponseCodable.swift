@@ -1,6 +1,17 @@
+//===----------------------------------------------------------------------===//
 //
-//  ResponseCodable.swift
-//  
+// This source file is part of the swift-libp2p open source project
+//
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
+//
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+//
 //  Created by Vapor
 //  Modified by Brandon Toms on 5/1/22.
 //
@@ -33,7 +44,7 @@ public protocol RequestDecodable {
 
 extension Request: RequestDecodable {
     public static func decodeRequest(_ request: Request) -> EventLoopFuture<Request> {
-        return request.eventLoop.makeSucceededFuture(request)
+        request.eventLoop.makeSucceededFuture(request)
     }
 }
 
@@ -41,7 +52,7 @@ extension Request: RequestDecodable {
 extension RawResponse: ResponseEncodable {
     // See `ResponseEncodable`.
     public func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse> {
-        return request.eventLoop.makeSucceededFuture(self)
+        request.eventLoop.makeSucceededFuture(self)
     }
 }
 
@@ -93,9 +104,8 @@ extension Array: ResponseEncodable where Element == UInt8 {
 extension EventLoopFuture: ResponseEncodable where Value: ResponseEncodable {
     // See `ResponseEncodable`.
     public func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse> {
-        return self.flatMap { t in
-            return t.encodeResponse(for: request)
+        self.flatMap { t in
+            t.encodeResponse(for: request)
         }
     }
 }
-

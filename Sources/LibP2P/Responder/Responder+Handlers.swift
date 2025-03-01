@@ -1,9 +1,16 @@
+//===----------------------------------------------------------------------===//
 //
-//  Responder+Handlers.swift
-//  
+// This source file is part of the swift-libp2p open source project
 //
-//  Created by Brandon Toms on 5/1/22.
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
 //
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
 
 extension Application {
     /// Define ChildChannelHandler Providers
@@ -35,7 +42,7 @@ extension Application {
     public struct ChildChannelHandlers {
         public struct Provider {
             let run: (Connection) -> ([ChannelHandler])
-            
+
             public init(_ run: @escaping (Connection) -> ([ChannelHandler])) {
                 self.run = run
             }

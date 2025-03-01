@@ -1,15 +1,29 @@
+//===----------------------------------------------------------------------===//
 //
-//  Logging+Environment.swift
-//  
+// This source file is part of the swift-libp2p open source project
+//
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
+//
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+//
 //  Created by Vapor
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import Logging
 import ConsoleKit
+import Logging
 
 extension LoggingSystem {
-    public static func bootstrap(from environment: inout Environment, _ factory: (Logger.Level) -> (String) -> LogHandler) throws {
+    public static func bootstrap(
+        from environment: inout Environment,
+        _ factory: (Logger.Level) -> (String) -> LogHandler
+    ) throws {
         let level = try Logger.Level.detect(from: &environment)
 
         // Disable stack traces if log level > trace.
@@ -25,7 +39,7 @@ extension LoggingSystem {
         try self.bootstrap(from: &environment) { level in
             let console = Terminal()
             return { (label: String) in
-                return ConsoleLogger(label: label, console: console, level: level)
+                ConsoleLogger(label: label, console: console, level: level)
             }
         }
     }
@@ -39,12 +53,12 @@ extension Logger.Level: LosslessStringConvertible {
         struct LogSignature: CommandSignature {
             @Option(name: "log", help: "Change log level")
             var level: Logger.Level?
-            init() { }
+            init() {}
         }
 
         // Determine log level from environment.
         return try LogSignature(from: &environment.commandInput).level
             ?? Environment.process.LOG_LEVEL
-            ?? (environment == .production ? .notice: .info)
+            ?? (environment == .production ? .notice : .info)
     }
 }

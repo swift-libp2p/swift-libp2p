@@ -1,6 +1,17 @@
+//===----------------------------------------------------------------------===//
 //
-//  RawResponse.swift
-//  
+// This source file is part of the swift-libp2p open source project
+//
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
+//
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+//
 //  Created by Vapor
 //  Modified by Brandon Toms on 5/1/22.
 //
@@ -15,7 +26,7 @@ import NIO
 public final class RawResponse: CustomStringConvertible {
     /// Maximum streaming body size to use for `debugPrint(_:)`.
     private let maxDebugStreamingBodySize: Int = 1_000_000
-    
+
     /// The `Payload` to be sent to the remote peer
     ///
     ///     res.payload = ByteBuffer(string: "Hello, world!")
@@ -23,16 +34,16 @@ public final class RawResponse: CustomStringConvertible {
     public var payload: ByteBuffer
 
     public var storage: Storage
-    
+
     /// See `CustomStringConvertible`
     public var description: String {
         var desc: [String] = []
         desc.append(self.payload.description)
         return desc.joined(separator: "\n")
     }
-    
+
     // MARK: Init
-    
+
     /// Internal init that creates a new `RawResponse`
     public init(
         payload: ByteBuffer
@@ -42,14 +53,13 @@ public final class RawResponse: CustomStringConvertible {
     }
 }
 
-
-public enum Response<T:ResponseEncodable>:ResponseEncodable {
+public enum Response<T: ResponseEncodable>: ResponseEncodable {
     case respond(T)
     case respondThenClose(T)
     case stayOpen
     case close
     case reset(Error)
-    
+
     public func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse> {
         switch self {
         case .stayOpen:
