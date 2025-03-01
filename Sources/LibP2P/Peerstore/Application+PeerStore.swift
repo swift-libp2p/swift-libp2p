@@ -1,9 +1,16 @@
+//===----------------------------------------------------------------------===//
 //
-//  Application+Peerstore.swift
-//  
+// This source file is part of the swift-libp2p open source project
 //
-//  Created by Brandon Toms on 5/1/22.
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
 //
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
 
 import LibP2PCore
 
@@ -18,19 +25,19 @@ extension Application {
         }
         return manager
     }
-    
+
     public struct PeerStores {
         public struct Provider {
-            let run: (Application) -> ()
+            let run: (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> ()) {
+            public init(_ run: @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
         final class Storage {
             var manager: PeerStore?
-            init() { }
+            init() {}
         }
 
         struct Key: StorageKey {

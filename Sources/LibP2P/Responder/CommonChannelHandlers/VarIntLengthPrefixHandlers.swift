@@ -1,5 +1,18 @@
 //===----------------------------------------------------------------------===//
 //
+// This source file is part of the swift-libp2p open source project
+//
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
+//
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+//
 // This source file is part of the SwiftProtobuf open source project
 //
 // Copyright (c) 2019 Circuit Dragon, Ltd.
@@ -11,18 +24,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-//
-//  VarIntLengthPrefixHandlers.swift
-//  
-//
-//  Created by Brandon Toms on 5/1/22.
-//
-
 import NIO
 import SwiftProtobuf
 
 extension Application.ChildChannelHandlers.Provider {
-    
+
     /// `varIntLengthPrefixed` installs two channelHandlers that help decode and encode frames who are denoted by a VarInt length prefix
     ///
     /// Let’s, for example, consider the following received buffer:
@@ -42,21 +48,20 @@ extension Application.ChildChannelHandlers.Provider {
             [ByteToMessageHandler(VarintFrameDecoder()), MessageToByteHandler(VarintLengthFieldPrepender())]
         }
     }
-    
+
     public static var varIntFrameDecoder: Self {
         .init { connection -> [ChannelHandler] in
             [ByteToMessageHandler(VarintFrameDecoder())]
         }
     }
-    
+
     public static var varIntFrameEncoder: Self {
         .init { connection -> [ChannelHandler] in
             [MessageToByteHandler(VarintLengthFieldPrepender())]
         }
     }
-    
-}
 
+}
 
 public class VarintFrameDecoder: ByteToMessageDecoder {
     public typealias InboundOut = ByteBuffer
@@ -91,29 +96,35 @@ public class VarintFrameDecoder: ByteToMessageDecoder {
         return .continue
     }
 
-    public func decodeLast(context: ChannelHandlerContext, buffer: inout ByteBuffer, seenEOF: Bool) throws -> DecodingState {
-        return try decode(context: context, buffer: &buffer)
+    public func decodeLast(
+        context: ChannelHandlerContext,
+        buffer: inout ByteBuffer,
+        seenEOF: Bool
+    ) throws -> DecodingState {
+        try decode(context: context, buffer: &buffer)
     }
 }
 
 public class VarintLengthFieldPrepender: MessageToByteEncoder {
     public typealias OutboundIn = ByteBuffer
 
-    public var frozen:Bool = false
-    
+    public var frozen: Bool = false
+
     public init() {}
 
     public func encode(data: ByteBuffer, out: inout ByteBuffer) throws {
-        guard !frozen else { out.writeBytes(data.readableBytesView); return }
+        guard !frozen else {
+            out.writeBytes(data.readableBytesView)
+            return
+        }
         let bodyLen = data.readableBytes
         out.writeVarint(bodyLen)
         out.writeBytes(data.readableBytesView)
     }
 }
 
-
-fileprivate extension ByteBuffer {
-    mutating func readVarint() -> Int? {
+extension ByteBuffer {
+    fileprivate mutating func readVarint() -> Int? {
         var value: UInt64 = 0
         var shift: UInt64 = 0
         let initialReadIndex = self.readerIndex
@@ -136,10 +147,10 @@ fileprivate extension ByteBuffer {
         }
     }
 
-    mutating func writeVarint(_ v: Int) {
+    fileprivate mutating func writeVarint(_ v: Int) {
         var value = v
-        while (true) {
-            if ((value & ~0x7F) == 0) {
+        while true {
+            if (value & ~0x7F) == 0 {
                 // final byte
                 self.writeInteger(UInt8(truncatingIfNeeded: value))
                 return

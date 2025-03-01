@@ -1,6 +1,17 @@
+//===----------------------------------------------------------------------===//
 //
-//  Storage.swift
-//  
+// This source file is part of the swift-libp2p open source project
+//
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
+//
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+//
 //  Created by Vapor
 //  Modified by Brandon Toms on 5/1/22.
 //
@@ -12,7 +23,7 @@ public struct Storage {
 
     struct Value<T>: AnyStorageValue {
         var value: T
-        var onShutdown: ((T) throws -> ())?
+        var onShutdown: ((T) throws -> Void)?
         func shutdown(logger: Logger) {
             do {
                 try self.onShutdown?(self.value)
@@ -33,7 +44,7 @@ public struct Storage {
     }
 
     public subscript<Key>(_ key: Key.Type) -> Key.Value?
-        where Key: StorageKey
+    where Key: StorageKey
     {
         get {
             self.get(Key.self)
@@ -48,8 +59,7 @@ public struct Storage {
     }
 
     public func get<Key>(_ key: Key.Type) -> Key.Value?
-        where Key: StorageKey
-    {
+    where Key: StorageKey {
         guard let value = self.storage[ObjectIdentifier(Key.self)] as? Value<Key.Value> else {
             return nil
         }
@@ -59,10 +69,9 @@ public struct Storage {
     public mutating func set<Key>(
         _ key: Key.Type,
         to value: Key.Value?,
-        onShutdown: ((Key.Value) throws -> ())? = nil
+        onShutdown: ((Key.Value) throws -> Void)? = nil
     )
-        where Key: StorageKey
-    {
+    where Key: StorageKey {
         let key = ObjectIdentifier(Key.self)
         if let value = value {
             self.storage[key] = Value(value: value, onShutdown: onShutdown)
@@ -73,12 +82,11 @@ public struct Storage {
     }
 
     public func shutdown() {
-        self.storage.values.forEach {
-            $0.shutdown(logger: self.logger)
+        for value in self.storage.values {
+            value.shutdown(logger: self.logger)
         }
     }
 }
-
 
 protocol AnyStorageValue {
     func shutdown(logger: Logger)

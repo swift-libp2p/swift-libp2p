@@ -1,16 +1,27 @@
+//===----------------------------------------------------------------------===//
 //
-//  Application+Responder.swift
-//  
+// This source file is part of the swift-libp2p open source project
+//
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
+//
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+//
 //  Created by Vapor
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import NIO
 import LibP2PCore
+import NIO
 
 public protocol Responder {
     func respond(to request: Request) -> EventLoopFuture<RawResponse>
-    func pipelineConfig(for protocol: String, on:Connection) -> [ChannelHandler]?
+    func pipelineConfig(for protocol: String, on: Connection) -> [ChannelHandler]?
 }
 
 extension Application {
@@ -26,16 +37,16 @@ extension Application {
                 }
             }
 
-            let run: (Application) -> ()
+            let run: (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> ()) {
+            public init(_ run: @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
         final class Storage {
             var factory: ((Application) -> LibP2P.Responder)?
-            init() { }
+            init() {}
         }
 
         struct Key: StorageKey {
@@ -83,8 +94,8 @@ extension Application.Responder: Responder {
     public func respond(to request: Request) -> EventLoopFuture<RawResponse> {
         self.current.respond(to: request)
     }
-    
-    public func pipelineConfig(for protocol:String, on connection:Connection) -> [ChannelHandler]? {
+
+    public func pipelineConfig(for protocol: String, on connection: Connection) -> [ChannelHandler]? {
         self.current.pipelineConfig(for: `protocol`, on: connection)
     }
 }

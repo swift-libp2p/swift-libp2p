@@ -1,6 +1,17 @@
+//===----------------------------------------------------------------------===//
 //
-//  MiddlewareConfiguration.swift
-//  
+// This source file is part of the swift-libp2p open source project
+//
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
+//
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+//
 //  Created by Vapor
 //  Modified by Brandon Toms on 5/1/22.
 //
@@ -11,12 +22,11 @@ public struct Middlewares {
     /// The configured middleware.
     private var storage: [Middleware]
 
-  
     public enum Position {
-      case beginning
-      case end
+        case beginning
+        case end
     }
-  
+
     /// Create a new, empty `MiddlewareConfig`.
     public init() {
         self.storage = []
@@ -32,16 +42,16 @@ public struct Middlewares {
     ///            Otherwise, use the type-based method and register the `Middleware`
     ///            using factory method to `Services`.
     public mutating func use(_ middleware: Middleware, at position: Position = .end) {
-      switch position {
-      case .end:
-        self.storage.append(middleware)
-      case .beginning:
-        self.storage.insert(middleware, at: 0)
-      }
+        switch position {
+        case .end:
+            self.storage.append(middleware)
+        case .beginning:
+            self.storage.insert(middleware, at: 0)
+        }
     }
 
     /// Resolves the configured middleware for a given container
     public func resolve() -> [Middleware] {
-        return self.storage
+        self.storage
     }
 }

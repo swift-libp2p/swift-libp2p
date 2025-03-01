@@ -1,9 +1,16 @@
+//===----------------------------------------------------------------------===//
 //
-//  Application+Clients.swift
-//  
+// This source file is part of the swift-libp2p open source project
 //
-//  Created by Brandon Toms on 5/1/22.
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
 //
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
 
 import LibP2PCore
 
@@ -14,18 +21,18 @@ extension Application {
 
     public struct Clients {
         public struct Provider {
-            let run: (Application) -> ()
+            let run: (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> ()) {
+            public init(_ run: @escaping (Application) -> Void) {
                 self.run = run
             }
         }
-        
+
         final class Storage {
-            var clients:[String:((Application) -> Client)] = [:]
-            init() { }
+            var clients: [String: ((Application) -> Client)] = [:]
+            init() {}
         }
-        
+
         struct Key: StorageKey {
             typealias Value = Storage
         }
@@ -33,15 +40,15 @@ extension Application {
         func initialize() {
             self.application.storage[Key.self] = .init()
         }
-        
-        public func client(for client:Client.Type) -> Client? {
+
+        public func client(for client: Client.Type) -> Client? {
             self.client(forKey: client.key)
         }
-        
-        public func client(forKey key:String) -> Client? {
+
+        public func client(forKey key: String) -> Client? {
             self.storage.clients[key]?(self.application)
         }
-        
+
         public func use(_ provider: Provider) {
             provider.run(self.application)
         }
@@ -51,18 +58,18 @@ extension Application {
         }
 
         public let application: Application
-        
-        public var available:[String] {
+
+        public var available: [String] {
             self.storage.clients.keys.map { $0 }
         }
-        
+
         var storage: Storage {
             guard let storage = self.application.storage[Key.self] else {
                 fatalError("Clients not initialized. Initialize with app.clients.initialize()")
             }
             return storage
         }
-        
+
         public func dump() {
             print("*** Installed Clients ***")
             print(self.storage.clients.keys.map { $0 }.joined(separator: "\n"))
@@ -76,23 +83,29 @@ public enum HandlerConfig {
     case inherit
     /// Allows you to specify your own child channel pipeline configuration for this particular stream
     case rawHandlers([ChannelHandler])
-    
+
     case handlers([Application.ChildChannelHandlers.Provider])
-    
-    internal func handlers(application:Application, connection:Connection, forProtocol proto:String) -> [ChannelHandler] {
+
+    internal func handlers(
+        application: Application,
+        connection: Connection,
+        forProtocol proto: String
+    ) -> [ChannelHandler] {
         switch self {
         case .rawHandlers(let handlers):
             return handlers
         case .handlers(let initializers):
-            return initializers.reduce(into: Array<ChannelHandler>(), { partialResult, provider in
-                partialResult.append(contentsOf: provider.run(connection))
-            })
+            return initializers.reduce(
+                into: [ChannelHandler](),
+                { partialResult, provider in
+                    partialResult.append(contentsOf: provider.run(connection))
+                }
+            )
         case .inherit:
             return application.responder.current.pipelineConfig(for: proto, on: connection) ?? []
         }
     }
 }
-
 
 public enum MiddlewareConfig {
     case inherit

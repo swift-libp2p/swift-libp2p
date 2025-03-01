@@ -1,13 +1,24 @@
+//===----------------------------------------------------------------------===//
 //
-//  RoutesCommand.swift
-//  
+// This source file is part of the swift-libp2p open source project
+//
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
+//
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+//
 //  Created by Vapor
 //  Modified by Brandon Toms on 5/1/22.
 //
 
 import ConsoleKit
-import RoutingKit
 import NIO
+import RoutingKit
 
 /// Displays all routes registered to the `Application`'s `Router` in an ASCII-formatted table.
 ///
@@ -24,98 +35,113 @@ import NIO
 /// The path will be displayed with the same syntax that is used to register a route.
 public final class RoutesCommand: Command {
     public struct Signature: CommandSignature {
-        public init() { }
+        public init() {}
     }
 
     public var help: String {
-        return "Displays all registered routes."
+        "Displays all registered routes."
     }
 
-    init() { }
+    init() {}
 
     public func run(using context: CommandContext, signature: Signature) throws {
         let routes = context.application.routes
         let includeDescription = !routes.all.filter { $0.userInfo["description"] != nil }.isEmpty
         let pathSeparator = "/".consoleText()
         //let rows = routes.all
-        
+
         //context.console.outputASCIITable(routes.all.map { route -> [ConsoleText] in
-        context.console.outputASCIITable(routes.all.reduce(into: [[ConsoleText]](), { partialResult, route in
-            
-            var topColumn = [" ".consoleText()]
-            var middleColumn = ["ON".consoleText()]
-            var bottomColumn = [" ".consoleText()]
-            
-            if route.path.isEmpty {
-                middleColumn.append(pathSeparator)
-            } else {
-                topColumn.append(" ".consoleText())
-                middleColumn.append(route.path
-                    .map { pathSeparator + $0.consoleText() }
-                    .reduce(" ".consoleText(), +)
-                )
-                bottomColumn.append(" ".consoleText())
-            }
-            
-            
-            
-            // Going to change based on sub row number...
-            if route.handlers.isEmpty {
-                topColumn.append( " ".consoleText() )
-                middleColumn.append( "n/a".consoleText() )
-                bottomColumn.append( " ".consoleText() )
-            } else {
-                var topString:[String] = []
-                let middleString:[String] = []
-                var bottomString:[String] = []
-                
-                if let handlers = context.application.responder.pipelineConfig(for: route.description, on: DummyConnection()) {
-                    handlers.forEach {
-                        var handlerDescription = "\(type(of: $0))"
-                        handlerDescription = handlerDescription.replacingOccurrences(of: "ByteToMessageHandler", with: "B2MH")
-                        handlerDescription = handlerDescription.replacingOccurrences(of: "MessageToByteHandler", with: "M2BH")
-                        
-//                        let spacerString = ""// String(repeating: " ", count: handlerDescription.count)
-                        if ($0.self is _ChannelInboundHandler) && ($0.self is _ChannelOutboundHandler) {
-                            topString.append( handlerDescription )
-//                            middleString.append( handlerDescription )
-                            bottomString.append( handlerDescription )
-                        } else if ($0.self is _ChannelInboundHandler) {
-                            topString.append( handlerDescription )
-                            //middleString.append( spacerString )
-                            //bottomString.append( spacerString )
-                        } else if ($0.self is _ChannelOutboundHandler) {
-                            //topString.append( spacerString )
-                            //middleString.append( spacerString )
-                            bottomString.append( handlerDescription )
+        context.console.outputASCIITable(
+            routes.all.reduce(
+                into: [[ConsoleText]](),
+                { partialResult, route in
+
+                    var topColumn = [" ".consoleText()]
+                    var middleColumn = ["ON".consoleText()]
+                    var bottomColumn = [" ".consoleText()]
+
+                    if route.path.isEmpty {
+                        middleColumn.append(pathSeparator)
+                    } else {
+                        topColumn.append(" ".consoleText())
+                        middleColumn.append(
+                            route.path
+                                .map { pathSeparator + $0.consoleText() }
+                                .reduce(" ".consoleText(), +)
+                        )
+                        bottomColumn.append(" ".consoleText())
+                    }
+
+                    // Going to change based on sub row number...
+                    if route.handlers.isEmpty {
+                        topColumn.append(" ".consoleText())
+                        middleColumn.append("n/a".consoleText())
+                        bottomColumn.append(" ".consoleText())
+                    } else {
+                        var topString: [String] = []
+                        let middleString: [String] = []
+                        var bottomString: [String] = []
+
+                        if let handlers = context.application.responder.pipelineConfig(
+                            for: route.description,
+                            on: DummyConnection()
+                        ) {
+                            for handler in handlers {
+                                var handlerDescription = "\(type(of: handler))"
+                                handlerDescription = handlerDescription.replacingOccurrences(
+                                    of: "ByteToMessageHandler",
+                                    with: "B2MH"
+                                )
+                                handlerDescription = handlerDescription.replacingOccurrences(
+                                    of: "MessageToByteHandler",
+                                    with: "M2BH"
+                                )
+
+                                // let spacerString = ""// String(repeating: " ", count: handlerDescription.count)
+                                if (handler.self is _ChannelInboundHandler) && (handler.self is _ChannelOutboundHandler)
+                                {
+                                    topString.append(handlerDescription)
+                                    //middleString.append( handlerDescription )
+                                    bottomString.append(handlerDescription)
+                                } else if handler.self is _ChannelInboundHandler {
+                                    topString.append(handlerDescription)
+                                    //middleString.append( spacerString )
+                                    //bottomString.append( spacerString )
+                                } else if handler.self is _ChannelOutboundHandler {
+                                    //topString.append( spacerString )
+                                    //middleString.append( spacerString )
+                                    bottomString.append(handlerDescription)
+                                } else {
+                                    // IDK
+                                }
+                            }
+                            //print(handlers.map({ "\(($0.self is _ChannelInboundHandler) ? "Inbound" : "Outbound")" }).joined(separator: " -> "))
+                            //column.append( handlers.map { "\(type(of: $0))" }.joined(separator: " -> ").consoleText() )
+                            topColumn.append(("-> " + topString.joined(separator: " -> ")).consoleText())
+                            middleColumn.append(middleString.joined(separator: "    ").consoleText())
+                            bottomColumn.append(("<- " + bottomString.joined(separator: " <- ")).consoleText())
                         } else {
-                            // IDK
+                            topColumn.append("".consoleText())
+                            middleColumn.append("n/a".consoleText())
+                            bottomColumn.append("".consoleText())
                         }
                     }
-                    //print(handlers.map({ "\(($0.self is _ChannelInboundHandler) ? "Inbound" : "Outbound")" }).joined(separator: " -> "))
-                    //column.append( handlers.map { "\(type(of: $0))" }.joined(separator: " -> ").consoleText() )
-                    topColumn.append(("-> " + topString.joined(separator: " -> ")).consoleText())
-                    middleColumn.append(middleString.joined(separator: "    ").consoleText())
-                    bottomColumn.append(("<- " + bottomString.joined(separator: " <- ")).consoleText())
-                } else {
-                    topColumn.append( "".consoleText() )
-                    middleColumn.append( "n/a".consoleText() )
-                    bottomColumn.append( "".consoleText() )
+
+                    if includeDescription {
+                        let desc =
+                            route.userInfo["description"]
+                            .flatMap { $0 as? String }
+                            .flatMap { $0.consoleText() } ?? ""
+                        topColumn.append("".consoleText())
+                        middleColumn.append(desc)
+                        bottomColumn.append("".consoleText())
+                    }
+                    //return column
+
+                    partialResult.append(contentsOf: [topColumn, middleColumn, bottomColumn])
                 }
-            }
-            
-            if includeDescription {
-                let desc = route.userInfo["description"]
-                    .flatMap { $0 as? String }
-                    .flatMap { $0.consoleText() } ?? ""
-                topColumn.append( "".consoleText() )
-                middleColumn.append(desc)
-                bottomColumn.append( "".consoleText() )
-            }
-            //return column
-            
-            partialResult.append(contentsOf: [topColumn, middleColumn, bottomColumn])
-        }))
+            )
+        )
     }
 }
 
@@ -152,7 +178,7 @@ extension Console {
                 }
             }
         }
-        
+
         func hr() {
             var text: ConsoleText = ""
             for columnWidth in columnWidths {
@@ -166,8 +192,8 @@ extension Console {
             text += "+"
             self.output(text)
         }
-        
-        func emptyLine(row:[ConsoleText]) {
+
+        func emptyLine(row: [ConsoleText]) {
             var line: ConsoleText = ""
             for (i, _) in row.enumerated() {
                 line += "| "
@@ -179,12 +205,12 @@ extension Console {
             line += "|"
             self.output(line)
         }
-        
+
         for (i, row) in rows.enumerated() {
             if i % 3 == 0 { hr() }
-            
+
             //emptyLine(row: row)
-            
+
             var text: ConsoleText = ""
             for (i, column) in row.enumerated() {
                 text += "| "
@@ -196,10 +222,10 @@ extension Console {
             }
             text += "|"
             self.output(text)
-            
+
             //emptyLine(row: row)
         }
-        
+
         hr()
     }
 }

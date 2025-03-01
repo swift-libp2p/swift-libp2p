@@ -1,50 +1,57 @@
+//===----------------------------------------------------------------------===//
 //
-//  Multiaddr+Transport.swift
-//  
+// This source file is part of the swift-libp2p open source project
 //
-//  Created by Brandon Toms on 5/1/22.
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
 //
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
 
 import Multiaddr
 
-public extension Multiaddr {
-    
+extension Multiaddr {
+
     /// Extracts the address, port and protocol version from a Multiaddr if it is a valid TCP address
-    var tcpAddress:(address:String, port:Int, ip4:Bool)? {
-        var host:String? = nil
-        var port:Int? = nil
-        var isIP4:Bool? = nil
-        
+    public var tcpAddress: (address: String, port: Int, ip4: Bool)? {
+        var host: String? = nil
+        var port: Int? = nil
+        var isIP4: Bool? = nil
+
         /// If our multiaddr is using the `dnsaddr` protocol, attempt to resolve it for a tcp ipv4 address
         if self.addresses.first?.codec == .dnsaddr {
-//            #if canImport(LibP2PDNSAddr)
-//            return self.resolve(for: [Codecs.ip4, Codecs.tcp])?.tcpAddress
-//            #endif
+            //            #if canImport(LibP2PDNSAddr)
+            //            return self.resolve(for: [Codecs.ip4, Codecs.tcp])?.tcpAddress
+            //            #endif
             print("ERROR: Can't resolve DNS Address without DNSADDR dependency")
             return nil
         }
-        
-        self.addresses.forEach {
-            switch $0.codec {
+
+        for address in self.addresses {
+            switch address.codec {
             case .ip4:
-                if let h = $0.addr {
+                if let h = address.addr {
                     host = h
                     isIP4 = true
                 }
             case .ip6:
-                if let h = $0.addr {
+                if let h = address.addr {
                     host = h
                     isIP4 = false
                 }
             case .tcp:
-                if let pStr = $0.addr, let p = Int(pStr) {
+                if let pStr = address.addr, let p = Int(pStr) {
                     port = p
                 }
             default:
-                return
+                continue
             }
         }
-        
+
         guard let _host = host, let _port = port, let _isIP4 = isIP4, !_host.isEmpty, _port >= 0 else {
             //print("Multiaddr.tcpAddress Error: Invalid Host and/or Port values for TCP address from multiaddr:")
             //print(self)
@@ -53,43 +60,43 @@ public extension Multiaddr {
 
         return (_host, _port, _isIP4)
     }
-    
+
     /// Extracts the address, port and protocol version from a Multiaddr if it is a valid UDP address
-    var udpAddress:(address:String, port:Int, ip4:Bool)? {
-        var host:String? = nil
-        var port:Int? = nil
-        var isIP4:Bool? = nil
-        
+    public var udpAddress: (address: String, port: Int, ip4: Bool)? {
+        var host: String? = nil
+        var port: Int? = nil
+        var isIP4: Bool? = nil
+
         /// If our multiaddr is using the `dnsaddr` protocol, attempt to resolve it for a tcp ipv4 address
         if self.addresses.first?.codec == .dnsaddr {
-//            #if canImport(LibP2PDNSAddr)
-//            return self.resolve(for: [.ip4, .udp])?.udpAddress
-//            #endif
+            //            #if canImport(LibP2PDNSAddr)
+            //            return self.resolve(for: [.ip4, .udp])?.udpAddress
+            //            #endif
             print("Error: Can't resolve DNSAddr without LibP2PDNSAddr module")
             return nil
         }
-        
-        self.addresses.forEach {
-            switch $0.codec {
+
+        for address in self.addresses {
+            switch address.codec {
             case .ip4:
-                if let h = $0.addr {
+                if let h = address.addr {
                     host = h
                     isIP4 = true
                 }
             case .ip6:
-                if let h = $0.addr {
+                if let h = address.addr {
                     host = h
                     isIP4 = false
                 }
             case .udp:
-                if let pStr = $0.addr, let p = Int(pStr) {
+                if let pStr = address.addr, let p = Int(pStr) {
                     port = p
                 }
             default:
-                return
+                continue
             }
         }
-        
+
         guard let _host = host, let _port = port, let _isIP4 = isIP4, !_host.isEmpty, _port >= 0 else {
             print("Multiaddr.udpAddress Error: Invalid Host and/or Port values for UDP address from multiaddr:")
             print(self)
@@ -101,8 +108,8 @@ public extension Multiaddr {
 }
 
 extension SocketAddress {
-    public func toMultiaddr(proto:MultiaddrProtocol = .tcp) throws -> Multiaddr {
-        var ma:Multiaddr
+    public func toMultiaddr(proto: MultiaddrProtocol = .tcp) throws -> Multiaddr {
+        var ma: Multiaddr
         if let ip = self.ipAddress {
             /// - TODO: Determine if ip4 or ip6
             switch self.protocol {
@@ -113,14 +120,14 @@ extension SocketAddress {
             default:
                 throw NSError(domain: "Failed to convert SocketAddress to Multiaddr", code: 0, userInfo: nil)
             }
-//            if self.description.hasPrefix("[IPv6]") {
-//                ma = try Multiaddr(.ip6, address: ip)
-//            } else if self.description.hasPrefix("[IPv4]") {
-//                ma = try Multiaddr(.ip4, address: ip)
-//            } else {
-//                throw NSError(domain: "Failed to convert SocketAddress to Multiaddr", code: 0, userInfo: nil)
-//            }
-            
+            //            if self.description.hasPrefix("[IPv6]") {
+            //                ma = try Multiaddr(.ip6, address: ip)
+            //            } else if self.description.hasPrefix("[IPv4]") {
+            //                ma = try Multiaddr(.ip4, address: ip)
+            //            } else {
+            //                throw NSError(domain: "Failed to convert SocketAddress to Multiaddr", code: 0, userInfo: nil)
+            //            }
+
             if let port = self.port {
                 switch proto {
                 case .tcp:
@@ -132,7 +139,7 @@ extension SocketAddress {
                     ma = try ma.encapsulate(proto: proto, address: "\(port)")
                 }
             }
-            
+
         } else if let path = self.pathname {
             ma = try Multiaddr(.unix, address: path)
         } else {

@@ -1,9 +1,16 @@
+//===----------------------------------------------------------------------===//
 //
-//  Application+TCP+Client.swift
-//  
+// This source file is part of the swift-libp2p open source project
 //
-//  Created by Brandon Toms on 5/1/22.
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
 //
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
 
 extension Application.Clients.Provider {
     public static var tcp: Self {
@@ -23,12 +30,12 @@ extension Application.TCP {
     public struct Client {
         let application: Application
 
-//        public var shared: TCPClient {
-//            guard let tcp = self.application.transports.transport(for: TCP.self) as? TCP else {
-//                fatalError("Unable to fetch TCP Transport")
-//            }
-//            return tcp.sharedClient
-//        }
+        //        public var shared: TCPClient {
+        //            guard let tcp = self.application.transports.transport(for: TCP.self) as? TCP else {
+        //                fatalError("Unable to fetch TCP Transport")
+        //            }
+        //            return tcp.sharedClient
+        //        }
         public var shared: TCPClient {
             let lock = self.application.locks.lock(for: Key.self)
             lock.lock()

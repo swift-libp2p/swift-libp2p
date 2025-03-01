@@ -1,6 +1,17 @@
+//===----------------------------------------------------------------------===//
 //
-//  ByteCount.swift
-//  
+// This source file is part of the swift-libp2p open source project
+//
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
+//
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+//
 //  Created by Vapor
 //  Modified by Brandon Toms on 5/1/22.
 //
@@ -30,7 +41,7 @@ extension ByteCount: ExpressibleByIntegerLiteral {
     /// Initializes the `ByteCount` with the raw byte count
     /// - Parameter value: The number of bytes
     public init(integerLiteral value: Int) {
-         self.value = value
+        self.value = value
     }
 }
 
@@ -49,7 +60,7 @@ extension ByteCount: ExpressibleByStringLiteral {
             "kb": 10,
             "mb": 20,
             "gb": 30,
-            "tb": 40
+            "tb": 40,
         ]
 
         let cleanValue = value.lowercased().trimmingCharacters(in: .whitespaces).replacingOccurrences(of: " ", with: "")
