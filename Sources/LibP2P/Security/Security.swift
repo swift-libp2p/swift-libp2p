@@ -102,8 +102,8 @@ extension Application {
         /// 1) Noise
         /// 2) Secio
         /// 3) PlaintextV2
-        public func use(_ provider: Provider...) {
-            provider.forEach { $0.run(self.application) }
+        public func use(_ providers: Provider...) {
+            for provider in providers { provider.run(self.application) }
         }
 
         public func use<S: SecurityUpgrader>(_ makeUpgrader: @escaping (Application) -> (S)) {

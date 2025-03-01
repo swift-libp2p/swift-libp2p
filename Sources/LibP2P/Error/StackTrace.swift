@@ -41,7 +41,8 @@ public struct StackTrace {
     }
 
     #if os(Linux)
-    private static let state = backtrace_create_state(CommandLine.arguments[0], /* supportThreading: */ 1, nil, nil)
+    // 1 = supportThreading
+    private static let state = backtrace_create_state(CommandLine.arguments[0], 1, nil, nil)
     #endif
 
     static func captureRaw() -> [RawFrame] {
@@ -54,7 +55,8 @@ public struct StackTrace {
         }
         var context = Context()
         backtrace_full(
-            self.state, /* skip: */
+            // skip
+            self.state,
             1,
             { data, pc, filename, lineno, function in
                 let frame = RawFrame(

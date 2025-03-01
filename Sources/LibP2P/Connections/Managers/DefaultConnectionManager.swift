@@ -130,7 +130,8 @@ class BasicInMemoryConnectionManager: ConnectionManager {
 
     func getBestConnectionForPeer(peer: PeerID, on loop: EventLoop?) -> EventLoopFuture<Connection?> {
         connectionsInvolvingPeer(peer: peer).map { connections -> Connection? in
-            connections.first(where: { $0.stats.status == .upgraded })  //Or some other check like ping / latency / last seen / etc...
+            //Or some other check like ping / latency / last seen / etc...
+            connections.first(where: { $0.stats.status == .upgraded })
         }.hop(to: loop ?? eventLoop)
     }
 
@@ -192,12 +193,13 @@ class BasicInMemoryConnectionManager: ConnectionManager {
             self.logger.debug("Oldest 4 Connections")
             self.logger.debug("Date: \(Date())")
             let bcl: [AppConnection] = self.connections.compactMap { $0.value as? AppConnection }
-            bcl.sorted { lhs, rhs in
+
+            for sample in bcl.sorted(by: { lhs, rhs in
                 lhs.lastActivity() < rhs.lastActivity()
-            }.prefix(4).forEach {
-                self.logger.debug("\($0.id) -> \($0.lastActivity())")
-                if Date().timeIntervalSince1970 - $0.lastActivity().timeIntervalSince1970 > 5 {
-                    self.logger.debug("\($0.description)")
+            }).prefix(4) {
+                self.logger.debug("\(sample.id) -> \(sample.lastActivity())")
+                if Date().timeIntervalSince1970 - sample.lastActivity().timeIntervalSince1970 > 5 {
+                    self.logger.debug("\(sample.description)")
                 }
                 //self.logger.notice("Last Active: \($0.lastActivity())")
                 //self.logger.notice("\($0.streamHistory)")
@@ -245,9 +247,9 @@ class BasicInMemoryConnectionManager: ConnectionManager {
         return connections.map {
             $0.value.close()
         }.flatten(on: eventLoop).always { _ in
-            self.connections.forEach {
-                guard let pid = $0.value.remotePeer else { return }
-                self.connectionHistory[pid.b58String, default: []].append($0.value.stats)
+            for connection in self.connections {
+                guard let pid = connection.value.remotePeer else { return }
+                self.connectionHistory[pid.b58String, default: []].append(connection.value.stats)
             }
             self.connections = [:]
             self.pruneTask?.cancel()
@@ -331,13 +333,13 @@ class BasicInMemoryConnectionManager: ConnectionManager {
     private func pruneConnectionHistory(maxEntries: Int) -> EventLoopFuture<Void> {
         self.eventLoop.submit {
             if self.connectionHistory.count > maxEntries {
-                (0..<self.connectionHistory.count - maxEntries).forEach { _ in
+                for _ in (0..<self.connectionHistory.count - maxEntries) {
                     if let randEntry = self.connectionHistory.randomElement()?.key {
                         self.connectionHistory.removeValue(forKey: randEntry)
                     }
                 }
             }
-            self.connectionHistory.forEach { key, value in
+            for (key, value) in self.connectionHistory {
                 if value.count > 10 {
                     self.connectionHistory.updateValue(Array(value.suffix(10)), forKey: key)
                 }

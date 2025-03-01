@@ -92,8 +92,8 @@ extension Application {
         /// **The resulting order of preference will be...**
         /// 1) Yamux
         /// 2) MPLEX
-        public func use(_ provider: Provider...) {
-            provider.forEach { $0.run(self.application) }
+        public func use(_ providers: Provider...) {
+            for provider in providers { provider.run(self.application) }
         }
 
         public func use<M: MuxerUpgrader>(_ makeUpgrader: @escaping (Application) -> (M)) {

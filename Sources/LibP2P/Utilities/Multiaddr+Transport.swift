@@ -31,24 +31,24 @@ extension Multiaddr {
             return nil
         }
 
-        self.addresses.forEach {
-            switch $0.codec {
+        for address in self.addresses {
+            switch address.codec {
             case .ip4:
-                if let h = $0.addr {
+                if let h = address.addr {
                     host = h
                     isIP4 = true
                 }
             case .ip6:
-                if let h = $0.addr {
+                if let h = address.addr {
                     host = h
                     isIP4 = false
                 }
             case .tcp:
-                if let pStr = $0.addr, let p = Int(pStr) {
+                if let pStr = address.addr, let p = Int(pStr) {
                     port = p
                 }
             default:
-                return
+                continue
             }
         }
 
@@ -76,24 +76,24 @@ extension Multiaddr {
             return nil
         }
 
-        self.addresses.forEach {
-            switch $0.codec {
+        for address in self.addresses {
+            switch address.codec {
             case .ip4:
-                if let h = $0.addr {
+                if let h = address.addr {
                     host = h
                     isIP4 = true
                 }
             case .ip6:
-                if let h = $0.addr {
+                if let h = address.addr {
                     host = h
                     isIP4 = false
                 }
             case .udp:
-                if let pStr = $0.addr, let p = Int(pStr) {
+                if let pStr = address.addr, let p = Int(pStr) {
                     port = p
                 }
             default:
-                return
+                continue
             }
         }
 

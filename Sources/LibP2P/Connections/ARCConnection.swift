@@ -105,7 +105,7 @@ public class ARCConnection: AppConnection {
         let id = UUID()
         self.id = id
         self.application = application
-        self.logger = Logger(label: "ARCConnection[\(application.peerID.shortDescription)][\(id.uuidString.prefix(5))]")  //logger
+        self.logger = Logger(label: "ARCConnection[\(application.peerID.shortDescription)][\(id.uuidString.prefix(5))]")
         self.logger.logLevel = application.logger.logLevel
         self.channel = channel
         self.stateMachine = ConnectionStateMachine()
@@ -303,7 +303,7 @@ public class ARCConnection: AppConnection {
                     /// Open any pending streams now that we're muxed
                     ///
                     /// TODO: Not sure about this error handling....
-                    self.pendingStreamCache.forEach { pendingStream in
+                    for pendingStream in self.pendingStreamCache {
                         self.logger.debug(
                             "Asking Muxer to open / initialize pending stream for protocol `\(pendingStream.proto)`"
                         )

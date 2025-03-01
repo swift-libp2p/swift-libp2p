@@ -46,11 +46,11 @@ struct MSS: TransportUpgrader {
 
     func printSelf() {
         print("\(MSS.key) has access to the following protocols...")
-        application.security.available.forEach {
-            print("Sec Protocol: \($0)")
+        for secProtocol in application.security.available {
+            print("Sec Protocol: \(secProtocol)")
         }
-        application.muxers.available.forEach {
-            print("Mux Protocol: \($0)")
+        for muxProtocol in application.muxers.available {
+            print("Mux Protocol: \(muxProtocol)")
         }
         print("---")
     }

@@ -49,7 +49,8 @@ import LibP2PCore
 //    }
 //}
 
-public class BasicMulticodecTopology {  //:MulticodecTopology {
+// TODO: Conform to MulticodecTopology
+public class BasicMulticodecTopology {
 
     private let application: Application
     private let uuid: UUID
@@ -80,7 +81,8 @@ public class BasicMulticodecTopology {  //:MulticodecTopology {
 
         self._peers = [:]
 
-        self.logger = application.logger  //Logger(label: "com.swift.libp2p.basicProtocolTopology[\(UUID().uuidString.prefix(5))]")
+        //Logger(label: "com.swift.libp2p.basicProtocolTopology[\(UUID().uuidString.prefix(5))]")
+        self.logger = application.logger
         self.logger[metadataKey: "Topology[\(uuid.uuidString.prefix(5))]"] = .string(
             "[\(protocols.map { $0.stringValue }.joined(separator: ", "))]"
         )

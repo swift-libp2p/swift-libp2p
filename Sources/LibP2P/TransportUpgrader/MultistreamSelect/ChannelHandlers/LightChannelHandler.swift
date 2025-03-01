@@ -27,9 +27,12 @@ import SwiftState
 //protocol MessageExtractableHandler:ChannelInboundHandler where InboundOut:MessageExtractable { }
 
 internal final class LightMultistreamSelectHandler: ChannelInboundHandler, RemovableChannelHandler {
-    public typealias InboundIn = ByteBuffer  //TODO: Have this be of type `Message` or `DecryptedMessage` (uvarint length prefixed, newline delimited, utf8 bytebuffer)
-    public typealias InboundOut = ByteBuffer  // We only pass along buffered data...
-    public typealias OutboundOut = ByteBuffer  //Protocol Selection
+    //TODO: Have this be of type `Message` or `DecryptedMessage` (uvarint length prefixed, newline delimited, utf8 bytebuffer)
+    public typealias InboundIn = ByteBuffer
+    // InboundOut only passes along buffered data...
+    public typealias InboundOut = ByteBuffer
+    //OutboundOut is the Protocol Selection
+    public typealias OutboundOut = ByteBuffer
 
     /// Wether we are listening or initiating the mss negotiation (dialers are expected to initiate the negotiation, listeners / hosts are expected to listen / reply)
     private let mode: LibP2P.Mode

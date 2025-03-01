@@ -41,9 +41,9 @@ public class BootstrapPeerDiscovery: Discovery, LifecycleHandler {
         /// Notify LibP2P of the 'discovered' peers after a short delay
         eventLoop.scheduleTask(in: .milliseconds(100)) {
             /// Notify the subscription of the peers we've 'discovered'
-            self.bootstrapped.forEach {
-                self.onPeerDiscovered?($0)
-                self.on?(.onPeer($0))
+            for peer in self.bootstrapped {
+                self.onPeerDiscovered?(peer)
+                self.on?(.onPeer(peer))
             }
         }
     }

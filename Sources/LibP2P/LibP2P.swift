@@ -229,8 +229,8 @@ public final class Application {
         self.isBooted = true
         // Hook servers into our lifecycle handlers
         //self.servers.available.forEach  { self.lifecycle.use($0) }
-        try self.lifecycle.handlers.forEach { try $0.willBoot(self) }
-        try self.lifecycle.handlers.forEach { try $0.didBoot(self) }
+        for handler in self.lifecycle.handlers { try handler.willBoot(self) }
+        for handler in self.lifecycle.handlers { try handler.didBoot(self) }
 
         // Register our Application Root Event Subscriptions and Handlers
         self.registerEventHandlers()
@@ -242,7 +242,7 @@ public final class Application {
         self.isRunning = false
 
         self.logger.trace("Shutting down providers")
-        self.lifecycle.handlers.reversed().forEach { $0.shutdown(self) }
+        for handler in self.lifecycle.handlers.reversed() { handler.shutdown(self) }
         self.lifecycle.handlers = []
 
         self.logger.debug("Attempting to close all connections")

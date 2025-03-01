@@ -82,8 +82,8 @@ public struct Storage {
     }
 
     public func shutdown() {
-        self.storage.values.forEach {
-            $0.shutdown(logger: self.logger)
+        for value in self.storage.values {
+            value.shutdown(logger: self.logger)
         }
     }
 }

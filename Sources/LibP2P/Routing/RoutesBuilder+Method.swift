@@ -52,7 +52,7 @@ extension RoutesBuilder {
     ) -> Route
     where Response: ResponseEncodable {
         let responder = BasicResponder { request in
-            return try closure(request)
+            try closure(request)
                 .encodeResponse(for: request)
         }
         let route = Route(

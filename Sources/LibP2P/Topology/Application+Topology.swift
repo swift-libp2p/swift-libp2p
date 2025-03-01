@@ -111,7 +111,7 @@ extension Application {
         private func onRemotePeerProtocolChange(_ change: RemotePeerProtocolChange) {
             //self.application.logger.trace("Topology::On Proto Change")
             ///Given the change, loop through the regsitrations and call the necesary handlers...
-            self.storage.registrations.forEach { registration in
+            for registration in self.storage.registrations {
                 if registration.isInterestedIn(change: change.protocols) {
                     self.application.logger.trace("Topology::Issueing onConnect for \(registration)")
                     registration.handler.onConnect(change.peer, change.connection)
@@ -122,7 +122,7 @@ extension Application {
         private func onNewStream(_ stream: LibP2PCore.Stream) {
             //self.application.logger.trace("Topology::On Proto Change")
             ///Given the change, loop through the regsitrations and call the necesary handlers...
-            self.storage.registrations.forEach { registration in
+            for registration in self.storage.registrations {
                 guard registration.handler.onNewStream != nil else { return }
                 if registration.protocols.stringValue == stream.protocolCodec {
                     self.application.logger.trace("Topology::Issueing onNewStream for \(registration)")
@@ -150,7 +150,7 @@ extension Application {
                     )
                     return
                 case .success(let protocols):
-                    self.storage.registrations.forEach { registration in
+                    for registration in self.storage.registrations {
                         guard registration.handler.onDisconnect != nil else { return }
                         if registration.isInterestedIn(change: protocols) {
                             self.application.logger.trace("Topology::Issueing onDisconnect for \(registration)")

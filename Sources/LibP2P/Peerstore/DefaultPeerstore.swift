@@ -99,7 +99,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
             }
 
             /// Prune the peers...
-            peersToPrune.forEach { self.store.removeValue(forKey: $0) }
+            for peer in peersToPrune { self.store.removeValue(forKey: peer) }
 
             self.logger.debug("✂️✂️✂️ Pruned \(peersToPrune.count) peers who we haven't talked to since \(expiration) ✂️✂️✂️")
             self.logger.debug("✂️✂️✂️ PeerStore Count == \(self.store.count) ✂️✂️✂️")
@@ -150,8 +150,8 @@ internal final class BasicInMemoryPeerStore: PeerStore {
             }
 
             /// Remove the peers
-            oldestPrunablePeers.forEach {
-                self.store.removeValue(forKey: $0)
+            for peer in oldestPrunablePeers {
+                self.store.removeValue(forKey: peer)
             }
 
             self.logger.debug("✂️✂️✂️ Pruned the \(oldestPrunablePeers.count) oldest peers ✂️✂️✂️")
@@ -510,7 +510,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
     func trimAllRecords() -> EventLoopFuture<Void> {
         eventLoop.submit {
             self.logger.debug("✂️✂️✂️ Trimming PeerStore Records ✂️✂️✂️")
-            self.store.forEach { (key, compPeer) in
+            for (_, compPeer) in self.store {
                 guard
                     let mostRecentRecord = compPeer.records.max(by: { a, b in
                         a.sequenceNumber < b.sequenceNumber

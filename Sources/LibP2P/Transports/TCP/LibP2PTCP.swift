@@ -114,8 +114,10 @@ public struct TCP: Transport {
     public func canDial(address: Multiaddr) -> Bool {
         //address.tcpAddress != nil && !address.protocols().contains(.ws)
         guard let tcp = address.tcpAddress else { return false }
-        guard tcp.ip4 else { return false }  // Remove once we can dial ipv6 addresses
-        guard !address.protocols().contains(.ws) else { return false }  // Our TCP Client doesn't support WebSocket Upgrades...
+        // TODO: Remove once we can dial ipv6 addresses
+        guard tcp.ip4 else { return false }
+        // Our TCP Client doesn't support WebSocket Upgrades...
+        guard !address.protocols().contains(.ws) else { return false }
         return true
     }
 
