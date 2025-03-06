@@ -273,7 +273,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
     /// Adds a Multiaddr to an existing PeerID
     func add(address: Multiaddr, toPeer peer: PeerID, on: EventLoop? = nil) -> EventLoopFuture<Void> {
         getPeer(withID: peer.b58String).map { compPeer in
-            if let pid = address.getPeerID() { guard pid == peer.b58String else { return } }
+            if let pid = try? address.getPeerID() { guard pid == peer else { return } }
             if !compPeer.addresses.contains(address) { compPeer.addresses.append(address) }
         }.hop(to: on ?? eventLoop)
     }
@@ -282,7 +282,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
         guard !addresses.isEmpty else { return on?.makeSucceededVoidFuture() ?? eventLoop.makeSucceededVoidFuture() }
         return getPeer(withID: peer.b58String).map { compPeer in
             for address in addresses {
-                if let pid = address.getPeerID() { guard pid == peer.b58String else { return } }
+                if let pid = try? address.getPeerID() { guard pid == peer else { return } }
                 if !compPeer.addresses.contains(address) { compPeer.addresses.append(address) }
             }
         }.hop(to: on ?? eventLoop)

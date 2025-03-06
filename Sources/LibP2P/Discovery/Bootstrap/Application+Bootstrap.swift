@@ -42,8 +42,7 @@ extension Application.DiscoveryServices.Provider {
                     on: app.eventLoopGroup.next(),
                     withPeers: peers.compactMap {
                         guard let ma = try? Multiaddr($0) else { return nil }
-                        guard let cid = ma.getPeerID() else { return nil }
-                        guard let pid = try? PeerID(cid: cid) else { return nil }
+                        guard let pid = try? ma.getPeerID() else { return nil }
                         return PeerInfo(peer: pid, addresses: [ma])
                     }
                 )
@@ -60,8 +59,7 @@ extension Application.DiscoveryServices.Provider {
                 let boot = BootstrapPeerDiscovery(
                     on: app.eventLoopGroup.next(),
                     withPeers: peers.compactMap {
-                        guard let cid = $0.getPeerID() else { return nil }
-                        guard let pid = try? PeerID(cid: cid) else { return nil }
+                        guard let pid = try? $0.getPeerID() else { return nil }
                         return PeerInfo(peer: pid, addresses: [$0])
                     }
                 )

@@ -261,8 +261,7 @@ extension Application {
                 // We resolved an address...
                 // Instead of trying any random multiaddr, lets see if we have a PeerID we can use to find existing connections...
                 if let peer = resolvedAddresses.compactMap({ ma -> PeerID? in
-                    guard let cid = ma.getPeerID() else { return nil }
-                    return try? PeerID(cid: cid)
+                    try? ma.getPeerID()
                 }).first {
                     return self.connections.getBestConnectionForPeer(peer: peer, on: loop).flatMap {
                         conn -> EventLoopFuture<Multiaddr> in
