@@ -145,7 +145,7 @@ extension Application {
         let el = self.eventLoopGroup.next()
 
         /// Search by PeerID if possible...
-        if let cid = multiaddr.getPeerID(), let pid = try? PeerID(cid: cid) {
+        if let pid = try? multiaddr.getPeerID() {
             return self.peers.getAddresses(forPeer: pid, on: el).flatMapAlways {
                 result -> EventLoopFuture<[Multiaddr]> in
                 switch result {

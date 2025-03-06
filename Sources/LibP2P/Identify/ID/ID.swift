@@ -391,7 +391,7 @@ extension Identify {
     // - TODO:  This doesn't handle multiple parallel outbound pings to the same peer
     func initiateOutboundPingTo(addr: Multiaddr) -> EventLoopFuture<TimeAmount> {
         self.el.flatSubmit {
-            guard let cid = addr.getPeerID(), let peer = try? PeerID(cid: cid) else {
+            guard let peer = try? addr.getPeerID() else {
                 self.logger.warning("Identify::Failed to ping addr `\(addr)`. A valid peerID is neccessary")
                 return self.el.makeFailedFuture(Errors.timedOut)
             }
