@@ -20,16 +20,12 @@ import ConsoleKit
 import Logging
 
 extension LoggingSystem {
+    @preconcurrency
     public static func bootstrap(
         from environment: inout Environment,
-        _ factory: (Logger.Level) -> (String) -> LogHandler
+        _ factory: @Sendable (Logger.Level) -> (@Sendable (String) -> LogHandler)
     ) throws {
         let level = try Logger.Level.detect(from: &environment)
-
-        // Disable stack traces if log level > trace.
-        //if level > .trace {
-        //    StackTrace.isCaptureEnabled = false
-        //}
 
         // Bootstrap logger with a factory created by the factoryfactory.
         return LoggingSystem.bootstrap(factory(level))
@@ -39,13 +35,20 @@ extension LoggingSystem {
         try self.bootstrap(from: &environment) { level in
             let console = Terminal()
             return { (label: String) in
-                ConsoleLogger(label: label, console: console, level: level)
+                return ConsoleLogger(label: label, console: console, level: level)
             }
         }
     }
 }
 
-extension Logger.Level: LosslessStringConvertible {
+#if compiler(>=6.1)
+extension Logging.Logger.Level: @retroactive CustomStringConvertible {}
+extension Logging.Logger.Level: @retroactive Swift.LosslessStringConvertible {}
+#else
+extension Logging.Logger.Level: Swift.LosslessStringConvertible {}
+#endif
+
+extension Logging.Logger.Level {
     public init?(_ description: String) { self.init(rawValue: description.lowercased()) }
     public var description: String { self.rawValue }
 
@@ -53,12 +56,12 @@ extension Logger.Level: LosslessStringConvertible {
         struct LogSignature: CommandSignature {
             @Option(name: "log", help: "Change log level")
             var level: Logger.Level?
-            init() {}
+            init() { }
         }
 
         // Determine log level from environment.
         return try LogSignature(from: &environment.commandInput).level
             ?? Environment.process.LOG_LEVEL
-            ?? (environment == .production ? .notice : .info)
+            ?? (environment == .production ? .notice: .info)
     }
 }
