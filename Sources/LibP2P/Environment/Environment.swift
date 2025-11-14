@@ -50,12 +50,15 @@ public struct Environment: Sendable, Equatable {
     ///     - arguments: `CommandInput` to parse `--env` flag from.
     /// - returns: The detected environment, or default env.
     public static func detect(from commandInput: inout CommandInput) throws -> Environment {
+        print("CommandInput: \(commandInput)")
         self.sanitize(commandInput: &commandInput)
 
         struct EnvironmentSignature: CommandSignature {
             @Option(name: "env", short: "e", help: "Change the application's environment")
             var environment: String?
         }
+
+        print("Sanitized CommandInput: \(commandInput)")
 
         var env: Environment
         switch try EnvironmentSignature(from: &commandInput).environment ?? Environment.process.LIBP2P_ENV
