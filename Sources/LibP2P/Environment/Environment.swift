@@ -82,51 +82,18 @@ public struct Environment: Sendable, Equatable {
 
     /// Performs stripping of user defaults overrides where and when appropriate.
     private static func sanitize(commandInput: inout CommandInput) {
-        #if Xcode
-        // Strip all leading arguments matching the pattern for assignment to the `NSArgumentsDomain`
-        // of `UserDefaults`. Matching this pattern means being prefixed by `-NS` or `-Apple` and being
-        // followed by a value argument. Since this is mainly just to get around Xcode's habit of
-        // passing a bunch of these when no other arguments are specified in a test scheme, we ignore
-        // any that don't match the Apple patterns and assume the app knows what it's doing.
-        while commandInput.arguments.first?.prefix(6) == "-Apple" || commandInput.arguments.first?.prefix(3) == "-NS",
-            commandInput.arguments.count > 1
-        {
-            commandInput.arguments.removeFirst(2)
-        }
-        #elseif os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-        // When tests are invoked directly through SwiftPM using `--filter`, SwiftPM will pass `-XCTest <filter>` to the
-        // runner binary, and also the test bundle path unconditionally. These must be stripped for Libp2p to be satisfied
-        // with the validity of the arguments. We detect this case reliably the hard way, by looking for the `xctest`
-        // runner executable and a leading argument with the `.xctest` bundle suffix.
-        if commandInput.executable.hasSuffix("/usr/bin/xctest") {
-            if commandInput.arguments.first?.lowercased() == "-xctest" && commandInput.arguments.count > 1 {
-                commandInput.arguments.removeFirst(2)
-            }
-            if commandInput.arguments.first?.hasSuffix(".xctest") ?? false {
-                commandInput.arguments.removeFirst()
+        // Only keep supported arguments (hostname[H], port[p], bind[b], unix-socket, help)
+        var argsToKeep:[String] = []
+        let supportedArguments = ["--hostname", "-H", "--port", "-p", "--bind", "-b", "--unix-socket", "--help", "-h", "--env", "-e"]
+        for (index, argument) in commandInput.arguments.enumerated() {
+            if supportedArguments.contains(argument) {
+                argsToKeep.append(argument)
+                if commandInput.arguments.count >= index + 1 {
+                    argsToKeep.append(commandInput.arguments[index + 1])
+                }
             }
         }
-        if commandInput.executable.hasSuffix("swiftpm-testing-helper") {
-            // Remove the --test-bundle-path flag and argument
-            if commandInput.arguments.first?.lowercased() == "--test-bundle-path" && commandInput.arguments.count > 1 {
-                commandInput.arguments.removeFirst(2)
-            }
-            // Remove the --filter flag and argument if necessary
-            if commandInput.arguments.first?.lowercased() == "--filter" && commandInput.arguments.count > 2 {
-                commandInput.arguments.removeFirst(2)
-            }
-            // Remove the path argument
-            if commandInput.arguments.count >= 3,
-                commandInput.arguments.contains(where: { $0.lowercased() == "--testing-library" })
-            {
-                commandInput.arguments.removeFirst(1)
-            }
-            // Remove the --testing-library flag and argument if necessary
-            if commandInput.arguments.first?.lowercased() == "--testing-library" && commandInput.arguments.count > 1 {
-                commandInput.arguments.removeFirst(2)
-            }
-        }
-        #endif
+        commandInput.arguments = argsToKeep
     }
 
     /// Invokes `sanitize(commandInput:)` over a set of raw arguments and returns the
@@ -208,3 +175,52 @@ public struct Environment: Sendable, Equatable {
         self.arguments = arguments
     }
 }
+
+/// Performs stripping of user defaults overrides where and when appropriate.
+//    private static func sanitize(commandInput: inout CommandInput) {
+//        #if Xcode
+//        // Strip all leading arguments matching the pattern for assignment to the `NSArgumentsDomain`
+//        // of `UserDefaults`. Matching this pattern means being prefixed by `-NS` or `-Apple` and being
+//        // followed by a value argument. Since this is mainly just to get around Xcode's habit of
+//        // passing a bunch of these when no other arguments are specified in a test scheme, we ignore
+//        // any that don't match the Apple patterns and assume the app knows what it's doing.
+//        while commandInput.arguments.first?.prefix(6) == "-Apple" || commandInput.arguments.first?.prefix(3) == "-NS",
+//            commandInput.arguments.count > 1
+//        {
+//            commandInput.arguments.removeFirst(2)
+//        }
+//        #elseif os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+//        // When tests are invoked directly through SwiftPM using `--filter`, SwiftPM will pass `-XCTest <filter>` to the
+//        // runner binary, and also the test bundle path unconditionally. These must be stripped for Libp2p to be satisfied
+//        // with the validity of the arguments. We detect this case reliably the hard way, by looking for the `xctest`
+//        // runner executable and a leading argument with the `.xctest` bundle suffix.
+//        if commandInput.executable.hasSuffix("/usr/bin/xctest") {
+//            if commandInput.arguments.first?.lowercased() == "-xctest" && commandInput.arguments.count > 1 {
+//                commandInput.arguments.removeFirst(2)
+//            }
+//            if commandInput.arguments.first?.hasSuffix(".xctest") ?? false {
+//                commandInput.arguments.removeFirst()
+//            }
+//        }
+//        if commandInput.executable.hasSuffix("swiftpm-testing-helper") || commandInput.executable.hasSuffix(".xctest") {
+//            // Remove the --test-bundle-path flag and argument
+//            if commandInput.arguments.first?.lowercased() == "--test-bundle-path" && commandInput.arguments.count > 1 {
+//                commandInput.arguments.removeFirst(2)
+//            }
+//            // Remove the --filter flag and argument if necessary
+//            if commandInput.arguments.first?.lowercased() == "--filter" && commandInput.arguments.count > 2 {
+//                commandInput.arguments.removeFirst(2)
+//            }
+//            // Remove the path argument
+//            if commandInput.arguments.count >= 3,
+//                commandInput.arguments.contains(where: { $0.lowercased() == "--testing-library" })
+//            {
+//                commandInput.arguments.removeFirst(1)
+//            }
+//            // Remove the --testing-library flag and argument if necessary
+//            if commandInput.arguments.first?.lowercased() == "--testing-library" && commandInput.arguments.count > 1 {
+//                commandInput.arguments.removeFirst(2)
+//            }
+//        }
+//        #endif
+//    }
