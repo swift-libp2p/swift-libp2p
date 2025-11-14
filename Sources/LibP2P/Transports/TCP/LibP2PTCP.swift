@@ -150,4 +150,4 @@ extension Application.Transports.Provider {
     }
 }
 
-extension ClientBootstrap: @unchecked Sendable { }
+extension ClientBootstrap: @unchecked Sendable {}
