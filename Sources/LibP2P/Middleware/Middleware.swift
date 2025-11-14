@@ -16,13 +16,14 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import NIO
+import NIOCore
 
 /// `Middleware` is placed between the server and your router. It is capable of
 /// mutating both incoming requests and outgoing responses. `Middleware` can choose
 /// to pass requests on to the next `Middleware` in a chain, or they can short circuit and
 /// return a custom `RawResponse` if desired.
-public protocol Middleware {
+@preconcurrency
+public protocol Middleware: Sendable {
     /// Called with each `Request` that passes through this middleware.
     /// - parameters:
     ///     - request: The incoming `Request`.
@@ -59,6 +60,10 @@ private struct BasicMiddlewareResponder: Responder {
         self.responder = responder
     }
 
+    /// Chains an incoming request to another `Responder` on the router.
+    /// - parameters:
+    ///     - request: The incoming `Request`.
+    /// - returns: An asynchronous `Response`.
     func respond(to request: Request) -> EventLoopFuture<RawResponse> {
         self.middleware.respond(to: request, chainingTo: self.responder)
     }

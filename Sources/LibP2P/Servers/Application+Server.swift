@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOConcurrencyHelpers
+
 extension Application {
     public var servers: Servers {
         .init(application: self)
@@ -44,13 +46,13 @@ extension Application {
         }
     }
 
-    public struct Servers {
+    public struct Servers: Sendable {
         typealias KeyedServer = (key: String, value: Server)
 
         public struct Provider {
-            let run: (Application) -> Void
+            let run: @Sendable (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> Void) {
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
@@ -59,10 +61,12 @@ extension Application {
             typealias Value = ServeCommand
         }
 
-        final class Storage {
-            var servers: [KeyedServer] = []
+        final class Storage: Sendable {
+            let servers: NIOLockedValueBox<[KeyedServer]>
             //var makeServer: ((Application) -> Server)?
-            init() {}
+            init() {
+                self.servers = .init([])
+            }
         }
 
         struct Key: StorageKey {
@@ -78,11 +82,13 @@ extension Application {
         }
 
         public func use<S: Server>(_ makeServer: @escaping (Application) -> (S)) {
-            guard !self.storage.servers.contains(where: { $0.key == S.key }) else {
-                self.application.logger.warning("`\(S.key)` Server Already Installed - Skipping")
-                return
+            self.storage.servers.withLockedValue { servers in
+                guard !servers.contains(where: { $0.key == S.key }) else {
+                    self.application.logger.warning("`\(S.key)` Server Already Installed - Skipping")
+                    return
+                }
+                servers.append((S.key, makeServer(self.application)))
             }
-            self.storage.servers.append((S.key, makeServer(self.application)))
         }
 
         public func server<S: Server>(for sec: S.Type) -> S? {
@@ -90,15 +96,21 @@ extension Application {
         }
 
         public func server(forKey key: String) -> Server? {
-            self.storage.servers.first(where: { $0.key == key })?.value
+            self.storage.servers.withLockedValue { servers in
+                servers.first(where: { $0.key == key })?.value
+            }
         }
 
         public var available: [String] {
-            self.storage.servers.map { $0.key }
+            self.storage.servers.withLockedValue { servers in
+                servers.map { $0.key }
+            }
         }
 
         internal var allServers: [Server] {
-            self.storage.servers.map { $0.value }
+            self.storage.servers.withLockedValue { servers in
+                servers.map { $0.value }
+            }
         }
 
         public var command: ServeCommand {
@@ -110,6 +122,20 @@ extension Application {
                     $0.shutdown()
                 }
                 return new
+            }
+        }
+        
+        public var asyncCommand: ServeCommand {
+            get async {
+                if let existing = self.application.storage.get(CommandKey.self) {
+                    return existing
+                } else {
+                    let new = ServeCommand()
+                    await self.application.storage.setWithAsyncShutdown(CommandKey.self, to: new) {
+                        await $0.asyncShutdown()
+                    }
+                    return new
+                }
             }
         }
 

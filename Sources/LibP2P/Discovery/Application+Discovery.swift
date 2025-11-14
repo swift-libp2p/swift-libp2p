@@ -13,24 +13,27 @@
 //===----------------------------------------------------------------------===//
 
 import LibP2PCore
+import NIOConcurrencyHelpers
 
 extension Application {
     public var discovery: DiscoveryServices {
         .init(application: self)
     }
 
-    public struct DiscoveryServices {
+    public struct DiscoveryServices: Sendable {
         public struct Provider {
-            let run: (Application) -> Void
+            let run: @Sendable (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> Void) {
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
-        final class Storage {
-            var discoveryServices: [String: Discovery] = [:]
-            init() {}
+        final class Storage: Sendable {
+            let discoveryServices: NIOLockedValueBox<[String: Discovery]>
+            init() {
+                self.discoveryServices = .init([:])
+            }
         }
 
         struct Key: StorageKey {
@@ -50,35 +53,37 @@ extension Application {
         //        }
 
         public func service(forKey key: String) -> Discovery? {
-            self.storage.discoveryServices[key]
+            self.storage.discoveryServices.withLockedValue { $0[key] }
         }
 
         public func use(_ provider: Provider) {
             provider.run(self.application)
         }
 
-        public func use<D: Discovery>(_ makeService: @escaping (Application) -> (D)) {
-            if self.storage.discoveryServices[D.key] != nil {
-                fatalError("DiscoveryService `\(D.key)` Already Installed")
+        @preconcurrency public func use<D: Discovery>(_ makeService: @Sendable @escaping (Application) -> (D)) {
+            self.storage.discoveryServices.withLockedValue { services in
+                if services[D.key] != nil {
+                    fatalError("DiscoveryService `\(D.key)` Already Installed")
+                }
+                var service = makeService(self.application)
+                service.onPeerDiscovered = self.onPeerDiscovered
+                // Maybe we just rely on individual modules to register themselves if need be...
+                // if let lifeCycleService = service as? LifecycleHandler {
+                //     self.application.logger.info("Auto registering \(service) as a lifecycle handler")
+                //     self.application.lifecycle.use(lifeCycleService)
+                // }
+                services[D.key] = service
             }
-            var service = makeService(self.application)
-            service.onPeerDiscovered = self.onPeerDiscovered
-            // Maybe we just rely on individual modules to register themselves if need be...
-            //            if let lifeCycleService = service as? LifecycleHandler {
-            //                self.application.logger.info("Auto registering \(service) as a lifecycle handler")
-            //                self.application.lifecycle.use(lifeCycleService)
-            //            }
-            self.storage.discoveryServices[D.key] = service
         }
 
         public let application: Application
 
         public var available: [String] {
-            self.storage.discoveryServices.keys.map { $0 }
+            self.storage.discoveryServices.withLockedValue { $0.keys.map { $0 } }
         }
 
         internal var services: [Discovery] {
-            self.storage.discoveryServices.values.map { $0 }
+            self.storage.discoveryServices.withLockedValue { $0.values.map { $0 } }
         }
 
         var storage: Storage {
@@ -90,7 +95,7 @@ extension Application {
 
         public func dump() {
             print("*** Installed Discovery Services ***")
-            print(self.storage.discoveryServices.keys.map { $0 }.joined(separator: "\n"))
+            print(self.storage.discoveryServices.withLockedValue { $0.keys.map { $0 }.joined(separator: "\n") })
             print("----------------------------------")
         }
 

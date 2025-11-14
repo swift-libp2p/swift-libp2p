@@ -13,8 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 import LibP2PCore
+import NIOConcurrencyHelpers
 
-public struct TopologyRegistration: CustomStringConvertible {
+public struct TopologyRegistration: CustomStringConvertible, Sendable {
     let min: Int
     let max: Int
     let protocols: SemVerProtocol
@@ -62,12 +63,14 @@ extension Application {
 
     public struct TopologyRegistrations: LifecycleHandler {
 
-        final class Storage {
-            var registrations: [TopologyRegistration] = []
-            init() {}
+        final class Storage: Sendable {
+            let registrations: NIOLockedValueBox<[TopologyRegistration]>
+            init() {
+                self.registrations = .init([])
+            }
         }
 
-        struct Key: StorageKey {
+        struct Key: StorageKey, Sendable {
             typealias Value = Storage
         }
 
@@ -79,7 +82,9 @@ extension Application {
 
         public func register(_ registration: TopologyRegistration) {
             self.application.logger.info("Topology::New Registration for \(registration)")
-            self.storage.registrations.append(registration)
+            self.storage.registrations.withLockedValue {
+                $0.append(registration)
+            }
         }
 
         var storage: Storage {
@@ -104,16 +109,18 @@ extension Application {
 
         public func dump() {
             print("*** Registered Topology Handlers ***")
-            print(self.storage.registrations.map { $0.description }.joined(separator: "\n"))
+            print(self.storage.registrations.withLockedValue { $0.map { $0.description }.joined(separator: "\n") })
             print("------------------------------------")
         }
 
         private func onRemotePeerProtocolChange(_ change: RemotePeerProtocolChange) {
             //self.application.logger.trace("Topology::On Proto Change")
             ///Given the change, loop through the regsitrations and call the necesary handlers...
-            for registration in self.storage.registrations {
+            let registrations = self.storage.registrations.withLockedValue { $0 }
+            
+            for registration in registrations {
                 if registration.isInterestedIn(change: change.protocols) {
-                    self.application.logger.trace("Topology::Issueing onConnect for \(registration)")
+                    self.application.logger.trace("Topology::Issuing protocolChange for \(registration)")
                     registration.handler.onConnect(change.peer, change.connection)
                 }
             }
@@ -122,10 +129,12 @@ extension Application {
         private func onNewStream(_ stream: LibP2PCore.Stream) {
             //self.application.logger.trace("Topology::On Proto Change")
             ///Given the change, loop through the regsitrations and call the necesary handlers...
-            for registration in self.storage.registrations {
+            let registrations = self.storage.registrations.withLockedValue { $0 }
+            
+            for registration in registrations {
                 guard registration.handler.onNewStream != nil else { return }
                 if registration.protocols.stringValue == stream.protocolCodec {
-                    self.application.logger.trace("Topology::Issueing onNewStream for \(registration)")
+                    self.application.logger.trace("Topology::Issuing onNewStream for \(registration)")
                     registration.handler.onNewStream?(stream)
                 }
             }
@@ -135,9 +144,10 @@ extension Application {
             //self.application.logger.trace("Topology::On Peer Disconnected")
             guard let peer = peer ?? connection.remotePeer else { return }
             guard self.application.isRunning && !self.application.didShutdown else { return }
+            let registrations = self.storage.registrations.withLockedValue { $0 }
             guard
-                !self.storage.registrations.isEmpty
-                    && self.storage.registrations.contains(where: { $0.handler.onDisconnect != nil })
+                !registrations.isEmpty
+                    && registrations.contains(where: { $0.handler.onDisconnect != nil })
             else { return }
             self.application.logger.trace(
                 "Application::TopologyRegistration::OnDisconnect::Attempting to get Peers Protocols"
@@ -150,10 +160,10 @@ extension Application {
                     )
                     return
                 case .success(let protocols):
-                    for registration in self.storage.registrations {
+                    for registration in registrations {
                         guard registration.handler.onDisconnect != nil else { return }
                         if registration.isInterestedIn(change: protocols) {
-                            self.application.logger.trace("Topology::Issueing onDisconnect for \(registration)")
+                            self.application.logger.trace("Topology::Issuing onDisconnect for \(registration)")
                             registration.handler.onDisconnect?(peer)
                         }
                     }

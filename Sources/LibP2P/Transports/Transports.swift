@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import LibP2PCore
+import NIOConcurrencyHelpers
 
 extension Application {
     public var transports: Transports {
@@ -21,27 +22,36 @@ extension Application {
 
     public struct Transports: TransportManager {
 
-        public struct Provider {
-            let run: (Application) -> Void
+        public struct Provider: Sendable {
+            let run: @Sendable (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> Void) {
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
         /// Storing the builders
-        //        final class Storage2 {
-        //            var transports:[String:((Application) -> Transport)] = [:]
-        //            init() { }
-        //        }
+//        final class Storage2 {
+//            struct TransportFactory {
+//                let factory: (@Sendable (Application) -> Transport)
+//            }
+//            
+//            let transports: NIOLockedValueBox<[String: TransportFactory]>
+//            init() {
+//                self.transports = .init([:])
+//            }
+//        }
 
         /// Storing the instantiations
-        final class Storage {
-            var transports: [String: Transport] = [:]
-            init() {}
+        final class Storage: Sendable {
+            let transports: NIOLockedValueBox<[String: Transport]>
+            
+            init() {
+                self.transports = .init([:])
+            }
         }
 
-        struct Key: StorageKey {
+        struct Key: StorageKey, Sendable {
             typealias Value = Storage
         }
 
@@ -54,7 +64,7 @@ extension Application {
         }
 
         public func transport(forKey key: String) -> Transport? {
-            self.storage.transports[key]  //?(self.application)
+            self.storage.transports.withLockedValue { $0[key] } //?(self.application)
         }
 
         public func use(_ provider: Provider) {
@@ -63,13 +73,15 @@ extension Application {
 
         public func use(key: String, _ transport: @escaping (Application) -> (Transport)) {
             /// We store the instantiation instead of the builder...
-            self.storage.transports[key] = transport(application)
+            self.storage.transports.withLockedValue {
+                $0[key] = transport(application)
+            }
         }
 
         public let application: Application
 
         public var available: [String] {
-            self.storage.transports.keys.map { $0 }
+            self.storage.transports.withLockedValue { $0.keys.map { $0 } }
         }
 
         var storage: Storage {
@@ -81,7 +93,7 @@ extension Application {
 
         public func dump() {
             print("*** Installed Transports ***")
-            print(self.storage.transports.keys.map { $0 }.joined(separator: "\n"))
+            print(self.storage.transports.withLockedValue { $0.keys.map { $0 }.joined(separator: "\n") })
             print("----------------------------------")
         }
     }

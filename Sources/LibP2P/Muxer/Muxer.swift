@@ -29,23 +29,28 @@ extension Application {
         .init(application: self)
     }
 
-    public struct MuxerUpgraders {
-        internal typealias KeyedMuxerUpgrader = (key: String, value: ((Application) -> MuxerUpgrader))
+    public struct MuxerUpgraders: Sendable {
+        //internal typealias KeyedMuxerUpgrader = (key: String, value: ((Application) -> MuxerUpgrader))
         public struct Provider {
-            let run: (Application) -> Void
+            let run: @Sendable (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> Void) {
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
-        final class Storage {
+        final class Storage: Sendable {
+            struct MuxerFactory {
+                let factory: (@Sendable (Application) -> MuxerUpgrader)
+            }
             /// Muxer Upgraders stored in order of preference
-            var muxUpgraders: [KeyedMuxerUpgrader] = []
-            init() {}
+            let muxUpgraders: NIOLockedValueBox<[String: MuxerFactory]>
+            init() {
+                self.muxUpgraders = .init([:])
+            }
         }
 
-        struct Key: StorageKey {
+        struct Key: StorageKey, Sendable {
             typealias Value = Storage
         }
 
@@ -62,7 +67,13 @@ extension Application {
         //        }
 
         public func upgrader(forKey key: String) -> MuxerUpgrader? {
-            self.storage.muxUpgraders.first(where: { $0.key == key })?.value(self.application)
+            self.storage.muxUpgraders.withLockedValue{
+                if let factory = $0.first(where: { $0.key == key })?.value.factory {
+                    return factory(self.application)
+                } else {
+                    return nil
+                }
+            }
         }
 
         /// Accepts a single Muxer Provider, these providers are ordered in the same order in which they are called.
@@ -96,18 +107,20 @@ extension Application {
             for provider in providers { provider.run(self.application) }
         }
 
-        public func use<M: MuxerUpgrader>(_ makeUpgrader: @escaping (Application) -> (M)) {
-            guard !self.storage.muxUpgraders.contains(where: { $0.key == M.key }) else {
-                self.application.logger.warning("`\(M.key)` Muxer Module Already Installed - Skipping")
-                return
+        @preconcurrency public func use<M: MuxerUpgrader>(_ makeUpgrader: @Sendable @escaping (Application) -> (M)) {
+            self.storage.muxUpgraders.withLockedValue { muxers in
+                guard muxers[M.key] == nil else {
+                    self.application.logger.warning("`\(M.key)` Muxer Module Already Installed - Skipping")
+                    return
+                }
+                muxers[M.key] = .init(factory: makeUpgrader)
             }
-            self.storage.muxUpgraders.append((M.key, makeUpgrader))
         }
 
         public let application: Application
 
         public var available: [String] {
-            self.storage.muxUpgraders.map { $0.key }
+            self.storage.muxUpgraders.withLockedValue { $0.map { $0.key } }
         }
 
         var storage: Storage {
@@ -120,9 +133,9 @@ extension Application {
         public func dump() {
             print("*** Installed Muxer Modules ***")
             print(
-                self.storage.muxUpgraders.enumerated().map { "[\($0.offset + 1)] - \($0.element.key)" }.joined(
+                self.storage.muxUpgraders.withLockedValue { $0.keys.enumerated().map { "[\($0.offset + 1)] - \($0.element)" }.joined(
                     separator: "\n"
-                )
+                )}
             )
             print("----------------------------------")
         }

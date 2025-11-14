@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import LibP2PCore
+import NIOConcurrencyHelpers
 
 extension Application {
     public var peerstore: PeerStores {
@@ -20,24 +21,27 @@ extension Application {
     }
 
     public var peers: PeerStore {
-        guard let manager = self.peerstore.storage.manager else {
+        let manager = self.peerstore.storage.manager.withLockedValue { $0 }
+        guard let manager else {
             fatalError("No Peerstore configured. Configure with app.peerstore.use(...)")
         }
         return manager
     }
 
-    public struct PeerStores {
+    public struct PeerStores: Sendable {
         public struct Provider {
-            let run: (Application) -> Void
+            let run: @Sendable (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> Void) {
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
-        final class Storage {
-            var manager: PeerStore?
-            init() {}
+        final class Storage: Sendable {
+            let manager: NIOLockedValueBox<PeerStore?>
+            init() {
+                self.manager = .init(nil)
+            }
         }
 
         struct Key: StorageKey {
@@ -52,8 +56,8 @@ extension Application {
             provider.run(self.application)
         }
 
-        public func use(_ makeManager: @escaping (Application) -> (PeerStore)) {
-            self.storage.manager = makeManager(self.application)
+        @preconcurrency public func use(_ makeManager: @Sendable @escaping (Application) -> (PeerStore)) {
+            self.storage.manager.withLockedValue { $0 = makeManager(self.application) }
         }
 
         let application: Application

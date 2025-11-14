@@ -16,7 +16,6 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import COperatingSystem
 import ConsoleKit
 import Foundation
 
@@ -33,14 +32,14 @@ import Foundation
 ///
 ///     print(Environment.get("DB_PASSWORD"))
 ///
-public struct Environment: Equatable {
+public struct Environment: Sendable, Equatable {
     // MARK: - Detection
 
     /// Detects the environment from `CommandLine.arguments`. Invokes `detect(from:)`.
     /// - parameters:
     ///     - arguments: Command line arguments to detect environment from.
     /// - returns: The detected environment, or default env.
-    public static func detect(arguments: [String] = CommandLine.arguments) throws -> Environment {
+    public static func detect(arguments: [String] = ProcessInfo.processInfo.arguments) throws -> Environment {
         var commandInput = CommandInput(arguments: arguments)
         return try Environment.detect(from: &commandInput)
     }
@@ -62,9 +61,15 @@ public struct Environment: Equatable {
         switch try EnvironmentSignature(from: &commandInput).environment ?? Environment.process.LIBP2P_ENV
         {
         case "prod", "production": env = .production
-        case "dev", "development", .none: env = .development
+        case "dev", "development": env = .development
         case "test", "testing": env = .testing
         case .some(let name): env = .init(name: name)
+        case .none:
+            if let ep = commandInput.executablePath.first, ep.hasSuffix("xctest") {
+                env = .testing
+            } else {
+                env = .development
+            }
         }
         env.commandInput = commandInput
         return env
@@ -85,7 +90,7 @@ public struct Environment: Equatable {
         }
         #elseif os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
         // When tests are invoked directly through SwiftPM using `--filter`, SwiftPM will pass `-XCTest <filter>` to the
-        // runner binary, and also the test bundle path unconditionally. These must be stripped for LibP2P to be satisifed
+        // runner binary, and also the test bundle path unconditionally. These must be stripped for Libp2p to be satisfied
         // with the validity of the arguments. We detect this case reliably the hard way, by looking for the `xctest`
         // runner executable and a leading argument with the `.xctest` bundle suffix.
         if commandInput.executable.hasSuffix("/usr/bin/xctest") {
@@ -101,7 +106,7 @@ public struct Environment: Equatable {
 
     /// Invokes `sanitize(commandInput:)` over a set of raw arguments and returns the
     /// resulting arguments, including the executable path.
-    private static func sanitizeArguments(_ arguments: [String] = CommandLine.arguments) -> [String] {
+    private static func sanitizeArguments(_ arguments: [String] = ProcessInfo.processInfo.arguments) -> [String] {
         var commandInput = CommandInput(arguments: arguments)
         sanitize(commandInput: &commandInput)
         return commandInput.executablePath + commandInput.arguments
@@ -113,7 +118,7 @@ public struct Environment: Equatable {
     public static var production: Environment { .init(name: "production") }
 
     /// An environment for developing your application.
-    public static var development: Environment { .init(name: "development") }
+    public static var development: Environment { .init(name: "development", arguments: sanitizeArguments()) }
 
     /// An environment for testing your application.
     ///
@@ -173,7 +178,7 @@ public struct Environment: Equatable {
     // MARK: - Init
 
     /// Create a new `Environment`.
-    public init(name: String, arguments: [String] = CommandLine.arguments) {
+    public init(name: String, arguments: [String] = ProcessInfo.processInfo.arguments) {
         self.name = name
         self.arguments = arguments
     }

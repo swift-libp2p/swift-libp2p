@@ -17,8 +17,9 @@
 //
 
 import LibP2PCore
+import NIOConcurrencyHelpers
 
-public protocol AddressResolver {
+public protocol AddressResolver: Sendable {
     static var key: String { get }
     func resolve(multiaddr: Multiaddr) -> EventLoopFuture<[Multiaddr]?>
     func resolve(multiaddr: Multiaddr, for: Set<MultiaddrProtocol>) -> EventLoopFuture<Multiaddr?>
@@ -172,18 +173,20 @@ extension Application {
         }
     }
 
-    public struct Resolvers {
+    public struct Resolvers: Sendable {
         public struct Provider {
-            let run: (Application) -> Void
+            let run: @Sendable (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> Void) {
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
-        final class Storage {
-            var resolvers: [String: AddressResolver] = [:]
-            init() {}
+        final class Storage: Sendable {
+            let resolvers: NIOLockedValueBox<[String: AddressResolver]>
+            init() {
+                self.resolvers = .init([:])
+            }
         }
 
         struct Key: StorageKey {
@@ -198,15 +201,15 @@ extension Application {
             provider.run(self.application)
         }
 
-        public func use<R: AddressResolver>(_ makeResolver: @escaping (Application) -> (R)) {
+        @preconcurrency public func use<R: AddressResolver>(_ makeResolver: @Sendable @escaping (Application) -> (R)) {
             let resolver = makeResolver(self.application)
-            self.storage.resolvers[R.key] = resolver
+            self.storage.resolvers.withLockedValue{ $0[R.key] = resolver }
         }
 
         let application: Application
 
         fileprivate var allResolvers: [AddressResolver] {
-            self.storage.resolvers.values.map { $0 }
+            self.storage.resolvers.withLockedValue { $0.values.map { $0 } }
         }
 
         var storage: Storage {

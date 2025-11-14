@@ -11,13 +11,12 @@
 // SPDX-License-Identifier: MIT
 //
 //===----------------------------------------------------------------------===//
+//
+//  Created by Vapor
+//
 
-extension Application.TransportUpgraders.Provider {
-    public static var mss: Self {
-        .init { app in
-            app.transportUpgraders.use {
-                MSS(application: $0)
-            }
-        }
-    }
-}
+#if compiler(>=6.2)
+public typealias Libp2pSendableMetatype = SendableMetatype
+#else
+public typealias Libp2pSendableMetatype = Any
+#endif

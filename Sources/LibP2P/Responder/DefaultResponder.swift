@@ -16,12 +16,11 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import Backtrace
 import Foundation
 import Metrics
 import Multiaddr
 import NIO
-import RoutingKit
+@preconcurrency import RoutingKit
 
 /// LibP2P's main `Responder` type. Combines configured channel handlers + middleware + router to create a responder.
 internal struct DefaultResponder: Responder {
@@ -210,14 +209,8 @@ private struct NotFoundResponder: Responder {
     }
 }
 
-struct RouteNotFound: Error {
-    let stackTrace: StackTrace?
+struct RouteNotFound: Error { }
 
-    init() {
-        self.stackTrace = StackTrace.capture(skip: 1)
-    }
-}
-//
 //extension RouteNotFound: AbortError {
 //    var status: HTTPResponseStatus {
 //        .notFound

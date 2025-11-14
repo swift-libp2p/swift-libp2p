@@ -16,15 +16,15 @@ import Logging
 import NIO
 import NIOExtras
 
-public final class TCPServer: Server {
-    public static var key: String = "TCP"
+public final class TCPServer: Server, @unchecked Sendable {
+    public static let key: String = "TCP"
 
     /// Engine server config struct.
     ///
     ///     let serverConfig = TCPServerConfig.default(port: 8123)
     ///     services.register(serverConfig)
     ///
-    public struct Configuration {
+    public struct Configuration: @unchecked Sendable {
         public static let defaultHostname = "127.0.0.1"
         public static let defaultPort = 10000
 
@@ -252,7 +252,7 @@ public final class TCPServer: Server {
     }
 }
 
-private final class TCPServerConnection {
+private final class TCPServerConnection: Sendable {
     let channel: Channel
     let quiesce: ServerQuiescingHelper
 

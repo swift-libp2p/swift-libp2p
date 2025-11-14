@@ -12,23 +12,27 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOConcurrencyHelpers
+
 extension Application {
     public var dht: DHTServices {
         .init(application: self)
     }
 
-    public struct DHTServices {
+    public struct DHTServices: Sendable {
         public struct Provider {
-            let run: (Application) -> Void
+            let run: @Sendable (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> Void) {
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
-        final class Storage {
-            var dhtServices: [String: DHTCore] = [:]
-            init() {}
+        final class Storage: Sendable {
+            let dhtServices: NIOLockedValueBox<[String: DHTCore]>
+            init() {
+                self.dhtServices = .init([:])
+            }
         }
 
         struct Key: StorageKey {
@@ -44,27 +48,29 @@ extension Application {
         }
 
         public func service(forKey key: String) -> DHTCore? {
-            self.storage.dhtServices[key]
+            self.storage.dhtServices.withLockedValue { $0[key] }
         }
 
         public func use(_ provider: Provider) {
             provider.run(self.application)
         }
 
-        public func use<DHT: DHTCore>(_ makeService: @escaping (Application) -> (DHT)) {
-            if self.storage.dhtServices[DHT.key] != nil { fatalError("DHTService `\(DHT.key)` Already Installed") }
-            let service = makeService(self.application)
-            self.storage.dhtServices[DHT.key] = service
+        @preconcurrency public func use<DHT: DHTCore>(_ makeService: @Sendable @escaping (Application) -> (DHT)) {
+            self.storage.dhtServices.withLockedValue { services in
+                if services[DHT.key] != nil { fatalError("DHTService `\(DHT.key)` Already Installed") }
+                let service = makeService(self.application)
+                services[DHT.key] = service
+            }
         }
 
         public let application: Application
 
         public var available: [String] {
-            self.storage.dhtServices.keys.map { $0 }
+            self.storage.dhtServices.withLockedValue { $0.keys.map { $0 } }
         }
 
         internal var services: [DHTCore] {
-            self.storage.dhtServices.values.map { $0 }
+            self.storage.dhtServices.withLockedValue { $0.values.map { $0 } }
         }
 
         var storage: Storage {
@@ -76,7 +82,7 @@ extension Application {
 
         public func dump() {
             print("*** Installed DHT Services ***")
-            print(self.storage.dhtServices.keys.map { $0 }.joined(separator: "\n"))
+            print(self.storage.dhtServices.withLockedValue { $0.keys.map { $0 }.joined(separator: "\n") })
             print("----------------------------------")
         }
 

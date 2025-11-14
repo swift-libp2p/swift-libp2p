@@ -20,17 +20,18 @@ import NIOCore
 import RoutingKit
 
 ///// Determines how an incoming HTTP request's body is collected.
-public enum PayloadStreamStrategy {
+public enum PayloadStreamStrategy: Sendable {
     case stream
 }
 
 extension RoutesBuilder {
+    @preconcurrency
     @discardableResult
     public func on<Response>(
         _ path: PathComponent...,
         body: PayloadStreamStrategy = .stream,
         handlers: [Application.ChildChannelHandlers.Provider] = [],
-        use closure: @escaping (Request) throws -> Response
+        use closure: @Sendable @escaping (Request) throws -> Response
     ) -> Route
     where Response: ResponseEncodable {
         self.on(
@@ -43,12 +44,13 @@ extension RoutesBuilder {
         )
     }
 
+    @preconcurrency
     @discardableResult
     public func on<Response>(
         _ path: [PathComponent],
         body: PayloadStreamStrategy = .stream,
         handlers: [Application.ChildChannelHandlers.Provider] = [],
-        use closure: @escaping (Request) throws -> Response
+        use closure: @Sendable @escaping (Request) throws -> Response
     ) -> Route
     where Response: ResponseEncodable {
         let responder = BasicResponder { request in

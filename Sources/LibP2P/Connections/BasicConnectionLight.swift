@@ -16,7 +16,7 @@ import Foundation
 import LibP2PCore
 import Logging
 
-public class BasicConnectionLight: AppConnection {
+public class BasicConnectionLight: AppConnection, @unchecked Sendable {
 
     public var application: Application
 
@@ -341,7 +341,7 @@ public class BasicConnectionLight: AppConnection {
                         guard let str = self.streams.first(where: { $0.channel === childChannel }) as? _Stream else {
                             return
                         }
-                        str._connection = self
+                        str._connection.withLockedValue { $0 = self }
                         self.application.events.post(.openedStream(str))
                         childChannel.closeFuture.whenComplete { [weak self] _ in
                             guard let self = self else { return }
@@ -398,7 +398,7 @@ public class BasicConnectionLight: AppConnection {
                         if case .success = result {
                             guard let str = self.streams.first(where: { $0.channel === childChannel }) as? _Stream
                             else { return }
-                            str._connection = self
+                            str._connection.withLockedValue { $0 = self }
                             self.application.events.post(.openedStream(str))
                             childChannel.closeFuture.whenComplete { [weak self] _ in
                                 guard let self = self else { return }
@@ -498,7 +498,7 @@ public class BasicConnectionLight: AppConnection {
         forProtocol proto: String,
         withHandlers: HandlerConfig = .rawHandlers([]),
         andMiddleware: MiddlewareConfig = .custom(nil),
-        closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>)
+        closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
     ) {
 
         self.logger.trace(
@@ -576,7 +576,7 @@ public class BasicConnectionLight: AppConnection {
             throw Application.Connections.Errors.notImplementedYet
         }
 
-        stream._connection = self
+        stream._connection.withLockedValue { $0 = self }
 
         self.registry[stream.id] = stream
 

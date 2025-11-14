@@ -19,7 +19,7 @@ extension Application {
         forProtocol proto: String,
         withHandlers handlers: HandlerConfig = .rawHandlers([]),
         andMiddleware middleware: MiddlewareConfig = .custom(nil),
-        closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>)
+        closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
     ) throws {
         // Do we search the peerstore? or connection manager???
         let el = self.eventLoopGroup.next()
@@ -61,7 +61,7 @@ extension Application {
         forProtocol proto: String,
         withHandlers handlers: HandlerConfig = .rawHandlers([]),
         andMiddleware middleware: MiddlewareConfig = .custom(nil),
-        closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>)
+        closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
     ) throws {
         let el = self.eventLoopGroup.next()
         // BUG in SwiftNIO (please report), unleakable promise leaked.:474: Fatal error: leaking promise created at (file: "BUG in SwiftNIO (please report), unleakable promise leaked.", line: 474)
@@ -114,20 +114,40 @@ extension Application {
         }
     }
 
-    public func newStream(to: PeerID, forProtocol proto: String) throws {
+    public func newStream(to: PeerInfo, forProtocol proto: String) throws {
         // Do we search the peerstore? or connection manager???
         let el = self.eventLoopGroup.next()
 
+        // Append the PeerInfo to our PeerStore
+        self.peers.add(peerInfo: to, on: el).whenComplete { _ in
+            // Then dial the PeerID
+            try? self.newStream(to: to.peer, forProtocol: proto)
+        }
+    }
+    
+    public func newStream(to: PeerID, forProtocol proto: String) throws {
+        let el = self.eventLoopGroup.next()
+
+        // Search the connection manager for potential existing connections
         return self.connections.getBestConnectionForPeer(peer: to, on: el).flatMap {
             connection -> EventLoopFuture<Void> in
             if let connection = connection {
                 try! self.newStream(to: connection.remoteAddr!, forProtocol: proto)
                 return el.makeSucceededVoidFuture()
             } else {
+                // Otherwise search the PeerStore for addresses associated with the provided PeerID
                 return self.peers.getAddresses(forPeer: to, on: el).flatMap { addresses -> EventLoopFuture<Void> in
-                    guard !addresses.isEmpty else { return el.makeFailedFuture(Errors.unknownPeer) }
+                    guard !addresses.isEmpty else {
+                        self.logger.warning("No Addresses Associated with \(to)")
+                        return el.makeFailedFuture(Errors.unknownPeer)
+                    }
 
-                    try! self.newStream(to: addresses.first!, forProtocol: proto)
+                    //self.logger.trace("Available addresses for Peer: \(to)")
+                    //for address in addresses {
+                    //    self.logger.trace("- \(try? address.encapsulate(proto: .p2p, address: to.b58String))")
+                    //}
+                    
+                    try! self.newStream(to: addresses.first!.encapsulate(proto: .p2p, address: to.b58String), forProtocol: proto)
 
                     return el.makeSucceededVoidFuture()
                 }

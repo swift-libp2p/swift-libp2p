@@ -19,9 +19,9 @@
 import NIO
 
 /// A basic, closure-based `Responder`.
-public struct BasicResponder: Responder {
+public struct BasicResponder: Responder, @unchecked Sendable {
     /// The stored responder closure.
-    private let closure: (Request) throws -> EventLoopFuture<RawResponse>
+    private let closure: @Sendable (Request) throws -> EventLoopFuture<RawResponse>
 
     /// The ChannelHandlers that should be installed on the ChildChannel Pipeline
     private let handlers: [ChannelHandler]
@@ -38,7 +38,7 @@ public struct BasicResponder: Responder {
     /// - parameters:
     ///     - closure: Responder closure.
     public init(
-        closure: @escaping (Request) throws -> EventLoopFuture<RawResponse>,
+        closure: @Sendable @escaping (Request) throws -> EventLoopFuture<RawResponse>,
         handlers: [ChannelHandler] = []
             //        file: String = #file, function: String = #function, line: Int = #line
     ) {

@@ -15,6 +15,7 @@
 import LibP2PCore
 import Multiaddr
 import NIOCore
+import NIOConcurrencyHelpers
 
 extension Application {
     public var connectionManager: Connections {
@@ -22,13 +23,14 @@ extension Application {
     }
 
     public var connections: ConnectionManager {
-        guard let manager = self.connectionManager.storage.manager else {
+        let manager = self.connectionManager.storage.manager.withLockedValue { $0 }
+        guard let manager else {
             fatalError("No ConnectionManager configured. Configure with app.connectionManager.use(...)")
         }
         return manager
     }
 
-    public struct Connections {
+    public struct Connections: Sendable {
         public enum Errors: Error {
             case notImplementedYet
             case invalidProtocolNegotatied
@@ -39,18 +41,21 @@ extension Application {
         }
 
         public struct Provider {
-            let run: (Application) -> Void
+            let run: @Sendable (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> Void) {
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
-        final class Storage {
-            var manager: ConnectionManager?
+        final class Storage: Sendable {
+            let manager: NIOLockedValueBox<ConnectionManager?>
             // Allow the user to specify the Connection class to use (default to ARCConnection)
-            var connType: AppConnection.Type = ARCConnection.self
-            init() {}
+            let connType: NIOLockedValueBox<AppConnection.Type>
+            init() {
+                self.manager = .init(nil)
+                self.connType = .init(ARCConnection.self)
+            }
         }
 
         struct Key: StorageKey {
@@ -65,15 +70,15 @@ extension Application {
             provider.run(self.application)
         }
 
-        public func use(_ makeManager: @escaping (Application) -> (ConnectionManager)) {
-            self.storage.manager = makeManager(self.application)
+        @preconcurrency public func use(_ makeManager: @Sendable @escaping (Application) -> (ConnectionManager)) {
+            self.storage.manager.withLockedValue { $0 = makeManager(self.application) }
         }
 
         /// Specify the type of AppConnection to use when establishing a Connection to a remote peer.
         /// Note: The built in options are `BasicConnectionLight` and `ARCConnection`
         /// Note: There's also a `DummyConnection` available for embedded testing.
         public func use(connectionType: AppConnection.Type) {
-            self.storage.connType = connectionType
+            self.storage.connType.withLockedValue { $0 = connectionType }
         }
 
         let application: Application
@@ -91,31 +96,37 @@ extension Application {
             remoteAddress: Multiaddr,
             expectedRemotePeer: PeerID?
         ) -> AppConnection {
-            self.storage.connType.init(
-                application: application,
-                channel: channel,
-                direction: direction,
-                remoteAddress: remoteAddress,
-                expectedRemotePeer: expectedRemotePeer
-            )
+            self.storage.connType.withLockedValue {
+                $0.init(
+                    application: application,
+                    channel: channel,
+                    direction: direction,
+                    remoteAddress: remoteAddress,
+                    expectedRemotePeer: expectedRemotePeer
+                )
+            }
         }
 
         public func setIdleTimeout(_ timeout: TimeAmount) {
-            self.storage.manager?.setIdleTimeout(timeout)
+            self.storage.manager.withLockedValue { $0?.setIdleTimeout(timeout) }
         }
 
         public func getTotalConnectionCount() -> EventLoopFuture<UInt64> {
-            if let basicMan = self.storage.manager as? BasicInMemoryConnectionManager {
-                return basicMan.getTotalConnectionCount()
+            self.storage.manager.withLockedValue { manager in
+                if let basicMan = manager as? BasicInMemoryConnectionManager {
+                    return basicMan.getTotalConnectionCount()
+                }
+                return self.application.eventLoopGroup.next().makeFailedFuture(Errors.notImplementedYet)
             }
-            return self.application.eventLoopGroup.next().makeFailedFuture(Errors.notImplementedYet)
         }
 
         public func getTotalStreamCount() -> EventLoopFuture<UInt64> {
-            if let basicMan = self.storage.manager as? BasicInMemoryConnectionManager {
-                return basicMan.getTotalStreamCount()
+            self.storage.manager.withLockedValue { manager in
+                if let basicMan = manager as? BasicInMemoryConnectionManager {
+                    return basicMan.getTotalStreamCount()
+                }
+                return self.application.eventLoopGroup.next().makeFailedFuture(Errors.notImplementedYet)
             }
-            return self.application.eventLoopGroup.next().makeFailedFuture(Errors.notImplementedYet)
         }
     }
 }

@@ -18,7 +18,7 @@
 
 /// Configures an application's active `Middleware`.
 /// Middleware will be used in the order they are added.
-public struct Middlewares {
+public struct Middlewares: Sendable {
     /// The configured middleware.
     private var storage: [Middleware]
 

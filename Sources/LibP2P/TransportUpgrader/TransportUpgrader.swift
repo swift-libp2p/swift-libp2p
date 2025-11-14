@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import NIOCore
+import NIOConcurrencyHelpers
 
 public protocol TransportUpgrader {
     func installHandlers(on channel: Channel)
@@ -28,7 +29,7 @@ public protocol TransportUpgrader {
 }
 
 extension TransportUpgrader {
-    func printSelf() { print(self) }
+    public func printSelf() { print(self) }
 }
 
 extension Application {
@@ -37,27 +38,33 @@ extension Application {
     }
 
     public var upgrader: TransportUpgrader {
-        guard let makeUpgrader = self.transportUpgraders.storage.makeUpgrader else {
+        let makeUpgrader = self.transportUpgraders.storage.makeUpgrader.withLockedValue { $0 }
+        guard let upgrader = makeUpgrader.factory?(self) else {
             fatalError("No transport upgrader configured. Configure with app.transportUpgraders.use(...)")
         }
-        return makeUpgrader(self)
+        return upgrader
     }
 
-    public struct TransportUpgraders {
+    public struct TransportUpgraders: Sendable {
         public struct Provider {
-            let run: (Application) -> Void
+            let run: @Sendable (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> Void) {
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
-        final class Storage {
-            var makeUpgrader: ((Application) -> TransportUpgrader)?
-            init() {}
+        final class Storage: Sendable {
+            struct TransportUpgraderFactory {
+                let factory: (@Sendable (Application) -> TransportUpgrader)?
+            }
+            let makeUpgrader: NIOLockedValueBox<TransportUpgraderFactory>
+            init() {
+                self.makeUpgrader = .init(.init(factory: nil))
+            }
         }
 
-        struct Key: StorageKey {
+        struct Key: StorageKey, Sendable {
             typealias Value = Storage
         }
 
@@ -69,11 +76,11 @@ extension Application {
             provider.run(self.application)
         }
 
-        public func use(_ makeUpgrader: @escaping (Application) -> (TransportUpgrader)) {
-            self.storage.makeUpgrader = makeUpgrader
+        @preconcurrency public func use(_ makeUpgrader: @Sendable @escaping (Application) -> (TransportUpgrader)) {
+            self.storage.makeUpgrader.withLockedValue { $0 = .init(factory: makeUpgrader) }
         }
 
-        public let application: Application
+        let application: Application
 
         var storage: Storage {
             guard let storage = self.application.storage[Key.self] else {

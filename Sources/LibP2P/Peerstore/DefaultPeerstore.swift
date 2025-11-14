@@ -44,7 +44,7 @@ extension Array where Element == UInt8 {
 /// - PeerID with public key (confirmed via Security and/or Identify protocol)
 /// - PeerID with known supported Protocols (via Identify protocol)
 /// - PeerID with metadata (as we communicate with the peer) (latency, software, lib version, via Identify protocol and others)
-internal final class BasicInMemoryPeerStore: PeerStore {
+internal final class BasicInMemoryPeerStore: PeerStore, @unchecked Sendable {
 
     /// Dictionary where Key == B58 PeerID String, and Value == PeerInfo that contains the PeerID and assocaited Multiaddr...
     private var store: [String: ComprehensivePeer]
@@ -274,7 +274,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
     func add(address: Multiaddr, toPeer peer: PeerID, on: EventLoop? = nil) -> EventLoopFuture<Void> {
         getPeer(withID: peer.b58String).map { compPeer in
             if let pid = try? address.getPeerID() { guard pid == peer else { return } }
-            if !compPeer.addresses.contains(address) { compPeer.addresses.append(address) }
+            if !compPeer.addresses.contains(address) { compPeer.addresses.insert(address) }
         }.hop(to: on ?? eventLoop)
     }
 
@@ -283,7 +283,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
         return getPeer(withID: peer.b58String).map { compPeer in
             for address in addresses {
                 if let pid = try? address.getPeerID() { guard pid == peer else { return } }
-                if !compPeer.addresses.contains(address) { compPeer.addresses.append(address) }
+                if !compPeer.addresses.contains(address) { compPeer.addresses.insert(address) }
             }
         }.hop(to: on ?? eventLoop)
     }
@@ -291,7 +291,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
     /// Removes a Multiaddr from an existing PeerID
     func remove(address: Multiaddr, fromPeer peer: PeerID, on: EventLoop? = nil) -> EventLoopFuture<Void> {
         getPeer(withID: peer.b58String).map { compPeer in
-            compPeer.addresses.removeAll(where: { $0 == address })
+            compPeer.addresses.remove(address)
         }.hop(to: on ?? eventLoop)
     }
 
@@ -303,7 +303,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
 
     func getAddresses(forPeer peer: PeerID, on: EventLoop? = nil) -> EventLoopFuture<[Multiaddr]> {
         getPeer(withID: peer.b58String).map { compPeer in
-            compPeer.addresses
+            Array(compPeer.addresses)
         }.hop(to: on ?? eventLoop)
     }
 
@@ -342,7 +342,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
                     value.addresses.contains(address)
                 })
             {
-                return PeerInfo(peer: match.value.id, addresses: match.value.addresses)
+                return PeerInfo(peer: match.value.id, addresses: Array(match.value.addresses))
             } else {
                 throw Errors.peerNotFound
             }
@@ -361,7 +361,14 @@ internal final class BasicInMemoryPeerStore: PeerStore {
                 //self.logger.trace("New Key Type: \(key.type)")
                 if key.type == .isPublic && existingPeer.id.type == .idOnly {
                     //self.logger.trace("Updating Peer\(key.description) to include PublicKey!")
-                    existingPeer.id = key
+                    let newCompPeer = ComprehensivePeer(
+                        id: key,
+                        addresses: existingPeer.addresses,
+                        protocols: existingPeer.protocols,
+                        metadata: existingPeer.metadata,
+                        records: existingPeer.records
+                    )
+                    self.store[key.b58String] = newCompPeer
                 }
             } else {
                 let compPeer = ComprehensivePeer(id: key)
@@ -396,7 +403,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
     /// Adds a Protocol to an existing PeerID
     func add(protocol proto: SemVerProtocol, toPeer peer: PeerID, on: EventLoop? = nil) -> EventLoopFuture<Void> {
         getPeer(withID: peer.b58String).map { compPeer in
-            if !compPeer.protocols.contains(proto) { compPeer.protocols.append(proto) }
+            if !compPeer.protocols.contains(proto) { compPeer.protocols.insert(proto) }
         }.hop(to: on ?? eventLoop)
     }
 
@@ -404,7 +411,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
         guard !protos.isEmpty else { return on?.makeSucceededVoidFuture() ?? eventLoop.makeSucceededVoidFuture() }
         return getPeer(withID: peer.b58String).map { compPeer in
             for proto in protos {
-                if !compPeer.protocols.contains(proto) { compPeer.protocols.append(proto) }
+                if !compPeer.protocols.contains(proto) { compPeer.protocols.insert(proto) }
             }
         }.hop(to: on ?? eventLoop)
     }
@@ -412,7 +419,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
     /// Removes a Protocol from an existing PeerID
     func remove(protocol proto: SemVerProtocol, fromPeer peer: PeerID, on: EventLoop? = nil) -> EventLoopFuture<Void> {
         getPeer(withID: peer.b58String).map { compPeer in
-            compPeer.protocols.removeAll(where: { $0 == proto })
+            compPeer.protocols.remove(proto)
         }.hop(to: on ?? eventLoop)
     }
 
@@ -423,7 +430,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
     ) -> EventLoopFuture<Void> {
         getPeer(withID: peer.b58String).map { compPeer in
             for proto in protos {
-                compPeer.protocols.removeAll(where: { $0 == proto })
+                compPeer.protocols.remove(proto)
             }
         }.hop(to: on ?? eventLoop)
     }
@@ -436,7 +443,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
 
     func getProtocols(forPeer peer: PeerID, on: EventLoop? = nil) -> EventLoopFuture<[SemVerProtocol]> {
         getPeer(withID: peer.b58String).map { compPeer in
-            compPeer.protocols
+            Array(compPeer.protocols)
         }.hop(to: on ?? eventLoop)
     }
 
@@ -463,14 +470,14 @@ internal final class BasicInMemoryPeerStore: PeerStore {
     func add(record: PeerRecord, on: EventLoop? = nil) -> EventLoopFuture<Void> {
         getPeer(withID: record.peerID.b58String).map { compPeer in
             if !compPeer.records.contains(where: { $0.sequenceNumber == record.sequenceNumber }) {
-                compPeer.records.append(record)
+                compPeer.records.insert(record)
             } else {
                 self.logger.debug(
                     "PeerStore::Skipping Duplicate PeerRecord Entry - Sequence Number: \(record.sequenceNumber)"
                 )
             }
             if compPeer.records.count > self.maxRecordsPerPeer {
-                compPeer.records = Array(
+                compPeer.records = Set(
                     compPeer.records.sorted(by: { $0.sequenceNumber > $1.sequenceNumber }).prefix(
                         self.maxRecordsPerPeer
                     )
@@ -481,7 +488,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
 
     func getRecords(forPeer peer: PeerID, on: EventLoop? = nil) -> EventLoopFuture<[PeerRecord]> {
         getPeer(withID: peer.b58String).map { compPeer in
-            compPeer.records
+            Array(compPeer.records)
         }.hop(to: on ?? eventLoop)
     }
 

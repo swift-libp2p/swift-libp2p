@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import NIO
+import NIOConcurrencyHelpers
 
 final class RequestEncoderChannelHandler: ChannelInboundHandler, RemovableChannelHandler {
     typealias InboundIn = ByteBuffer
@@ -83,7 +84,7 @@ final class RequestEncoderChannelHandler: ChannelInboundHandler, RemovableChanne
         } else {
             request.payload = ByteBuffer()
         }
-        request.protocol = `protocol`
+        request._protocol = `protocol`
 
         context.fireChannelRead(self.wrapInboundOut(request))
     }

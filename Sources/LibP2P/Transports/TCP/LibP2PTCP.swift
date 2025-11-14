@@ -17,8 +17,8 @@ import Multicodec
 import NIOPosix
 
 // Install our TCP Tranport on the LibP2P Application
-public struct TCP: Transport {
-    public static var key: String = "tcp"
+public struct TCP: Transport, @unchecked Sendable {
+    public static let key: String = "tcp"
 
     let application: Application
     public var protocols: [LibP2PProtocol]
@@ -149,3 +149,5 @@ extension Application.Transports.Provider {
         }
     }
 }
+
+extension ClientBootstrap: @unchecked Sendable { }

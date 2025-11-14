@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import LibP2PCore
+import NIOConcurrencyHelpers
 
 extension Application {
     public var identityManager: Identify {
@@ -20,27 +21,30 @@ extension Application {
     }
 
     public var identify: IdentityManager {
-        guard let manager = self.identityManager.storage.manager else {
+        let manager = self.identityManager.storage.manager.withLockedValue { $0 }
+        guard let manager else {
             fatalError("No IdentityManager configured. Configure with app.identityManager.use(...)")
         }
         return manager
     }
 
-    public struct Identify {
+    public struct Identify: Sendable {
         public struct Provider {
-            let run: (Application) -> Void
+            let run: @Sendable (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> Void) {
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
-        final class Storage {
-            var manager: IdentityManager?
-            init() {}
+        final class Storage: Sendable {
+            let manager: NIOLockedValueBox<IdentityManager?>
+            init() {
+                self.manager = .init(nil)
+            }
         }
 
-        struct Key: StorageKey {
+        struct Key: StorageKey, Sendable {
             typealias Value = Storage
         }
 
@@ -52,8 +56,8 @@ extension Application {
             provider.run(self.application)
         }
 
-        public func use(_ makeManager: @escaping (Application) -> (IdentityManager)) {
-            self.storage.manager = makeManager(self.application)
+        @preconcurrency public func use(_ makeManager: @Sendable @escaping (Application) -> (IdentityManager)) {
+            self.storage.manager.withLockedValue { $0 = makeManager(self.application) }
         }
 
         let application: Application

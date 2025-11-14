@@ -12,26 +12,30 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOConcurrencyHelpers
+
 extension Application {
     public var pubsub: PubSubServices {
         .init(application: self)
     }
 
-    public struct PubSubServices {
+    public struct PubSubServices: Sendable {
         public struct Provider {
-            let run: (Application) -> Void
+            let run: @Sendable (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> Void) {
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
-        final class Storage {
-            var pubSubServices: [String: PubSubCore] = [:]
-            init() {}
+        final class Storage: Sendable {
+            let pubSubServices: NIOLockedValueBox<[String: PubSubCore]>
+            init() {
+                self.pubSubServices = .init([:])
+            }
         }
 
-        struct Key: StorageKey {
+        struct Key: StorageKey, Sendable {
             typealias Value = Storage
         }
 
@@ -44,29 +48,31 @@ extension Application {
         }
 
         public func service(forKey key: String) -> PubSubCore? {
-            self.storage.pubSubServices[key]
+            self.storage.pubSubServices.withLockedValue { $0[key] }
         }
 
         public func use(_ provider: Provider) {
             provider.run(self.application)
         }
 
-        public func use<P: PubSubCore>(_ makeService: @escaping (Application) -> (P)) {
-            if self.storage.pubSubServices[P.multicodec] != nil {
-                fatalError("PubSubService `\(P.multicodec)` Already Installed")
+        @preconcurrency public func use<P: PubSubCore>(_ makeService: @Sendable @escaping (Application) -> (P)) {
+            self.storage.pubSubServices.withLockedValue { services in
+                if services[P.multicodec] != nil {
+                    fatalError("PubSubService `\(P.multicodec)` Already Installed")
+                }
+                let service = makeService(self.application)
+                services[P.multicodec] = service
             }
-            let service = makeService(self.application)
-            self.storage.pubSubServices[P.multicodec] = service
         }
 
         public let application: Application
 
         public var available: [String] {
-            self.storage.pubSubServices.keys.map { $0 }
+            self.storage.pubSubServices.withLockedValue { $0.keys.map { $0 } }
         }
 
         internal var services: [PubSubCore] {
-            self.storage.pubSubServices.values.map { $0 }
+            self.storage.pubSubServices.withLockedValue { $0.values.map { $0 } }
         }
 
         var storage: Storage {
@@ -78,7 +84,7 @@ extension Application {
 
         public func dump() {
             print("*** Installed PubSub Services ***")
-            print(self.storage.pubSubServices.keys.map { $0 }.joined(separator: "\n"))
+            print(self.storage.pubSubServices.withLockedValue { $0.keys.map { $0 }.joined(separator: "\n") })
             print("----------------------------------")
         }
 

@@ -12,30 +12,35 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOConcurrencyHelpers
+
 extension Application {
     public var eventbus: Events {
         .init(application: self)
     }
 
     public var events: EventBus {
-        guard let eventBus = self.eventbus.storage.eventBus else {
+        let eventBus = self.eventbus.storage.eventBus.withLockedValue { $0 }
+        guard let eventBus else {
             fatalError("No EventBus configured. Configure with app.eventbus.use(...)")
         }
         return eventBus
     }
 
-    public struct Events {
+    public struct Events: Sendable {
         public struct Provider {
-            let run: (Application) -> Void
+            let run: @Sendable (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> Void) {
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
-        final class Storage {
-            var eventBus: EventBus?
-            init() {}
+        final class Storage: Sendable {
+            let eventBus: NIOLockedValueBox<EventBus?>
+            init() {
+                self.eventBus = .init(nil)
+            }
         }
 
         struct Key: StorageKey {
@@ -50,8 +55,8 @@ extension Application {
             provider.run(self.application)
         }
 
-        public func use(_ makeEventBus: @escaping (Application) -> (EventBus)) {
-            self.storage.eventBus = makeEventBus(self.application)
+        @preconcurrency public func use(_ makeEventBus: @Sendable @escaping (Application) -> (EventBus)) {
+            self.storage.eventBus.withLockedValue { $0 = makeEventBus(self.application) }
         }
 
         let application: Application
