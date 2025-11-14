@@ -21,7 +21,7 @@ import NIO
 /// Can convert `self` to a `RawResponse`.
 ///
 /// Types that conform to this protocol can be returned in route closures.
-public protocol ResponseEncodable {
+public protocol ResponseEncodable: Libp2pSendableMetatype {
     /// Encodes an instance of `Self` to a `RawResponse`.
     ///
     /// - parameters:
@@ -87,7 +87,7 @@ extension Data: ResponseEncodable {
     // See `ResponseEncodable`.
     public func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse> {
         //let res = Response(payload: .init(bytes: self.bytes))
-        let res = RawResponse(payload: request.allocator.buffer(bytes: self.bytes))
+        let res = RawResponse(payload: request.allocator.buffer(bytes: self.byteArray))
         return request.eventLoop.makeSucceededFuture(res)
     }
 }
