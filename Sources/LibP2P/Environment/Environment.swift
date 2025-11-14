@@ -83,8 +83,10 @@ public struct Environment: Sendable, Equatable {
     /// Performs stripping of user defaults overrides where and when appropriate.
     private static func sanitize(commandInput: inout CommandInput) {
         // Only keep supported arguments (hostname[H], port[p], bind[b], unix-socket, help)
-        var argsToKeep:[String] = []
-        let supportedArguments = ["--hostname", "-H", "--port", "-p", "--bind", "-b", "--unix-socket", "--help", "-h", "--env", "-e"]
+        var argsToKeep: [String] = []
+        let supportedArguments = [
+            "--hostname", "-H", "--port", "-p", "--bind", "-b", "--unix-socket", "--help", "-h", "--env", "-e",
+        ]
         for (index, argument) in commandInput.arguments.enumerated() {
             if supportedArguments.contains(argument) {
                 argsToKeep.append(argument)
