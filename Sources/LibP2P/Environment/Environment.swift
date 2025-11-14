@@ -65,7 +65,7 @@ public struct Environment: Sendable, Equatable {
         case "test", "testing": env = .testing
         case .some(let name): env = .init(name: name)
         case .none:
-            if let ep = commandInput.executablePath.first, ep.hasSuffix("xctest") {
+            if let ep = commandInput.executablePath.first, (ep.hasSuffix("xctest") || ep.hasSuffix("swiftpm-testing-helper")) {
                 env = .testing
             } else {
                 env = .development
@@ -99,6 +99,24 @@ public struct Environment: Sendable, Equatable {
             }
             if commandInput.arguments.first?.hasSuffix(".xctest") ?? false {
                 commandInput.arguments.removeFirst()
+            }
+        }
+        if commandInput.executable.hasSuffix("swiftpm-testing-helper") {
+            // Remove the --test-bundle-path flag and argument
+            if commandInput.arguments.first?.lowercased() == "--test-bundle-path" && commandInput.arguments.count > 1 {
+                commandInput.arguments.removeFirst(2)
+            }
+            // Remove the --filter flag and argument if necessary
+            if commandInput.arguments.first?.lowercased() == "--filter" && commandInput.arguments.count > 2 {
+                commandInput.arguments.removeFirst(2)
+            }
+            // Remove the path argument
+            if commandInput.arguments.count >= 3, commandInput.arguments.contains(where: { $0.lowercased() == "--testing-library" }) {
+                commandInput.arguments.removeFirst(1)
+            }
+            // Remove the --testing-library flag and argument if necessary
+            if commandInput.arguments.first?.lowercased() == "--testing-library" && commandInput.arguments.count > 1 {
+                commandInput.arguments.removeFirst(2)
             }
         }
         #endif
