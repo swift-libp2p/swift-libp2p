@@ -17,21 +17,29 @@
 //
 
 import ConsoleKit
-import NIO
+import NIOConcurrencyHelpers
+import NIOCore
+import NIOPosix
 
 extension Application {
 
     public var console: Console {
-        get { self.core.storage.console }
-        set { self.core.storage.console = newValue }
+        get { self.core.storage.console.withLockedValue { $0 } }
+        set { self.core.storage.console.withLockedValue { $0 = newValue } }
     }
 
     public var commands: Commands {
-        get { self.core.storage.commands }
-        set { self.core.storage.commands = newValue }
+        get { self.core.storage.commands.withLockedValue { $0 } }
+        set { self.core.storage.commands.withLockedValue { $0 = newValue } }
     }
 
-    /// The application thread pool. Libp2p provides a thread pool with 64 threads by default.
+    public var asyncCommands: AsyncCommands {
+        get { self.core.storage.asyncCommands.withLockedValue { $0 } }
+        set { self.core.storage.asyncCommands.withLockedValue { $0 = newValue } }
+    }
+
+    /// The application thread pool. Libp2p uses `NIOSingletons.posixBlockingThreadPool` by default for this,
+    /// which defaults to a thread pool of size equal to the number of available cores.
     ///
     /// It's possible to configure the thread pool size by overriding this value with your own thread pool.
     ///
@@ -43,16 +51,25 @@ extension Application {
     ///
     /// - Warning: Can only be set during application setup/initialization.
     public var threadPool: NIOThreadPool {
-        get { self.core.storage.threadPool }
+        get { self.core.storage.threadPool.withLockedValue { $0 } }
         set {
-            guard !self.isBooted else {
-                //self.logger.critical("Cannot replace thread pool after application has booted")
+            guard !self.isBooted.withLockedValue({ $0 }) else {
+                self.logger.critical("Cannot replace thread pool after application has booted")
                 fatalError("Cannot replace thread pool after application has booted")
             }
 
-            try! self.core.storage.threadPool.syncShutdownGracefully()
-            self.core.storage.threadPool = newValue
-            self.core.storage.threadPool.start()
+            self.core.storage.threadPool.withLockedValue({
+                do {
+                    try $0.syncShutdownGracefully()
+                } catch is NIOThreadPoolError.UnsupportedOperation {
+                    // ignore, singleton thread pool throws this error on shutdown attempts
+                    // see https://github.com/apple/swift-nio/blob/c51907a839e63ebf0ba2076bba73dd96436bd1b9/Sources/NIOPosix/NIOThreadPool.swift#L142-L147
+                } catch {
+                    fatalError("Unexpected error shutting down old thread pool")
+                }
+                $0 = newValue
+                $0.start()
+            })
         }
     }
 
@@ -64,9 +81,13 @@ extension Application {
         self.core.storage.allocator
     }
 
+    public var agentVersion: String {
+        self.core.storage.agentVersion
+    }
+
     public var running: Running? {
-        get { self.core.storage.running.current }
-        set { self.core.storage.running.current = newValue }
+        get { self.core.storage.running.current.withLockedValue { $0 } }
+        set { self.core.storage.running.current.withLockedValue { $0 = newValue } }
     }
 
     //    public var directory: DirectoryConfiguration {
@@ -78,30 +99,56 @@ extension Application {
         .init(application: self)
     }
 
-    public struct Core {
-        final class Storage {
-            var console: Console
-            var commands: Commands
-            var threadPool: NIOThreadPool
-            var allocator: ByteBufferAllocator
-            var running: Application.Running.Storage
-            //var directory: DirectoryConfiguration
+    public struct Core: Sendable {
+        final class Storage: Sendable {
+            let console: NIOLockedValueBox<Console>
+            let commands: NIOLockedValueBox<Commands>
+            let asyncCommands: NIOLockedValueBox<AsyncCommands>
+            let threadPool: NIOLockedValueBox<NIOThreadPool>
+            let allocator: ByteBufferAllocator
+            let running: Application.Running.Storage
+            let agentVersion: String
+            //let directory: NIOLockedValueBox<DirectoryConfiguration>
 
             init() {
-                self.console = Terminal()
-                self.commands = Commands()
-                self.commands.use(BootCommand(), as: "boot")
-                self.threadPool = NIOThreadPool(numberOfThreads: 64)
-                self.threadPool.start()
+                self.console = .init(Terminal())
+                self.commands = .init(Commands())
+                var asyncCommands = AsyncCommands()
+                asyncCommands.use(BootCommand(), as: "boot")
+                self.asyncCommands = .init(AsyncCommands())
+                let threadPool = NIOSingletons.posixBlockingThreadPool
+                threadPool.start()
+                self.threadPool = .init(threadPool)
                 self.allocator = .init()
                 self.running = .init()
-                //self.directory = .detect()
+                self.agentVersion = "swift-libp2p/0.2.0"
+                //self.directory = .init(.detect())
             }
         }
 
         struct LifecycleHandler: LibP2P.LifecycleHandler {
             func shutdown(_ application: Application) {
-                try! application.threadPool.syncShutdownGracefully()
+                do {
+                    try application.threadPool.syncShutdownGracefully()
+                } catch is NIOThreadPoolError.UnsupportedOperation {
+                    // ignore, singleton thread pool throws this error on shutdown attempts
+                    // see https://github.com/apple/swift-nio/blob/c51907a839e63ebf0ba2076bba73dd96436bd1b9/Sources/NIOPosix/NIOThreadPool.swift#L142-L147
+                } catch {
+                    application.logger.debug("Failed to shutdown thread pool", metadata: ["error": "\(error)"])
+                }
+            }
+        }
+
+        struct AsyncLifecycleHandler: LibP2P.LifecycleHandler {
+            func shutdownAsync(_ application: Application) async {
+                do {
+                    try await application.threadPool.shutdownGracefully()
+                } catch is NIOThreadPoolError.UnsupportedOperation {
+                    // ignore, singleton thread pool throws this error on shutdown attempts
+                    // see https://github.com/apple/swift-nio/blob/c51907a839e63ebf0ba2076bba73dd96436bd1b9/Sources/NIOPosix/NIOThreadPool.swift#L142-L147
+                } catch {
+                    application.logger.debug("Failed to shutdown thread pool", metadata: ["error": "\(error)"])
+                }
             }
         }
 
@@ -118,9 +165,13 @@ extension Application {
             return storage
         }
 
-        func initialize() {
+        func initialize(asyncEnvironment: Bool) {
             self.application.storage[Key.self] = .init()
-            self.application.lifecycle.use(LifecycleHandler())
+            if asyncEnvironment {
+                self.application.lifecycle.use(AsyncLifecycleHandler())
+            } else {
+                self.application.lifecycle.use(LifecycleHandler())
+            }
         }
     }
 }

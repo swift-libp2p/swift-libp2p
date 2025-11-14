@@ -20,28 +20,53 @@ import Foundation
 import LibP2PCore
 import Logging
 import Multiaddr
-import NIO
+import NIOConcurrencyHelpers
+import NIOCore
 import RoutingKit
 
-public final class Request: CustomStringConvertible {
+public final class Request: CustomStringConvertible, Sendable {
     public let application: Application
 
-    public var `protocol`: String
+    /// A unique ID for the request.
+    ///
+    /// The request identifier is set to value of the `X-Request-Id` header when present, or to a
+    /// uniquely generated value otherwise.
+    public let id: String
 
-    public var event: RequestEvent
-
-    public var connection: Connection
-
-    public var channel: Channel
-
+    /// The `EventLoop` which is handling this `Request`. The route handler and any relevant middleware are invoked in this event loop.
+    ///
+    /// - Warning: A futures-based route handler **MUST** return an `EventLoopFuture` bound to this event loop.
+    ///  If this is difficult or awkward to guarantee, use `EventLoopFuture.hop(to:)` to jump to this event loop.
     public let eventLoop: EventLoop
-
-    internal var isKeepAlive: Bool
 
     public let streamDirection: ConnectionStats.Direction
 
     public var allocator: ByteBufferAllocator {
-        self.channel.allocator
+        get {
+            self.requestBox.withLockedValue { $0.byteBufferAllocator }
+        }
+    }
+
+    public var channel: Channel {
+        get {
+            self.requestBox.withLockedValue { $0.channel }
+        }
+    }
+
+    public var connection: Connection {
+        get {
+            self.requestBox.withLockedValue { $0.connection }
+        }
+    }
+
+    public var `protocol`: String { self._protocol }
+    var _protocol: String {
+        get {
+            self.requestBox.withLockedValue { $0.protocol }
+        }
+        set {
+            self.requestBox.withLockedValue { $0.protocol = newValue }
+        }
     }
 
     // MARK: Metadata
@@ -51,34 +76,101 @@ public final class Request: CustomStringConvertible {
     ///
     ///     req.route?.description // "GET /hello/:name"
     ///
-    public var route: Route?
+    public var route: Route? {
+        get {
+            self.requestBox.withLockedValue { $0.route }
+        }
+        set {
+            self.requestBox.withLockedValue { $0.route = newValue }
+        }
+    }
+
+    /// A container containing the route parameters that were captured when receiving this request.
+    /// Use this container to grab any non-static parameters from the URL, such as model IDs in a REST API.
+    public var parameters: Parameters {
+        get {
+            self.requestBox.withLockedValue { $0.parameters }
+        }
+        set {
+            self.requestBox.withLockedValue { $0.parameters = newValue }
+        }
+    }
+
+    public var event: RequestEvent {
+        get {
+            self.requestBox.withLockedValue { $0.event }
+        }
+        set {
+            self.requestBox.withLockedValue { $0.event = newValue }
+        }
+    }
 
     /// The URL used on this request.
     public var addr: Multiaddr {
-        self.connection.remoteAddr!
+        self.requestBox.withLockedValue { $0.connection.remoteAddr! }
     }
 
     public var remoteAddress: SocketAddress? {
-        self.channel.remoteAddress
+        self.requestBox.withLockedValue { $0.channel.remoteAddress }
     }
 
     // MARK: Content
 
-    public var logger: Logger
+    public var payload: ByteBuffer {
+        get {
+            self.requestBox.withLockedValue { $0.payload }
+        }
+        set {
+            self.requestBox.withLockedValue { $0.payload = newValue }
+        }
+    }
 
-    public var payload: ByteBuffer
+    /// This Logger from Apple's `swift-log` Package is preferred when logging in the context of handing this Request.
+    /// Vapor already provides metadata to this logger so that multiple logged messages can be traced back to the same request.
+    public var logger: Logger {
+        get {
+            self._logger.withLockedValue { $0 }
+        }
+        set {
+            self._logger.withLockedValue { $0 = newValue }
+        }
+    }
 
-    public var parameters: Parameters
-
-    public var storage: Storage
+    /// This container is used as arbitrary request-local storage during the request-response lifecycle.Z
+    public var storage: Storage {
+        get {
+            self._storage.withLockedValue { $0 }
+        }
+        set {
+            self._storage.withLockedValue { $0 = newValue }
+        }
+    }
 
     /// See `CustomStringConvertible`
     public var description: String {
         var desc: [String] = []
         desc.append("\(self.addr)")
-        desc.append(self.payload.description)
+        desc.append(self.requestBox.withLockedValue { $0.payload.description })
         return desc.joined(separator: "\n")
     }
+
+    struct RequestBox: Sendable {
+        var `protocol`: String
+        var event: RequestEvent
+        var connection: Connection
+        var channel: Channel
+        var isKeepAlive: Bool
+        var route: Route?
+        var parameters: Parameters
+        var byteBufferAllocator: ByteBufferAllocator
+        var payload: ByteBuffer
+    }
+
+    let requestBox: NIOLockedValueBox<RequestBox>
+    private let _storage: NIOLockedValueBox<Storage>
+    private let _logger: NIOLockedValueBox<Logger>
+    //private let _serviceContext: NIOLockedValueBox<ServiceContext>
+    //internal let bodyStorage: NIOLockedValueBox<BodyStorage>
 
     public init(
         application: Application,
@@ -91,26 +183,32 @@ public final class Request: CustomStringConvertible {
         logger: Logger = .init(label: "swift.libp2p.request"),
         on eventLoop: EventLoop
     ) {
+        let requestId = UUID().uuidString
         self.application = application
-        if let body = collectedBody {
-            self.payload = body
-        } else {
-            self.payload = ByteBuffer()
-        }
-        self.protocol = `protocol` ?? ""
-        self.event = event
+
+        var logger = logger
+        logger[metadataKey: "request-id"] = .string(requestId)
+        self._logger = .init(logger)
+
+        let storageBox = RequestBox(
+            protocol: `protocol` ?? "",
+            event: event,
+            connection: connection,
+            channel: channel,
+            isKeepAlive: true,
+            parameters: .init(),
+            byteBufferAllocator: ByteBufferAllocator(),
+            payload: collectedBody ?? ByteBuffer()
+        )
+
+        self.id = requestId
+        self.requestBox = .init(storageBox)
         self.streamDirection = streamDirection
-        self.connection = connection
-        self.channel = channel
         self.eventLoop = eventLoop
-        self.parameters = .init()
-        self.storage = .init()
-        self.isKeepAlive = true
-        self.logger = logger
-        self.logger[metadataKey: "request-id"] = .string(UUID().uuidString)
+        self._storage = .init(.init())
     }
 
-    public enum RequestEvent {
+    public enum RequestEvent: Sendable {
         case ready
         case data(ByteBuffer)
         case closed
@@ -118,11 +216,11 @@ public final class Request: CustomStringConvertible {
     }
 
     public var remotePeer: PeerID? {
-        self.connection.remotePeer
+        self.requestBox.withLockedValue { $0.connection.remotePeer }
     }
 
     public var localPeer: PeerID {
-        self.connection.localPeer
+        self.requestBox.withLockedValue { $0.connection.localPeer }
     }
 
     public func shouldClose() {

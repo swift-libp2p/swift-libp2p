@@ -14,9 +14,9 @@
 
 import LibP2PCore
 
-public class BootstrapPeerDiscovery: Discovery, LifecycleHandler {
+public class BootstrapPeerDiscovery: Discovery, LifecycleHandler, @unchecked Sendable {
     public static let key: String = "bootstrap"
-    public var onPeerDiscovered: ((PeerInfo) -> Void)?
+    public var onPeerDiscovered: (@Sendable (PeerInfo) -> Void)?
 
     internal var on: ((PeerDiscoveryEvent) -> Void)? = nil
 

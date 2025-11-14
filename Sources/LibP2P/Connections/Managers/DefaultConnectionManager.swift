@@ -34,7 +34,7 @@ extension Application.Connections.Provider {
     }
 }
 
-class BasicInMemoryConnectionManager: ConnectionManager {
+class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
 
     private let application: Application
     /// A mapping of all connections we are currently managing

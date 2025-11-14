@@ -36,7 +36,7 @@ public protocol AppConnection: Connection, CustomStringConvertible {
         forProtocol proto: String,
         withHandlers: HandlerConfig,
         andMiddleware: MiddlewareConfig,
-        closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>)
+        closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
     )
 
     func lastActivity() -> Date

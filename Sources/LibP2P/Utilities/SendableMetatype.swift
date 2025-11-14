@@ -13,17 +13,10 @@
 //===----------------------------------------------------------------------===//
 //
 //  Created by Vapor
-//  Modified by Brandon Toms on 5/1/22.
 //
 
-import Foundation
-
-public protocol RoutesBuilder {
-    func add(_ route: Route)
-}
-
-extension UUID: @retroactive LosslessStringConvertible {
-    public init?(_ description: String) {
-        self.init(uuidString: description)
-    }
-}
+#if compiler(>=6.2)
+public typealias Libp2pSendableMetatype = SendableMetatype
+#else
+public typealias Libp2pSendableMetatype = Any
+#endif

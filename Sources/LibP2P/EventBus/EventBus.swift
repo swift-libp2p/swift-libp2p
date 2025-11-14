@@ -73,7 +73,7 @@ extension Application.Events.Provider {
     }
 }
 
-public final class EventBus {
+public final class EventBus: Sendable {
 
     private let application: Application
     private let instanceID: String

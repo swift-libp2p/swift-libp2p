@@ -12,17 +12,20 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOConcurrencyHelpers
+
 extension Application.Transports {
 
     public func findBest(forMultiaddr ma: Multiaddr) throws -> Transport {
-        guard let t = self.storage.transports.first(where: { $0.value.canDial(address: ma) }) else {
+        let transports = self.storage.transports.withLockedValue { $0 }
+        guard let t = transports.first(where: { $0.value.canDial(address: ma) }) else {
             throw Errors.noTransportsForMultiaddr(ma)
         }
         return t.value
     }
 
     public func getAll() -> [Transport] {
-        self.storage.transports.map { $0.value }
+        self.storage.transports.withLockedValue { $0.map { $0.value } }
     }
 
     /// Traverses our available transports in search for one who's capabale of dialing the provided multiaddr

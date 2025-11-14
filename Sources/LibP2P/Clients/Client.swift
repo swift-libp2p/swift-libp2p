@@ -16,7 +16,7 @@ import LibP2PCore
 import Multiaddr
 import NIOCore
 
-public protocol Client {
+public protocol Client: Sendable {
     //static var transport:Transport { get }
     static var key: String { get }
 

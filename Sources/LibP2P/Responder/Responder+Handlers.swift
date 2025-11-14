@@ -40,10 +40,10 @@ extension Application {
     ///
     /// ```
     public struct ChildChannelHandlers {
-        public struct Provider {
-            let run: (Connection) -> ([ChannelHandler])
+        public struct Provider: Sendable {
+            let run: @Sendable (Connection) -> ([ChannelHandler])
 
-            public init(_ run: @escaping (Connection) -> ([ChannelHandler])) {
+            public init(_ run: @Sendable @escaping (Connection) -> ([ChannelHandler])) {
                 self.run = run
             }
         }

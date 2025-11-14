@@ -14,9 +14,10 @@
 
 import Logging
 import NIO
+import NIOConcurrencyHelpers
 
-public struct TCPClient: Client {
-    public static var key: String = "TCPClient"
+public struct TCPClient: Client, @unchecked Sendable {
+    public static let key: String = "TCPClient"
     private let provider: NIOEventLoopGroupProvider
 
     public let eventLoop: EventLoop
@@ -58,28 +59,28 @@ public struct TCPClient: Client {
         eventLoop: EventLoop,
         logger: Logger?
     ) -> EventLoopFuture<ClientResponse> {
-        //        guard let tcpAddress = request.addr.tcpAddress else {
-        //            return eventLoop.makeFailedFuture(Errors.invalidMultiaddrForTransport)
-        //        }
-        //        client.connect(host: tcpAddress.address, port: tcpAddress.port).flatMap { channel -> EventLoopFuture<Connection> in
+        //guard let tcpAddress = request.addr.tcpAddress else {
+        //    return eventLoop.makeFailedFuture(Errors.invalidMultiaddrForTransport)
+        //}
+        //client.connect(host: tcpAddress.address, port: tcpAddress.port).flatMap { channel -> EventLoopFuture<Connection> in
         //
-        //            let conn = BasicConnectionLight(
-        //                application: <#T##Application#>,
-        //                logger: <#T##Logger#>,
-        //                channel: <#T##Channel#>,
-        //                localPeerID: <#T##PeerID#>,
-        //                direction: <#T##ConnectionStats.Direction#>,
-        //                remoteAddress: <#T##Multiaddr#>,
-        //                expectedRemotePeer: <#T##PeerID?#>
-        //            )
+        //    let conn = BasicConnectionLight(
+        //        application: <#T##Application#>,
+        //        logger: <#T##Logger#>,
+        //        channel: <#T##Channel#>,
+        //        localPeerID: <#T##PeerID#>,
+        //        direction: <#T##ConnectionStats.Direction#>,
+        //        remoteAddress: <#T##Multiaddr#>,
+        //        expectedRemotePeer: <#T##PeerID?#>
+        //    )
         //
-        //            return conn.initializeChannel().flatMap { _ -> EventLoopFuture<Connection> in
-        //                //self.onNewOutboundConnection(conn, multi).map { _ -> Connection in
-        //                    return conn
-        //                //}
-        //            }
+        //    return conn.initializeChannel().flatMap { _ -> EventLoopFuture<Connection> in
+        //        //self.onNewOutboundConnection(conn, multi).map { _ -> Connection in
+        //            return conn
+        //        //}
+        //    }
         //
-        //        }
+        //}
         eventLoop.makeFailedFuture(Errors.notImplementedYet)
     }
 
@@ -98,15 +99,15 @@ public struct TCPClient: Client {
         EventLoopTCPClient(tcp: self, eventLoop: eventLoop, logger: self.logger)
     }
 
-    public struct Configuration {
-        var example: String
+    public struct Configuration: Sendable {
+        let example: NIOLockedValueBox<String>
 
         public init(example: String = "default") {
-            self.example = example
+            self.example = .init(example)
         }
     }
 
-    public enum Errors: Error {
+    public enum Errors: Error, Sendable {
         case notImplementedYet
         case invalidMultiaddrForTransport
     }

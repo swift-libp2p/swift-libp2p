@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 struct MSS: TransportUpgrader {
-    public static var key: String = "/multistream/1.0.0"
+    public static let key: String = "/multistream/1.0.0"
 
     public enum UpgradeType {
         case security
@@ -65,14 +65,4 @@ struct MSS: TransportUpgrader {
     //            return MultistreamSelectHandler(
     //        }
     //    }
-}
-
-extension Application.TransportUpgraders.Provider {
-    public static var mss: Self {
-        .init { app in
-            app.transportUpgraders.use {
-                MSS(application: $0)
-            }
-        }
-    }
 }

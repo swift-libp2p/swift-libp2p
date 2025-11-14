@@ -19,21 +19,27 @@ extension Application {
         .init(application: self)
     }
 
-    public struct Clients {
-        public struct Provider {
-            let run: (Application) -> Void
+    public struct Clients: Sendable {
 
-            public init(_ run: @escaping (Application) -> Void) {
+        public struct Provider {
+            let run: @Sendable (Application) -> Void
+
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
-        final class Storage {
-            var clients: [String: ((Application) -> Client)] = [:]
-            init() {}
+        final class Storage: Sendable {
+            struct ClientFactory {
+                let factory: (@Sendable (Application) -> Client)
+            }
+            let clients: NIOLockedValueBox<[String: ClientFactory]>
+            init() {
+                self.clients = .init([:])
+            }
         }
 
-        struct Key: StorageKey {
+        struct Key: StorageKey, Sendable {
             typealias Value = Storage
         }
 
@@ -46,21 +52,31 @@ extension Application {
         }
 
         public func client(forKey key: String) -> Client? {
-            self.storage.clients[key]?(self.application)
+            self.storage.clients.withLockedValue { clients in
+                if let c = clients[key] {
+                    return c.factory(self.application)
+                } else {
+                    return nil
+                }
+            }
         }
 
         public func use(_ provider: Provider) {
             provider.run(self.application)
         }
 
-        public func use(key: String, _ client: @escaping (Application) -> (Client)) {
-            self.storage.clients[key] = client
+        @preconcurrency public func use(key: String, _ client: @Sendable @escaping (Application) -> (Client)) {
+            self.storage.clients.withLockedValue { clients in
+                clients[key] = .init(factory: client)
+            }
         }
 
         public let application: Application
 
         public var available: [String] {
-            self.storage.clients.keys.map { $0 }
+            self.storage.clients.withLockedValue {
+                $0.keys.map { $0 }
+            }
         }
 
         var storage: Storage {
@@ -72,13 +88,13 @@ extension Application {
 
         public func dump() {
             print("*** Installed Clients ***")
-            print(self.storage.clients.keys.map { $0 }.joined(separator: "\n"))
+            print(self.storage.clients.withLockedValue { $0.keys.map { $0 }.joined(separator: "\n") })
             print("----------------------------------")
         }
     }
 }
 
-public enum HandlerConfig {
+public enum HandlerConfig: @unchecked Sendable {
     /// Searches the registered routes and uses the existing pipeline configuration if one exists
     case inherit
     /// Allows you to specify your own child channel pipeline configuration for this particular stream
@@ -107,7 +123,7 @@ public enum HandlerConfig {
     }
 }
 
-public enum MiddlewareConfig {
+public enum MiddlewareConfig: Sendable {
     case inherit
     case custom(Middleware?)
 }

@@ -23,7 +23,7 @@ import NIO
 ///     let res = RawResponse(payload: ...)
 ///
 /// See `Client` and `Server`.
-public final class RawResponse: CustomStringConvertible {
+public struct RawResponse: CustomStringConvertible, Sendable {
     /// Maximum streaming body size to use for `debugPrint(_:)`.
     private let maxDebugStreamingBodySize: Int = 1_000_000
 
@@ -32,8 +32,6 @@ public final class RawResponse: CustomStringConvertible {
     ///     res.payload = ByteBuffer(string: "Hello, world!")
     ///
     public var payload: ByteBuffer
-
-    public var storage: Storage
 
     /// See `CustomStringConvertible`
     public var description: String {
@@ -49,11 +47,60 @@ public final class RawResponse: CustomStringConvertible {
         payload: ByteBuffer
     ) {
         self.payload = payload
-        self.storage = .init()
     }
 }
+//public final class RawResponse: CustomStringConvertible, Sendable {
+//    /// Maximum streaming body size to use for `debugPrint(_:)`.
+//    private let maxDebugStreamingBodySize: Int = 1_000_000
+//
+//    /// The `Payload` to be sent to the remote peer
+//    ///
+//    ///     res.payload = ByteBuffer(string: "Hello, world!")
+//    ///
+//    public var payload: ByteBuffer {
+//        get {
+//            self.responseBox.withLockedValue { $0.payload }
+//        }
+//        set {
+//            self.responseBox.withLockedValue { $0.payload = newValue }
+//        }
+//    }
+//
+//    public var storage: Storage {
+//        get {
+//            self._storage.withLockedValue { $0 }
+//        }
+//        set {
+//            self._storage.withLockedValue { $0 = newValue }
+//        }
+//    }
+//
+//    struct ResponseBox: Sendable {
+//        var payload: ByteBuffer
+//    }
+//
+//    /// See `CustomStringConvertible`
+//    public var description: String {
+//        var desc: [String] = []
+//        desc.append(self.payload.description)
+//        return desc.joined(separator: "\n")
+//    }
+//
+//    let responseBox: NIOLockedValueBox<ResponseBox>
+//    private let _storage: NIOLockedValueBox<Storage>
+//
+//    // MARK: Init
+//
+//    /// Internal init that creates a new `RawResponse`
+//    public init(
+//        payload: ByteBuffer
+//    ) {
+//        self.payload = payload
+//        self.storage = .init()
+//    }
+//}
 
-public enum Response<T: ResponseEncodable>: ResponseEncodable {
+public enum Response<T: ResponseEncodable & Sendable>: ResponseEncodable, Sendable {
     case respond(T)
     case respondThenClose(T)
     case stayOpen

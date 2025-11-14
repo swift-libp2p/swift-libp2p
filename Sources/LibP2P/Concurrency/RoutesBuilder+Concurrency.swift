@@ -13,49 +13,44 @@
 //===----------------------------------------------------------------------===//
 //
 //  Created by Vapor
-//  Modified by Brandon Toms on 5/1/22.
+//  Modified by Brandon Toms on 11/10/25.
 //
 
 import NIOCore
+import NIOHTTP1
 import RoutingKit
 
-///// Determines how an incoming HTTP request's body is collected.
-public enum PayloadStreamStrategy: Sendable {
-    case stream
-}
-
 extension RoutesBuilder {
-    @preconcurrency
     @discardableResult
-    public func on<Response>(
+    @preconcurrency
+    public func on<Response: Libp2pSendableMetatype>(
         _ path: PathComponent...,
         body: PayloadStreamStrategy = .stream,
         handlers: [Application.ChildChannelHandlers.Provider] = [],
-        use closure: @Sendable @escaping (Request) throws -> Response
+        use closure: @Sendable @escaping (Request) async throws -> Response
     ) -> Route
-    where Response: ResponseEncodable {
+    where Response: AsyncResponseEncodable {
         self.on(
             path,
             body: body,
             handlers: handlers,
             use: { request in
-                try closure(request)
+                try await closure(request)
             }
         )
     }
 
-    @preconcurrency
     @discardableResult
-    public func on<Response>(
+    @preconcurrency
+    public func on<Response: Libp2pSendableMetatype>(
         _ path: [PathComponent],
         body: PayloadStreamStrategy = .stream,
         handlers: [Application.ChildChannelHandlers.Provider] = [],
-        use closure: @Sendable @escaping (Request) throws -> Response
+        use closure: @Sendable @escaping (Request) async throws -> Response
     ) -> Route
-    where Response: ResponseEncodable {
-        let responder = BasicResponder { request in
-            try closure(request)
-                .encodeResponse(for: request)
+    where Response: AsyncResponseEncodable {
+        let responder = AsyncBasicResponder { request in
+            try await closure(request).encodeResponse(for: request)
         }
         let route = Route(
             path: path,

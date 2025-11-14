@@ -17,9 +17,10 @@
 //
 
 import LibP2PCore
-import NIO
+import NIOConcurrencyHelpers
+import NIOCore
 
-public protocol Responder {
+public protocol Responder: Sendable {
     func respond(to request: Request) -> EventLoopFuture<RawResponse>
     func pipelineConfig(for protocol: String, on: Connection) -> [ChannelHandler]?
 }
@@ -30,33 +31,38 @@ extension Application {
     }
 
     public struct Responder {
-        public struct Provider {
+        public struct Provider: Sendable {
             public static var `default`: Self {
                 .init {
                     $0.responder.use { $0.responder.default }
                 }
             }
 
-            let run: (Application) -> Void
+            let run: @Sendable (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> Void) {
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
-        final class Storage {
-            var factory: ((Application) -> LibP2P.Responder)?
-            init() {}
+        final class Storage: Sendable {
+            struct ResponderFactory {
+                let factory: (@Sendable (Application) -> LibP2P.Responder)?
+            }
+            let factory: NIOLockedValueBox<ResponderFactory>
+            init() {
+                self.factory = .init(.init(factory: nil))
+            }
         }
 
-        struct Key: StorageKey {
+        struct Key: StorageKey, Sendable {
             typealias Value = Storage
         }
 
         public let application: Application
 
         public var current: LibP2P.Responder {
-            guard let factory = self.storage.factory else {
+            guard let factory = self.storage.factory.withLockedValue({ $0.factory }) else {
                 fatalError("No responder configured. Configure with app.responder.use(...)")
             }
             return factory(self.application)
@@ -73,8 +79,8 @@ extension Application {
             provider.run(self.application)
         }
 
-        public func use(_ factory: @escaping (Application) -> (LibP2P.Responder)) {
-            self.storage.factory = factory
+        @preconcurrency public func use(_ factory: @Sendable @escaping (Application) -> (LibP2P.Responder)) {
+            self.storage.factory.withLockedValue { $0 = .init(factory: factory) }
         }
 
         var storage: Storage {

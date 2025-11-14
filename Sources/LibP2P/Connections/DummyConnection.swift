@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-internal class DummyConnection: Connection {
+internal class DummyConnection: Connection, @unchecked Sendable {
     public var channel: Channel
 
     public var logger: Logger

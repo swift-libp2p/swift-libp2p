@@ -33,7 +33,7 @@ internal func handleDeltaRequest(_ req: Request) -> Response<ByteBuffer> {
 }
 
 private func handleDeltaMessage(_ req: Request) {
-    guard let message = try? IdentifyMessage(contiguousBytes: [UInt8](req.payload.readableBytesView)) else {
+    guard let message = try? IdentifyMessage(serializedBytes: [UInt8](req.payload.readableBytesView)) else {
         req.logger.error("Identify::Delta::Failed to decode Delta IdentifyMessage")
         return
     }

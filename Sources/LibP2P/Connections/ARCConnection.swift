@@ -17,7 +17,7 @@ import LibP2PCore
 import Logging
 
 /// Esentially a BasicConnectionLight but adds support for Automatic Reference (Stream) Counting and closes / deinits itself when the connection is idle and empty for a given amount of time.
-public class ARCConnection: AppConnection {
+public class ARCConnection: AppConnection, @unchecked Sendable {
 
     public var application: Application
 
@@ -406,7 +406,7 @@ public class ARCConnection: AppConnection {
                         guard let str = self.streams.first(where: { $0.channel === childChannel }) as? _Stream else {
                             return
                         }
-                        str._connection = self
+                        str._connection.withLockedValue { $0 = self }
                         self.application.events.post(.openedStream(str))
                         childChannel.closeFuture.whenComplete { [weak self] _ in
                             guard let self = self else { return }
@@ -488,7 +488,7 @@ public class ARCConnection: AppConnection {
                         if case .success = result {
                             guard let str = self.streams.first(where: { $0.channel === childChannel }) as? _Stream
                             else { return }
-                            str._connection = self
+                            str._connection.withLockedValue { $0 = self }
                             self.application.events.post(.openedStream(str))
                             childChannel.closeFuture.whenComplete { [weak self] _ in
                                 guard let self = self else { return }
@@ -589,7 +589,7 @@ public class ARCConnection: AppConnection {
         forProtocol proto: String,
         withHandlers: HandlerConfig = .rawHandlers([]),
         andMiddleware: MiddlewareConfig = .custom(nil),
-        closure: @escaping ((Request) throws -> EventLoopFuture<RawResponse>)
+        closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
     ) {
 
         self.logger.trace(
@@ -664,7 +664,7 @@ public class ARCConnection: AppConnection {
             throw Application.Connections.Errors.notImplementedYet
         }
 
-        stream._connection = self
+        stream._connection.withLockedValue { $0 = self }
 
         self.registry[stream.id] = stream
 

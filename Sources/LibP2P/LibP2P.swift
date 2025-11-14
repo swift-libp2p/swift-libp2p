@@ -17,7 +17,6 @@
 //
 
 @_exported import AsyncKit
-import Backtrace
 @_exported import ConsoleKit
 @_exported import Foundation
 @_exported import LibP2PCore
@@ -31,18 +30,40 @@ import LibP2PCrypto
 
 /// Core type representing a Libp2p application.
 /// Storage / Lifecycle Abstraction Idea
-public final class Application {
-    public var environment: Environment
-    public let eventLoopGroupProvider: EventLoopGroupProvider
-    public let eventLoopGroup: EventLoopGroup
-    public var storage: Storage
-    public private(set) var didShutdown: Bool
-    public var logger: Logger
-    var isBooted: Bool
-    public private(set) var isRunning: Bool = false
+public final class Application: Sendable {
+    public var environment: Environment {
+        get {
+            self._environment.withLockedValue { $0 }
+        }
+        set {
+            self._environment.withLockedValue { $0 = newValue }
+        }
+    }
 
-    /// The PeerID of our libp2p instance
-    public let peerID: PeerID
+    //public let eventLoopGroupProvider: EventLoopGroupProvider
+    //public let eventLoopGroup: EventLoopGroup
+
+    public var storage: Storage {
+        get {
+            self._storage.withLockedValue { $0 }
+        }
+        set {
+            self._storage.withLockedValue { $0 = newValue }
+        }
+    }
+
+    public var didShutdown: Bool {
+        self._didShutdown.withLockedValue { $0 }
+    }
+
+    public var logger: Logger {
+        get {
+            self._logger.withLockedValue { $0 }
+        }
+        set {
+            self._logger.withLockedValue { $0 = newValue }
+        }
+    }
 
     /// The PeerInfo of our libp2p instance
     ///
@@ -54,65 +75,96 @@ public final class Application {
         )
     }
 
-    public struct Lifecycle {
-        var handlers: [LifecycleHandler]
-        init() {
-            self.handlers = []
+    public var lifecycle: Lifecycle {
+        get {
+            self._lifecycle.withLockedValue { $0 }
         }
-
-        public mutating func use(_ handler: LifecycleHandler) {
-            self.handlers.append(handler)
+        set {
+            self._lifecycle.withLockedValue { $0 = newValue }
         }
     }
 
-    public var lifecycle: Lifecycle
-
-    public final class Locks {
+    public final class Locks: Sendable {
         public let main: NIOLock
-        var storage: [ObjectIdentifier: NIOLock]
+        private let storage: NIOLockedValueBox<[ObjectIdentifier: NIOLock]>
 
         init() {
             self.main = .init()
-            self.storage = [:]
+            self.storage = .init([:])
         }
 
         public func lock<Key>(for key: Key.Type) -> NIOLock
         where Key: LockKey {
-            self.main.lock()
-            defer { self.main.unlock() }
-            if let existing = self.storage[ObjectIdentifier(Key.self)] {
-                return existing
-            } else {
-                let new = NIOLock()
-                self.storage[ObjectIdentifier(Key.self)] = new
-                return new
+            self.main.withLock {
+                self.storage.withLockedValue {
+                    $0.insertOrReturn(.init(), at: .init(Key.self))
+                }
             }
         }
     }
 
-    public var locks: Locks
+    public var locks: Locks {
+        get {
+            self._locks.withLockedValue { $0 }
+        }
+        set {
+            self._locks.withLockedValue { $0 = newValue }
+        }
+    }
+
+    public var isRunning: Bool {
+        get {
+            self._isRunning.withLockedValue { $0 }
+        }
+    }
 
     public var sync: NIOLock {
         self.locks.main
     }
 
-    public enum EventLoopGroupProvider {
+    public enum EventLoopGroupProvider: Sendable {
         case shared(EventLoopGroup)
+        @available(
+            *,
+            deprecated,
+            renamed: "singleton",
+            message: "Use '.singleton' for a shared 'EventLoopGroup', for better performance"
+        )
         case createNew
+
+        public static var singleton: EventLoopGroupProvider {
+            .shared(MultiThreadedEventLoopGroup.singleton)
+        }
     }
+
+    public let eventLoopGroupProvider: EventLoopGroupProvider
+    public let eventLoopGroup: EventLoopGroup
+    public let isBooted: NIOLockedValueBox<Bool>
+    private let _isRunning: NIOLockedValueBox<Bool>
+    private let _environment: NIOLockedValueBox<Environment>
+    private let _storage: NIOLockedValueBox<Storage>
+    private let _didShutdown: NIOLockedValueBox<Bool>
+    private let _logger: NIOLockedValueBox<Logger>
+    private let _traceAutoPropagation: NIOLockedValueBox<Bool>
+    private let _lifecycle: NIOLockedValueBox<Lifecycle>
+    private let _locks: NIOLockedValueBox<Locks>
+
+    /// The PeerID of our libp2p instance
+    public let peerID: PeerID
 
     public init(
         _ environment: Environment = .development,
         peerID: PeerID = try! PeerID(.Ed25519),
         maxConncurrentConnections: Int = 50,
         enableAutomaticStreamCounting: Bool = false,
-        eventLoopGroupProvider: EventLoopGroupProvider = .createNew
+        eventLoopGroupProvider: EventLoopGroupProvider = .singleton,
+        async: Bool = false,
+        logger: Logger? = nil
     ) {
         /// Create our PeerID for this application instance
         self.peerID = peerID
 
-        Backtrace.install()
-        self.environment = environment
+        self._environment = .init(environment)
         self.eventLoopGroupProvider = eventLoopGroupProvider
         switch eventLoopGroupProvider {
         case .shared(let group):
@@ -120,14 +172,18 @@ public final class Application {
         case .createNew:
             self.eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
         }
-        self.locks = .init()
-        self.didShutdown = false
+        self._locks = .init(.init())
+        self._didShutdown = .init(false)
+        self._isRunning = .init(false)
 
-        self.logger = .init(label: "libp2p.application[\(peerID.shortDescription)]")
-        self.storage = .init(logger: self.logger)
-        self.lifecycle = .init()
-        self.isBooted = false
-        self.core.initialize()
+        let logger = logger ?? .init(label: "libp2p.application[\(peerID.shortDescription)]")
+        self._logger = .init(logger)
+
+        self._traceAutoPropagation = .init(false)
+        self._storage = .init(.init(logger: logger))
+        self._lifecycle = .init(.init())
+        self.isBooted = .init(false)
+        self.core.initialize(asyncEnvironment: async)
 
         //self.caches.initialize()
         self.responder.initialize()
@@ -138,7 +194,8 @@ public final class Application {
         self.transports.use(.tcp)
 
         // TransportUpgraders
-        self.transportUpgraders.initialize()  // TODO: Should this be renamed to `upgraders`?
+        // TODO: Should this be renamed to `upgraders`?
+        self.transportUpgraders.initialize()
         self.transportUpgraders.use(.mss)
 
         // Security and Muxer Modules
@@ -185,13 +242,35 @@ public final class Application {
         self.dht.initialize()
 
         // Commands
-        self.commands.use(self.servers.command, as: "serve", isDefault: true)
-        self.commands.use(RoutesCommand(), as: "routes")
+        self.asyncCommands.use(self.servers.command, as: "serve", isDefault: true)
+        self.asyncCommands.use(RoutesCommand(), as: "routes")
         //DotEnvFile.load(for: environment, on: .shared(self.eventLoopGroup), fileio: self.fileio, logger: self.logger)
 
         /// Application wide log level...
         self.logger.logLevel = .trace
         self.logger.notice("PeerID: \(self.peerID.b58String)")
+    }
+
+    public static func make(
+        _ environment: Environment = .development,
+        peerID: PeerID = try! PeerID(.Ed25519),
+        maxConncurrentConnections: Int = 50,
+        enableAutomaticStreamCounting: Bool = false,
+        _ eventLoopGroupProvider: EventLoopGroupProvider = .singleton,
+        logger: Logger? = nil
+    ) async throws -> Application {
+        let app = Application(
+            environment,
+            peerID: peerID,
+            maxConncurrentConnections: maxConncurrentConnections,
+            enableAutomaticStreamCounting: enableAutomaticStreamCounting,
+            eventLoopGroupProvider: eventLoopGroupProvider,
+            async: true,
+            logger: logger ?? .init(label: "libp2p.application[\(peerID.shortDescription)]")
+        )
+        await app.asyncCommands.use(app.servers.asyncCommand, as: "serve", isDefault: true)
+        await DotEnvFile.load(for: app.environment, fileio: app.fileio, logger: app.logger)
+        return app
     }
 
     /// Starts the Application using the `start()` method, then waits for any running tasks to complete
@@ -208,38 +287,111 @@ public final class Application {
         }
     }
 
-    /// When called, this will execute the startup command provided through an argument. If no startup command is provided, the default is used.
-    /// Under normal circumstances, this will start running Libp2p's webserver.
+    /// Starts the ``Application`` asynchronous using the ``startup()`` method, then waits for any running tasks
+    /// to complete. If your application is started without arguments, the default argument is used.
     ///
-    /// If you `start` Libp2p through this method, you'll need to prevent your Swift Executable from closing yourself.
-    /// If you want to run your Application indefinitely, or until your code shuts the application down, use `run()` instead.
-    public func start() throws {
-        try self.boot()
-        self.isRunning = true
-        let command = self.commands.group()
-        var context = CommandContext(console: self.console, input: self.environment.commandInput)
-        context.application = self
-        try self.console.run(command, with: context)
+    /// Under normal circumstances, ``execute()`` runs until a shutdown is triggered, then wait for the web server to
+    /// (manually) shut down before returning.
+    public func execute() async throws {
+        do {
+            try await self.startup()
+            try await self.running?.onStop.get()
+        } catch {
+            //self.logger.report(error: error)
+            throw error
+        }
     }
 
+    /// When called, this will execute the startup command provided through an argument. If no startup command is
+    /// provided, the default is used. Under normal circumstances, this will start running Vapor's webserver.
+    ///
+    /// If you start Vapor through this method, you'll need to prevent your Swift Executable from closing yourself.
+    /// If you want to run your ``Application`` indefinitely, or until your code shuts the application down,
+    /// use ``run()`` instead.
+    ///
+    /// > Warning: You should probably be using ``startup()`` instead of this method.
+    @available(*, noasync, message: "Use the async startup() method instead.")
+    public func start() throws {
+        try self.eventLoopGroup.any().makeFutureWithTask { try await self.startup() }.wait()
+    }
+
+    /// When called, this will asynchronously execute the startup command provided through an argument. If no startup
+    /// command is provided, the default is used. Under normal circumstances, this will start running Vapor's webserver.
+    ///
+    /// If you start Vapor through this method, you'll need to prevent your Swift Executable from closing yourself.
+    /// If you want to run your ``Application`` indefinitely, or until your code shuts the application down,
+    /// use ``execute()`` instead.
+    public func startup() async throws {
+        try await self.asyncBoot()
+        self._isRunning.withLockedValue { $0 = true }
+        let combinedCommands = AsyncCommands(
+            commands: self.asyncCommands.commands.merging(self.commands.commands) { $1 },
+            defaultCommand: self.asyncCommands.defaultCommand ?? self.commands.defaultCommand,
+            enableAutocomplete: self.asyncCommands.enableAutocomplete || self.commands.enableAutocomplete
+        ).group()
+
+        var context = CommandContext(console: self.console, input: self.environment.commandInput)
+        context.application = self
+        try await self.console.run(combinedCommands, with: context)
+    }
+
+    @available(
+        *,
+        noasync,
+        message: "This can potentially block the thread and should not be called in an async context",
+        renamed: "asyncBoot()"
+    )
+    /// Called when the applications starts up, will trigger the lifecycle handlers
     public func boot() throws {
-        guard !self.isBooted else {
+        try self.isBooted.withLockedValue { booted in
+            guard !booted else {
+                return
+            }
+            booted = true
+            for handler in self.lifecycle.handlers {
+                try handler.willBoot(self)
+            }
+            for handler in self.lifecycle.handlers {
+                try handler.didBoot(self)
+            }
+            // Register our Application Root Event Subscriptions and Handlers
+            self.registerEventHandlers()
+        }
+    }
+
+    /// Called when the applications starts up, will trigger the lifecycle handlers. The asynchronous version of ``boot()``
+    public func asyncBoot() async throws {
+        /// Skip the boot process if already booted
+        guard
+            !self.isBooted.withLockedValue({
+                var result = true
+                swap(&$0, &result)
+                return result
+            })
+        else {
             return
         }
-        self.isBooted = true
-        // Hook servers into our lifecycle handlers
-        //self.servers.available.forEach  { self.lifecycle.use($0) }
-        for handler in self.lifecycle.handlers { try handler.willBoot(self) }
-        for handler in self.lifecycle.handlers { try handler.didBoot(self) }
 
+        for handler in self.lifecycle.handlers {
+            try await handler.willBootAsync(self)
+        }
+        for handler in self.lifecycle.handlers {
+            try await handler.didBootAsync(self)
+        }
         // Register our Application Root Event Subscriptions and Handlers
         self.registerEventHandlers()
     }
 
+    @available(
+        *,
+        noasync,
+        message: "This can block the thread and should not be called in an async context",
+        renamed: "asyncShutdown()"
+    )
     public func shutdown() {
         assert(!self.didShutdown, "Application has already shut down")
         self.logger.debug("Application shutting down")
-        self.isRunning = false
+        self._isRunning.withLockedValue { $0 = false }
 
         self.logger.trace("Shutting down providers")
         for handler in self.lifecycle.handlers.reversed() { handler.shutdown(self) }
@@ -264,7 +416,40 @@ public final class Application {
             }
         }
 
-        self.didShutdown = true
+        self._didShutdown.withLockedValue { $0 = true }
+        self.logger.trace("Application shutdown complete")
+    }
+
+    public func asyncShutdown() async throws {
+        assert(!self.didShutdown, "Application has already shut down")
+        self.logger.debug("Application shutting down")
+
+        self.logger.trace("Shutting down providers")
+        for handler in self.lifecycle.handlers.reversed() {
+            await handler.shutdownAsync(self)
+        }
+        self.lifecycle.handlers = []
+
+        self.logger.debug("Attempting to close all connections")
+        try? await self.connections.closeAllConnections().get()
+
+        self.logger.trace("Clearing Application storage")
+        await self.storage.asyncShutdown()
+        self.storage.clear()
+
+        switch self.eventLoopGroupProvider {
+        case .shared:
+            self.logger.trace("Running on shared EventLoopGroup. Not shutting down EventLoopGroup.")
+        case .createNew:
+            self.logger.trace("Shutting down EventLoopGroup")
+            do {
+                try await self.eventLoopGroup.shutdownGracefully()
+            } catch {
+                self.logger.warning("Shutting down EventLoopGroup failed: \(error)")
+            }
+        }
+
+        self._didShutdown.withLockedValue { $0 = true }
         self.logger.trace("Application shutdown complete")
     }
 
@@ -272,6 +457,7 @@ public final class Application {
         self.logger.trace("Application deinitialized, goodbye!")
         if !self.didShutdown {
             assertionFailure("Application.shutdown() was not called before Application deinitialized.")
+            self.shutdown()
         }
     }
 
@@ -286,16 +472,15 @@ public final class Application {
 
 public protocol LockKey {}
 
-public protocol LifecycleHandler {
-    func willBoot(_ application: Application) throws
-    func didBoot(_ application: Application) throws
-    func shutdown(_ application: Application)
-}
-
-extension LifecycleHandler {
-    public func willBoot(_ application: Application) throws {}
-    public func didBoot(_ application: Application) throws {}
-    public func shutdown(_ application: Application) {}
+extension Dictionary {
+    fileprivate mutating func insertOrReturn(_ value: @autoclosure () -> Value, at key: Key) -> Value {
+        if let existing = self[key] {
+            return existing
+        }
+        let newValue = value()
+        self[key] = newValue
+        return newValue
+    }
 }
 
 extension Application {

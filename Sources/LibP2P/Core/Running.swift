@@ -19,10 +19,12 @@
 import NIO
 
 extension Application {
-    public struct Running {
-        final class Storage {
-            var current: Running?
-            init() {}
+    public struct Running: Sendable {
+        final class Storage: Sendable {
+            let current: NIOLockedValueBox<Running?>
+            init() {
+                self.current = .init(nil)
+            }
         }
 
         public static func start(using promise: EventLoopPromise<Void>) -> Self {

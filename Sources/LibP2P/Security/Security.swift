@@ -37,22 +37,26 @@ extension Application {
     }
 
     public struct SecurityUpgraders {
-        internal typealias KeyedSecurityUpgrader = (key: String, value: ((Application) -> SecurityUpgrader))
         public struct Provider {
-            let run: (Application) -> Void
+            let run: @Sendable (Application) -> Void
 
-            public init(_ run: @escaping (Application) -> Void) {
+            @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
                 self.run = run
             }
         }
 
-        final class Storage {
+        final class Storage: Sendable {
+            struct SecurityFactory {
+                let factory: (@Sendable (Application) -> SecurityUpgrader)
+            }
             /// Security Upgraders stored in order of preference
-            var secUpgraders: [KeyedSecurityUpgrader] = []
-            init() {}
+            let secUpgraders: NIOLockedValueBox<[String: SecurityFactory]>
+            init() {
+                self.secUpgraders = .init([:])
+            }
         }
 
-        struct Key: StorageKey {
+        struct Key: StorageKey, Sendable {
             typealias Value = Storage
         }
 
@@ -69,7 +73,13 @@ extension Application {
         //        }
 
         public func upgrader(forKey key: String) -> SecurityUpgrader? {
-            self.storage.secUpgraders.first(where: { $0.key == key })?.value(self.application)
+            self.storage.secUpgraders.withLockedValue {
+                if let factory = $0.first(where: { $0.key == key })?.value.factory {
+                    return factory(self.application)
+                } else {
+                    return nil
+                }
+            }
         }
 
         /// Accepts a single Security Provider, these providers are ordered in the order in which they are called.
@@ -106,18 +116,20 @@ extension Application {
             for provider in providers { provider.run(self.application) }
         }
 
-        public func use<S: SecurityUpgrader>(_ makeUpgrader: @escaping (Application) -> (S)) {
-            guard !self.storage.secUpgraders.contains(where: { $0.key == S.key }) else {
-                self.application.logger.warning("`\(S.key)` Security Module Already Installed - Skipping")
-                return
+        @preconcurrency public func use<S: SecurityUpgrader>(_ makeUpgrader: @Sendable @escaping (Application) -> (S)) {
+            self.storage.secUpgraders.withLockedValue { security in
+                guard security[S.key] == nil else {
+                    self.application.logger.warning("`\(S.key)` Security Module Already Installed - Skipping")
+                    return
+                }
+                security[S.key] = .init(factory: makeUpgrader)
             }
-            self.storage.secUpgraders.append((S.key, makeUpgrader))
         }
 
         public let application: Application
 
         public var available: [String] {
-            self.storage.secUpgraders.map { $0.key }
+            self.storage.secUpgraders.withLockedValue { $0.map { $0.key } }
         }
 
         //        public var installers:[SecurityProtocolInstaller] {
@@ -134,9 +146,11 @@ extension Application {
         public func dump() {
             print("*** Installed Security Modules ***")
             print(
-                self.storage.secUpgraders.enumerated().map { "[\($0.offset + 1)] - \($0.element.key)" }.joined(
-                    separator: "\n"
-                )
+                self.storage.secUpgraders.withLockedValue {
+                    $0.keys.enumerated().map { "[\($0.offset + 1)] - \($0.element)" }.joined(
+                        separator: "\n"
+                    )
+                }
             )
             print("----------------------------------")
         }

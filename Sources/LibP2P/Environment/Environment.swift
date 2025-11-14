@@ -16,7 +16,6 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import COperatingSystem
 import ConsoleKit
 import Foundation
 
@@ -33,14 +32,14 @@ import Foundation
 ///
 ///     print(Environment.get("DB_PASSWORD"))
 ///
-public struct Environment: Equatable {
+public struct Environment: Sendable, Equatable {
     // MARK: - Detection
 
     /// Detects the environment from `CommandLine.arguments`. Invokes `detect(from:)`.
     /// - parameters:
     ///     - arguments: Command line arguments to detect environment from.
     /// - returns: The detected environment, or default env.
-    public static func detect(arguments: [String] = CommandLine.arguments) throws -> Environment {
+    public static func detect(arguments: [String] = ProcessInfo.processInfo.arguments) throws -> Environment {
         var commandInput = CommandInput(arguments: arguments)
         return try Environment.detect(from: &commandInput)
     }
@@ -51,7 +50,9 @@ public struct Environment: Equatable {
     ///     - arguments: `CommandInput` to parse `--env` flag from.
     /// - returns: The detected environment, or default env.
     public static func detect(from commandInput: inout CommandInput) throws -> Environment {
+        //print("CommandInput: \(commandInput)")
         self.sanitize(commandInput: &commandInput)
+        //print("Sanitized CommandInput: \(commandInput)")
 
         struct EnvironmentSignature: CommandSignature {
             @Option(name: "env", short: "e", help: "Change the application's environment")
@@ -62,9 +63,17 @@ public struct Environment: Equatable {
         switch try EnvironmentSignature(from: &commandInput).environment ?? Environment.process.LIBP2P_ENV
         {
         case "prod", "production": env = .production
-        case "dev", "development", .none: env = .development
+        case "dev", "development": env = .development
         case "test", "testing": env = .testing
         case .some(let name): env = .init(name: name)
+        case .none:
+            if let ep = commandInput.executablePath.first,
+                ep.hasSuffix("xctest") || ep.hasSuffix("swiftpm-testing-helper")
+            {
+                env = .testing
+            } else {
+                env = .development
+            }
         }
         env.commandInput = commandInput
         return env
@@ -72,36 +81,26 @@ public struct Environment: Equatable {
 
     /// Performs stripping of user defaults overrides where and when appropriate.
     private static func sanitize(commandInput: inout CommandInput) {
-        #if Xcode
-        // Strip all leading arguments matching the pattern for assignment to the `NSArgumentsDomain`
-        // of `UserDefaults`. Matching this pattern means being prefixed by `-NS` or `-Apple` and being
-        // followed by a value argument. Since this is mainly just to get around Xcode's habit of
-        // passing a bunch of these when no other arguments are specified in a test scheme, we ignore
-        // any that don't match the Apple patterns and assume the app knows what it's doing.
-        while commandInput.arguments.first?.prefix(6) == "-Apple" || commandInput.arguments.first?.prefix(3) == "-NS",
-            commandInput.arguments.count > 1
-        {
-            commandInput.arguments.removeFirst(2)
-        }
-        #elseif os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-        // When tests are invoked directly through SwiftPM using `--filter`, SwiftPM will pass `-XCTest <filter>` to the
-        // runner binary, and also the test bundle path unconditionally. These must be stripped for LibP2P to be satisifed
-        // with the validity of the arguments. We detect this case reliably the hard way, by looking for the `xctest`
-        // runner executable and a leading argument with the `.xctest` bundle suffix.
-        if commandInput.executable.hasSuffix("/usr/bin/xctest") {
-            if commandInput.arguments.first?.lowercased() == "-xctest" && commandInput.arguments.count > 1 {
-                commandInput.arguments.removeFirst(2)
-            }
-            if commandInput.arguments.first?.hasSuffix(".xctest") ?? false {
-                commandInput.arguments.removeFirst()
+        // Only keep supported arguments (hostname[H], port[p], bind[b], unix-socket, help)
+        var argsToKeep: [String] = []
+        let supportedArguments = [
+            "--hostname", "-H", "--port", "-p", "--bind", "-b", "--unix-socket", "--help", "-h", "--env", "-e",
+        ]
+        for (index, argument) in commandInput.arguments.enumerated() {
+            if supportedArguments.contains(argument) {
+                argsToKeep.append(argument)
+                // help flags don't include an argument, the rest should
+                if argument != "-h", argument != "--help", commandInput.arguments.count >= index + 1 {
+                    argsToKeep.append(commandInput.arguments[index + 1])
+                }
             }
         }
-        #endif
+        commandInput.arguments = argsToKeep
     }
 
     /// Invokes `sanitize(commandInput:)` over a set of raw arguments and returns the
     /// resulting arguments, including the executable path.
-    private static func sanitizeArguments(_ arguments: [String] = CommandLine.arguments) -> [String] {
+    private static func sanitizeArguments(_ arguments: [String] = ProcessInfo.processInfo.arguments) -> [String] {
         var commandInput = CommandInput(arguments: arguments)
         sanitize(commandInput: &commandInput)
         return commandInput.executablePath + commandInput.arguments
@@ -113,7 +112,7 @@ public struct Environment: Equatable {
     public static var production: Environment { .init(name: "production") }
 
     /// An environment for developing your application.
-    public static var development: Environment { .init(name: "development") }
+    public static var development: Environment { .init(name: "development", arguments: sanitizeArguments()) }
 
     /// An environment for testing your application.
     ///
@@ -173,8 +172,57 @@ public struct Environment: Equatable {
     // MARK: - Init
 
     /// Create a new `Environment`.
-    public init(name: String, arguments: [String] = CommandLine.arguments) {
+    public init(name: String, arguments: [String] = ProcessInfo.processInfo.arguments) {
         self.name = name
         self.arguments = arguments
     }
 }
+
+/// Performs stripping of user defaults overrides where and when appropriate.
+//    private static func sanitize(commandInput: inout CommandInput) {
+//        #if Xcode
+//        // Strip all leading arguments matching the pattern for assignment to the `NSArgumentsDomain`
+//        // of `UserDefaults`. Matching this pattern means being prefixed by `-NS` or `-Apple` and being
+//        // followed by a value argument. Since this is mainly just to get around Xcode's habit of
+//        // passing a bunch of these when no other arguments are specified in a test scheme, we ignore
+//        // any that don't match the Apple patterns and assume the app knows what it's doing.
+//        while commandInput.arguments.first?.prefix(6) == "-Apple" || commandInput.arguments.first?.prefix(3) == "-NS",
+//            commandInput.arguments.count > 1
+//        {
+//            commandInput.arguments.removeFirst(2)
+//        }
+//        #elseif os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+//        // When tests are invoked directly through SwiftPM using `--filter`, SwiftPM will pass `-XCTest <filter>` to the
+//        // runner binary, and also the test bundle path unconditionally. These must be stripped for Libp2p to be satisfied
+//        // with the validity of the arguments. We detect this case reliably the hard way, by looking for the `xctest`
+//        // runner executable and a leading argument with the `.xctest` bundle suffix.
+//        if commandInput.executable.hasSuffix("/usr/bin/xctest") {
+//            if commandInput.arguments.first?.lowercased() == "-xctest" && commandInput.arguments.count > 1 {
+//                commandInput.arguments.removeFirst(2)
+//            }
+//            if commandInput.arguments.first?.hasSuffix(".xctest") ?? false {
+//                commandInput.arguments.removeFirst()
+//            }
+//        }
+//        if commandInput.executable.hasSuffix("swiftpm-testing-helper") || commandInput.executable.hasSuffix(".xctest") {
+//            // Remove the --test-bundle-path flag and argument
+//            if commandInput.arguments.first?.lowercased() == "--test-bundle-path" && commandInput.arguments.count > 1 {
+//                commandInput.arguments.removeFirst(2)
+//            }
+//            // Remove the --filter flag and argument if necessary
+//            if commandInput.arguments.first?.lowercased() == "--filter" && commandInput.arguments.count > 2 {
+//                commandInput.arguments.removeFirst(2)
+//            }
+//            // Remove the path argument
+//            if commandInput.arguments.count >= 3,
+//                commandInput.arguments.contains(where: { $0.lowercased() == "--testing-library" })
+//            {
+//                commandInput.arguments.removeFirst(1)
+//            }
+//            // Remove the --testing-library flag and argument if necessary
+//            if commandInput.arguments.first?.lowercased() == "--testing-library" && commandInput.arguments.count > 1 {
+//                commandInput.arguments.removeFirst(2)
+//            }
+//        }
+//        #endif
+//    }
