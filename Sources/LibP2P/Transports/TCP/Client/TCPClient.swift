@@ -59,28 +59,28 @@ public struct TCPClient: Client, @unchecked Sendable {
         eventLoop: EventLoop,
         logger: Logger?
     ) -> EventLoopFuture<ClientResponse> {
-        //        guard let tcpAddress = request.addr.tcpAddress else {
-        //            return eventLoop.makeFailedFuture(Errors.invalidMultiaddrForTransport)
-        //        }
-        //        client.connect(host: tcpAddress.address, port: tcpAddress.port).flatMap { channel -> EventLoopFuture<Connection> in
+        //guard let tcpAddress = request.addr.tcpAddress else {
+        //    return eventLoop.makeFailedFuture(Errors.invalidMultiaddrForTransport)
+        //}
+        //client.connect(host: tcpAddress.address, port: tcpAddress.port).flatMap { channel -> EventLoopFuture<Connection> in
         //
-        //            let conn = BasicConnectionLight(
-        //                application: <#T##Application#>,
-        //                logger: <#T##Logger#>,
-        //                channel: <#T##Channel#>,
-        //                localPeerID: <#T##PeerID#>,
-        //                direction: <#T##ConnectionStats.Direction#>,
-        //                remoteAddress: <#T##Multiaddr#>,
-        //                expectedRemotePeer: <#T##PeerID?#>
-        //            )
+        //    let conn = BasicConnectionLight(
+        //        application: <#T##Application#>,
+        //        logger: <#T##Logger#>,
+        //        channel: <#T##Channel#>,
+        //        localPeerID: <#T##PeerID#>,
+        //        direction: <#T##ConnectionStats.Direction#>,
+        //        remoteAddress: <#T##Multiaddr#>,
+        //        expectedRemotePeer: <#T##PeerID?#>
+        //    )
         //
-        //            return conn.initializeChannel().flatMap { _ -> EventLoopFuture<Connection> in
-        //                //self.onNewOutboundConnection(conn, multi).map { _ -> Connection in
-        //                    return conn
-        //                //}
-        //            }
+        //    return conn.initializeChannel().flatMap { _ -> EventLoopFuture<Connection> in
+        //        //self.onNewOutboundConnection(conn, multi).map { _ -> Connection in
+        //            return conn
+        //        //}
+        //    }
         //
-        //        }
+        //}
         eventLoop.makeFailedFuture(Errors.notImplementedYet)
     }
 

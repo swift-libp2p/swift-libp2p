@@ -124,7 +124,7 @@ extension Application {
             try? self.newStream(to: to.peer, forProtocol: proto)
         }
     }
-    
+
     public func newStream(to: PeerID, forProtocol proto: String) throws {
         let el = self.eventLoopGroup.next()
 
@@ -146,8 +146,11 @@ extension Application {
                     //for address in addresses {
                     //    self.logger.trace("- \(try? address.encapsulate(proto: .p2p, address: to.b58String))")
                     //}
-                    
-                    try! self.newStream(to: addresses.first!.encapsulate(proto: .p2p, address: to.b58String), forProtocol: proto)
+
+                    try! self.newStream(
+                        to: addresses.first!.encapsulate(proto: .p2p, address: to.b58String),
+                        forProtocol: proto
+                    )
 
                     return el.makeSucceededVoidFuture()
                 }

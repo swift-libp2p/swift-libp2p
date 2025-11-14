@@ -117,7 +117,7 @@ extension Application {
             //self.application.logger.trace("Topology::On Proto Change")
             ///Given the change, loop through the regsitrations and call the necesary handlers...
             let registrations = self.storage.registrations.withLockedValue { $0 }
-            
+
             for registration in registrations {
                 if registration.isInterestedIn(change: change.protocols) {
                     self.application.logger.trace("Topology::Issuing protocolChange for \(registration)")
@@ -130,7 +130,7 @@ extension Application {
             //self.application.logger.trace("Topology::On Proto Change")
             ///Given the change, loop through the regsitrations and call the necesary handlers...
             let registrations = self.storage.registrations.withLockedValue { $0 }
-            
+
             for registration in registrations {
                 guard registration.handler.onNewStream != nil else { return }
                 if registration.protocols.stringValue == stream.protocolCodec {

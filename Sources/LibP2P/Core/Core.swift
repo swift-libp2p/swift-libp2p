@@ -17,9 +17,9 @@
 //
 
 import ConsoleKit
+import NIOConcurrencyHelpers
 import NIOCore
 import NIOPosix
-import NIOConcurrencyHelpers
 
 extension Application {
 
@@ -32,7 +32,7 @@ extension Application {
         get { self.core.storage.commands.withLockedValue { $0 } }
         set { self.core.storage.commands.withLockedValue { $0 = newValue } }
     }
-    
+
     public var asyncCommands: AsyncCommands {
         get { self.core.storage.asyncCommands.withLockedValue { $0 } }
         set { self.core.storage.asyncCommands.withLockedValue { $0 = newValue } }
@@ -80,7 +80,7 @@ extension Application {
     public var allocator: ByteBufferAllocator {
         self.core.storage.allocator
     }
-    
+
     public var agentVersion: String {
         self.core.storage.agentVersion
     }
@@ -109,7 +109,7 @@ extension Application {
             let running: Application.Running.Storage
             let agentVersion: String
             //let directory: NIOLockedValueBox<DirectoryConfiguration>
-            
+
             init() {
                 self.console = .init(Terminal())
                 self.commands = .init(Commands())
@@ -125,7 +125,7 @@ extension Application {
                 //self.directory = .init(.detect())
             }
         }
-        
+
         struct LifecycleHandler: LibP2P.LifecycleHandler {
             func shutdown(_ application: Application) {
                 do {
@@ -151,7 +151,7 @@ extension Application {
                 }
             }
         }
-        
+
         struct Key: StorageKey {
             typealias Value = Storage
         }

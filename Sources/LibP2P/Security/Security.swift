@@ -73,7 +73,7 @@ extension Application {
         //        }
 
         public func upgrader(forKey key: String) -> SecurityUpgrader? {
-            self.storage.secUpgraders.withLockedValue{
+            self.storage.secUpgraders.withLockedValue {
                 if let factory = $0.first(where: { $0.key == key })?.value.factory {
                     return factory(self.application)
                 } else {
@@ -146,9 +146,11 @@ extension Application {
         public func dump() {
             print("*** Installed Security Modules ***")
             print(
-                self.storage.secUpgraders.withLockedValue { $0.keys.enumerated().map { "[\($0.offset + 1)] - \($0.element)" }.joined(
-                    separator: "\n"
-                )}
+                self.storage.secUpgraders.withLockedValue {
+                    $0.keys.enumerated().map { "[\($0.offset + 1)] - \($0.element)" }.joined(
+                        separator: "\n"
+                    )
+                }
             )
             print("----------------------------------")
         }

@@ -20,7 +20,7 @@ extension Application {
     }
 
     public struct Clients: Sendable {
-        
+
         public struct Provider {
             let run: @Sendable (Application) -> Void
 

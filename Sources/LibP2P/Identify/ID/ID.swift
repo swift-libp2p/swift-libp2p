@@ -21,7 +21,7 @@ import NIOConcurrencyHelpers
 /// [Spec](https://github.com/libp2p/specs/tree/master/identify)
 public final class Identify: IdentityManager, CustomStringConvertible {
     static let protocolVersion: String = "ipfs/0.1.0"
-    
+
     let application: Application?
     let localPeerID: PeerID
     private let logger: Logger
@@ -60,13 +60,13 @@ public final class Identify: IdentityManager, CustomStringConvertible {
     public init(application: Application) {
         var logger = application.logger
         logger[metadataKey: "Identify"] = .string("\(UUID().uuidString.prefix(5))")
-        
+
         self.application = application
         self.localPeerID = application.peerID
         self.logger = application.logger
         self.el = application.eventLoopGroup.next()
         self.pingCache = .init([:])
-        
+
         /// Register our protocol route handler on the application...
         try! routes(application)
 
@@ -471,7 +471,8 @@ extension Identify {
                 req.logger.trace("Identify::Ping updating \(isConnection ? "connection" : "stream") latency")
 
                 /// Update our peers metadata
-                req.application.peers.getMetadata(forPeer: req.remotePeer!).flatMap { metadata -> EventLoopFuture<Void> in
+                req.application.peers.getMetadata(forPeer: req.remotePeer!).flatMap {
+                    metadata -> EventLoopFuture<Void> in
                     let new: MetadataBook.LatencyMetadata
                     if let existingLatencyData = metadata[MetadataBook.Keys.Latency.rawValue],
                         var latencyData = try? JSONDecoder().decode(

@@ -209,7 +209,7 @@ private struct NotFoundResponder: Responder {
     }
 }
 
-struct RouteNotFound: Error { }
+struct RouteNotFound: Error {}
 
 //extension RouteNotFound: AbortError {
 //    var status: HTTPResponseStatus {

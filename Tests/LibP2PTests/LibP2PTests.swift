@@ -25,18 +25,18 @@ struct LibP2PTests {
 
         // .detect() should result in .testing
         #expect(app.environment == Environment.testing)
-        
+
         try app.start()
 
         sleep(1)
     }
-    
+
     @Test func testLibP2P_Development_Environment() throws {
         let app = Application(.development)
         defer { app.shutdown() }
 
         #expect(app.environment == Environment.development)
-        
+
         try app.start()
 
         sleep(1)
@@ -44,9 +44,9 @@ struct LibP2PTests {
 
     @Test func testLibP2P_Async() async throws {
         let app = Application(.testing)
-        
+
         #expect(app.environment == Environment.testing)
-        
+
         try await app.startup()
 
         try await Task.sleep(for: .seconds(1))

@@ -63,6 +63,6 @@ public struct AnyAsyncResponse: AsyncResponseEncodable {
     }
 
     public func encodeResponse(for request: Request) async throws -> RawResponse {
-        return try await self.encodable.encodeResponse(for: request)
+        try await self.encodable.encodeResponse(for: request)
     }
 }

@@ -67,7 +67,7 @@ extension Application {
         //        }
 
         public func upgrader(forKey key: String) -> MuxerUpgrader? {
-            self.storage.muxUpgraders.withLockedValue{
+            self.storage.muxUpgraders.withLockedValue {
                 if let factory = $0.first(where: { $0.key == key })?.value.factory {
                     return factory(self.application)
                 } else {
@@ -133,9 +133,11 @@ extension Application {
         public func dump() {
             print("*** Installed Muxer Modules ***")
             print(
-                self.storage.muxUpgraders.withLockedValue { $0.keys.enumerated().map { "[\($0.offset + 1)] - \($0.element)" }.joined(
-                    separator: "\n"
-                )}
+                self.storage.muxUpgraders.withLockedValue {
+                    $0.keys.enumerated().map { "[\($0.offset + 1)] - \($0.element)" }.joined(
+                        separator: "\n"
+                    )
+                }
             )
             print("----------------------------------")
         }

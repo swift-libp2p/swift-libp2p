@@ -13,9 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
+import NIOConcurrencyHelpers
 import NIOCore
 import VarInt
-import NIOConcurrencyHelpers
 
 extension Application {
     /// A method on libp2p that acts as a request / response mechanism for streams
@@ -95,10 +95,10 @@ extension Application {
 
         var hasBegun: Bool { _hasBegun.withLockedValue { $0 } }
         let _hasBegun: NIOLockedValueBox<Bool>
-        
+
         var hasCompleted: Bool { _hasCompleted.withLockedValue { $0 } }
         let _hasCompleted: NIOLockedValueBox<Bool>
-        
+
         let timeout: TimeAmount
         let timeoutTask: NIOLockedValueBox<Scheduled<Void>?>
 
@@ -223,10 +223,10 @@ extension Application {
 
         var hasBegun: Bool { _hasBegun.withLockedValue { $0 } }
         let _hasBegun: NIOLockedValueBox<Bool>
-        
+
         var hasCompleted: Bool { _hasCompleted.withLockedValue { $0 } }
         let _hasCompleted: NIOLockedValueBox<Bool>
-        
+
         let timeout: TimeAmount
         let timeoutTask: NIOLockedValueBox<Scheduled<Void>?>
         var timeoutResets: Int { _timeoutResets.withLockedValue { $0 } }
@@ -389,7 +389,7 @@ extension Application {
                 task = self.eventloop.scheduleTask(in: self.timeout) { [weak self] in
                     guard let self = self, self.hasBegun && !self.hasCompleted else { return }
                     self._hasCompleted.withLockedValue { $0 = true }
-                    
+
                     self.buffer.withLockedValue { buffer in
                         if let buffer {
                             //if we have something in the buffer at this point, send it along...

@@ -74,7 +74,7 @@ public struct RawResponse: CustomStringConvertible, Sendable {
 //            self._storage.withLockedValue { $0 = newValue }
 //        }
 //    }
-//    
+//
 //    struct ResponseBox: Sendable {
 //        var payload: ByteBuffer
 //    }
@@ -88,7 +88,7 @@ public struct RawResponse: CustomStringConvertible, Sendable {
 //
 //    let responseBox: NIOLockedValueBox<ResponseBox>
 //    private let _storage: NIOLockedValueBox<Storage>
-//    
+//
 //    // MARK: Init
 //
 //    /// Internal init that creates a new `RawResponse`
@@ -99,8 +99,6 @@ public struct RawResponse: CustomStringConvertible, Sendable {
 //        self.storage = .init()
 //    }
 //}
-
-
 
 public enum Response<T: ResponseEncodable & Sendable>: ResponseEncodable, Sendable {
     case respond(T)

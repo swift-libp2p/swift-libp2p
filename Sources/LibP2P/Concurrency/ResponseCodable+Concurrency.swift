@@ -49,7 +49,7 @@ public protocol AsyncRequestDecodable {
 
 extension Request: AsyncRequestDecodable {
     public static func decodeRequest(_ request: Request) async throws -> Request {
-        return request
+        request
     }
 }
 
@@ -79,7 +79,7 @@ extension AsyncResponseEncodable {
 extension RawResponse: AsyncResponseEncodable {
     // See `AsyncResponseCodable`.
     public func encodeResponse(for request: Request) async throws -> RawResponse {
-        return self
+        self
     }
 }
 

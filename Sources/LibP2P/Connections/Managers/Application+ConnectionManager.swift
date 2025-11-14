@@ -14,8 +14,8 @@
 
 import LibP2PCore
 import Multiaddr
-import NIOCore
 import NIOConcurrencyHelpers
+import NIOCore
 
 extension Application {
     public var connectionManager: Connections {

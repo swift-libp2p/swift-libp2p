@@ -49,7 +49,7 @@ public struct Storage: Sendable {
             }
         }
     }
-    
+
     /// The logger provided to shutdown closures.
     let logger: Logger
 
@@ -75,13 +75,13 @@ public struct Storage: Sendable {
             self.set(Key.self, to: newValue)
         }
     }
-    
+
     /// Read access to a value via keyed subscript, adding the provided default
     /// value to the storage if the key does not already exist. Similar to
     /// ``Swift/Dictionary/subscript(key:default:)``. The `defaultValue` autoclosure
     /// is evaluated only when the key does not already exist in the container.
     public subscript<Key>(_ key: Key.Type, default defaultValue: @autoclosure () -> Key.Value) -> Key.Value
-        where Key: StorageKey
+    where Key: StorageKey
     {
         mutating get {
             if let existing = self[key] { return existing }
@@ -108,14 +108,18 @@ public struct Storage: Sendable {
     /// Set or remove a value for a given key, optionally providing a shutdown closure for the value.
     ///
     /// If a key that has a shutdown closure is removed by this method, the closure **is** invoked.
-    @available(*, noasync, message: "Use the async setWithAsyncShutdown() method instead.", renamed: "setWithAsyncShutdown")
+    @available(
+        *,
+        noasync,
+        message: "Use the async setWithAsyncShutdown() method instead.",
+        renamed: "setWithAsyncShutdown"
+    )
     public mutating func set<Key>(
         _ key: Key.Type,
         to value: Key.Value?,
-        onShutdown: (@Sendable (Key.Value) throws -> ())? = nil
+        onShutdown: (@Sendable (Key.Value) throws -> Void)? = nil
     )
-        where Key: StorageKey
-    {
+    where Key: StorageKey {
         let key = ObjectIdentifier(Key.self)
         if let value = value {
             self.storage[key] = Value(value: value, onShutdown: onShutdown)
@@ -124,17 +128,16 @@ public struct Storage: Sendable {
             existing.shutdown(logger: self.logger)
         }
     }
-    
+
     /// Set or remove a value for a given key, optionally providing an async shutdown closure for the value.
     ///
     /// If a key that has a shutdown closure is removed by this method, the closure **is** invoked.
     public mutating func setWithAsyncShutdown<Key>(
         _ key: Key.Type,
         to value: Key.Value?,
-        onShutdown: (@Sendable (Key.Value) async throws -> ())? = nil
+        onShutdown: (@Sendable (Key.Value) async throws -> Void)? = nil
     ) async
-        where Key: StorageKey
-    {
+    where Key: StorageKey {
         let key = ObjectIdentifier(Key.self)
         if let value = value {
             self.storage[key] = Value(value: value, onShutdown: nil, onAsyncShutdown: onShutdown)
@@ -143,24 +146,23 @@ public struct Storage: Sendable {
             await existing.asyncShutdown(logger: self.logger)
         }
     }
-    
+
     // Provides a way to set an async shutdown with an async call to avoid breaking the API
     // This must not be called when a value already exists in storage
     mutating func setFirstTime<Key>(
         _ key: Key.Type,
         to value: Key.Value?,
-        onShutdown: (@Sendable (Key.Value) throws -> ())? = nil,
-        onAsyncShutdown: (@Sendable (Key.Value) async throws -> ())? = nil
+        onShutdown: (@Sendable (Key.Value) throws -> Void)? = nil,
+        onAsyncShutdown: (@Sendable (Key.Value) async throws -> Void)? = nil
     )
-        where Key: StorageKey
-    {
+    where Key: StorageKey {
         let key = ObjectIdentifier(Key.self)
         precondition(self.storage[key] == nil, "You must not call this when a value already exists in storage")
         if let value {
             self.storage[key] = Value(value: value, onShutdown: onShutdown, onAsyncShutdown: onAsyncShutdown)
         }
     }
-    
+
     /// For every key in the container having a shutdown closure, invoke the closure. Designed to
     /// be invoked during an explicit app shutdown process or in a reference type's `deinit`.
     @available(*, noasync, message: "Use the async asyncShutdown() method instead.")
@@ -169,7 +171,7 @@ public struct Storage: Sendable {
             value.shutdown(logger: self.logger)
         }
     }
-    
+
     /// For every key in the container having a shutdown closure, invoke the closure. Designed to
     /// be invoked during an explicit app shutdown process or in a reference type's `deinit`.
     public func asyncShutdown() async {

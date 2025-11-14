@@ -39,10 +39,10 @@ public final class Application: Sendable {
             self._environment.withLockedValue { $0 = newValue }
         }
     }
-    
+
     //public let eventLoopGroupProvider: EventLoopGroupProvider
     //public let eventLoopGroup: EventLoopGroup
-    
+
     public var storage: Storage {
         get {
             self._storage.withLockedValue { $0 }
@@ -51,11 +51,11 @@ public final class Application: Sendable {
             self._storage.withLockedValue { $0 = newValue }
         }
     }
-    
+
     public var didShutdown: Bool {
         self._didShutdown.withLockedValue { $0 }
     }
-    
+
     public var logger: Logger {
         get {
             self._logger.withLockedValue { $0 }
@@ -111,7 +111,7 @@ public final class Application: Sendable {
             self._locks.withLockedValue { $0 = newValue }
         }
     }
-    
+
     public var isRunning: Bool {
         get {
             self._isRunning.withLockedValue { $0 }
@@ -124,14 +124,19 @@ public final class Application: Sendable {
 
     public enum EventLoopGroupProvider: Sendable {
         case shared(EventLoopGroup)
-        @available(*, deprecated, renamed: "singleton", message: "Use '.singleton' for a shared 'EventLoopGroup', for better performance")
+        @available(
+            *,
+            deprecated,
+            renamed: "singleton",
+            message: "Use '.singleton' for a shared 'EventLoopGroup', for better performance"
+        )
         case createNew
-        
+
         public static var singleton: EventLoopGroupProvider {
             .shared(MultiThreadedEventLoopGroup.singleton)
         }
     }
-    
+
     public let eventLoopGroupProvider: EventLoopGroupProvider
     public let eventLoopGroup: EventLoopGroup
     public let isBooted: NIOLockedValueBox<Bool>
@@ -146,7 +151,7 @@ public final class Application: Sendable {
 
     /// The PeerID of our libp2p instance
     public let peerID: PeerID
-    
+
     public init(
         _ environment: Environment = .development,
         peerID: PeerID = try! PeerID(.Ed25519),
@@ -173,7 +178,7 @@ public final class Application: Sendable {
 
         let logger = logger ?? .init(label: "libp2p.application[\(peerID.shortDescription)]")
         self._logger = .init(logger)
-        
+
         self._traceAutoPropagation = .init(false)
         self._storage = .init(.init(logger: logger))
         self._lifecycle = .init(.init())
@@ -281,7 +286,7 @@ public final class Application: Sendable {
             throw error
         }
     }
-    
+
     /// Starts the ``Application`` asynchronous using the ``startup()`` method, then waits for any running tasks
     /// to complete. If your application is started without arguments, the default argument is used.
     ///
@@ -329,8 +334,13 @@ public final class Application: Sendable {
         context.application = self
         try await self.console.run(combinedCommands, with: context)
     }
-    
-    @available(*, noasync, message: "This can potentially block the thread and should not be called in an async context", renamed: "asyncBoot()")
+
+    @available(
+        *,
+        noasync,
+        message: "This can potentially block the thread and should not be called in an async context",
+        renamed: "asyncBoot()"
+    )
     /// Called when the applications starts up, will trigger the lifecycle handlers
     public func boot() throws {
         try self.isBooted.withLockedValue { booted in
@@ -348,15 +358,17 @@ public final class Application: Sendable {
             self.registerEventHandlers()
         }
     }
-    
+
     /// Called when the applications starts up, will trigger the lifecycle handlers. The asynchronous version of ``boot()``
     public func asyncBoot() async throws {
         /// Skip the boot process if already booted
-        guard !self.isBooted.withLockedValue({
-            var result = true
-            swap(&$0, &result)
-            return result
-        }) else {
+        guard
+            !self.isBooted.withLockedValue({
+                var result = true
+                swap(&$0, &result)
+                return result
+            })
+        else {
             return
         }
 
@@ -369,8 +381,13 @@ public final class Application: Sendable {
         // Register our Application Root Event Subscriptions and Handlers
         self.registerEventHandlers()
     }
-    
-    @available(*, noasync, message: "This can block the thread and should not be called in an async context", renamed: "asyncShutdown()")
+
+    @available(
+        *,
+        noasync,
+        message: "This can block the thread and should not be called in an async context",
+        renamed: "asyncShutdown()"
+    )
     public func shutdown() {
         assert(!self.didShutdown, "Application has already shut down")
         self.logger.debug("Application shutting down")
@@ -402,20 +419,20 @@ public final class Application: Sendable {
         self._didShutdown.withLockedValue { $0 = true }
         self.logger.trace("Application shutdown complete")
     }
-    
+
     public func asyncShutdown() async throws {
         assert(!self.didShutdown, "Application has already shut down")
         self.logger.debug("Application shutting down")
 
         self.logger.trace("Shutting down providers")
-        for handler in self.lifecycle.handlers.reversed()  {
+        for handler in self.lifecycle.handlers.reversed() {
             await handler.shutdownAsync(self)
         }
         self.lifecycle.handlers = []
 
         self.logger.debug("Attempting to close all connections")
         try? await self.connections.closeAllConnections().get()
-        
+
         self.logger.trace("Clearing Application storage")
         await self.storage.asyncShutdown()
         self.storage.clear()

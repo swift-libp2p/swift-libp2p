@@ -38,7 +38,7 @@ extension AsyncMiddleware {
         let promise = request.eventLoop.makePromise(of: RawResponse.self)
         promise.completeWithTask {
             let asyncResponder = AsyncBasicResponder { req in
-                return try await next.respond(to: req).get()
+                try await next.respond(to: req).get()
             }
             return try await respond(to: request, chainingTo: asyncResponder)
         }

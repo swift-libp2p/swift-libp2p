@@ -21,7 +21,7 @@
 //
 //// MARK: - Request.Body.AsyncSequenceDelegate
 //extension Request.Body {
-//    
+//
 //    /// `Request.Body.AsyncSequenceDelegate` bridges between EventLoop
 //    /// and AsyncSequence. Crucially, this type handles backpressure
 //    /// by synchronizing bytes on the `EventLoop`
@@ -94,7 +94,7 @@
 //// MARK: - Request.Body.AsyncSequence
 //extension Request.Body: AsyncSequence {
 //    public typealias Element = ByteBuffer
-//    
+//
 //    /// This wrapper generalizes our implementation.
 //    /// `RequestBody.AsyncIterator` is the override point for
 //    /// using another implementation
@@ -113,7 +113,7 @@
 //            return try await self.underlying.next()
 //        }
 //    }
-//    
+//
 //    /// Checks that the request has a body suitable for an AsyncSequence
 //    ///
 //    /// AsyncSequence streaming should use a body of type .stream().
@@ -134,7 +134,7 @@
 //           """)
 //        }
 //    }
-//    
+//
 //    /// Generates an `AsyncIterator` to stream the body’s content as
 //    /// `ByteBuffer` sequences. This implementation supports backpressure using
 //    /// `NIOAsyncSequenceProducerBackPressureStrategies`
@@ -142,7 +142,7 @@
 //    /// `ByteBuffer` sequence
 //    public func makeAsyncIterator() -> AsyncIterator {
 //        let delegate = AsyncSequenceDelegate(eventLoop: request.eventLoop)
-//        
+//
 //        let producer = NIOThrowingAsyncSequenceProducer.makeSequence(
 //            elementType: ByteBuffer.self,
 //            failureType: Error.self,
@@ -151,9 +151,9 @@
 //            finishOnDeinit: true,
 //            delegate: delegate
 //        )
-//        
+//
 //        let source = producer.source
-//        
+//
 //        self.drain { streamResult in
 //            switch streamResult {
 //            case .buffer(let buffer):
@@ -188,7 +188,7 @@
 //                return request.eventLoop.makeSucceededVoidFuture()
 //            }
 //        }
-//        
+//
 //        return AsyncIterator(underlying: producer.sequence.makeAsyncIterator())
 //    }
 //}

@@ -29,13 +29,17 @@ extension RoutesBuilder {
         handlers: [Application.ChildChannelHandlers.Provider] = [],
         use closure: @Sendable @escaping (Request) async throws -> Response
     ) -> Route
-    where Response: AsyncResponseEncodable
-    {
-        return self.on(path, body: body, handlers: handlers, use: { request in
-            return try await closure(request)
-        })
+    where Response: AsyncResponseEncodable {
+        self.on(
+            path,
+            body: body,
+            handlers: handlers,
+            use: { request in
+                try await closure(request)
+            }
+        )
     }
-    
+
     @discardableResult
     @preconcurrency
     public func on<Response: Libp2pSendableMetatype>(
@@ -44,10 +48,9 @@ extension RoutesBuilder {
         handlers: [Application.ChildChannelHandlers.Provider] = [],
         use closure: @Sendable @escaping (Request) async throws -> Response
     ) -> Route
-    where Response: AsyncResponseEncodable
-    {
+    where Response: AsyncResponseEncodable {
         let responder = AsyncBasicResponder { request in
-            return try await closure(request).encodeResponse(for: request)
+            try await closure(request).encodeResponse(for: request)
         }
         let route = Route(
             path: path,

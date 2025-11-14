@@ -27,7 +27,7 @@ public final class Route: CustomStringConvertible, Sendable {
             self.sendableBox.withLockedValue { $0.path = newValue }
         }
     }
-    
+
     public var responder: Responder {
         get {
             self.sendableBox.withLockedValue { $0.responder }
@@ -36,7 +36,7 @@ public final class Route: CustomStringConvertible, Sendable {
             self.sendableBox.withLockedValue { $0.responder = newValue }
         }
     }
-    
+
     public var handlers: [Application.ChildChannelHandlers.Provider] {
         get {
             self.sendableBox.withLockedValue { $0.handlers }
@@ -45,7 +45,7 @@ public final class Route: CustomStringConvertible, Sendable {
             self.sendableBox.withLockedValue { $0.handlers = newValue }
         }
     }
-    
+
     public var requestType: Any.Type {
         get {
             self.sendableBox.withLockedValue { $0.requestType }
@@ -54,7 +54,7 @@ public final class Route: CustomStringConvertible, Sendable {
             self.sendableBox.withLockedValue { $0.requestType = newValue }
         }
     }
-    
+
     public var responseType: Any.Type {
         get {
             self.sendableBox.withLockedValue { $0.responseType }
@@ -78,7 +78,7 @@ public final class Route: CustomStringConvertible, Sendable {
         let path = box.path.map { "\($0)" }.joined(separator: "/")
         return "/\(path)"
     }
-    
+
     struct SendableBox: Sendable {
         var path: [PathComponent]
         var responder: Responder
@@ -87,7 +87,7 @@ public final class Route: CustomStringConvertible, Sendable {
         var responseType: Any.Type
         var userInfo: [AnySendableHashable: Sendable]
     }
-    
+
     let sendableBox: NIOLockedValueBox<SendableBox>
 
     public init(

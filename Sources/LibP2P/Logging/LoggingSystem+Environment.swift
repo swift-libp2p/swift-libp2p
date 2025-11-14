@@ -35,7 +35,7 @@ extension LoggingSystem {
         try self.bootstrap(from: &environment) { level in
             let console = Terminal()
             return { (label: String) in
-                return ConsoleLogger(label: label, console: console, level: level)
+                ConsoleLogger(label: label, console: console, level: level)
             }
         }
     }
@@ -56,12 +56,12 @@ extension Logging.Logger.Level {
         struct LogSignature: CommandSignature {
             @Option(name: "log", help: "Change log level")
             var level: Logger.Level?
-            init() { }
+            init() {}
         }
 
         // Determine log level from environment.
         return try LogSignature(from: &environment.commandInput).level
             ?? Environment.process.LOG_LEVEL
-            ?? (environment == .production ? .notice: .info)
+            ?? (environment == .production ? .notice : .info)
     }
 }

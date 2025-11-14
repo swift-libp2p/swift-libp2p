@@ -25,7 +25,7 @@ public struct AsyncBasicResponder: AsyncResponder {
 
     /// The ChannelHandlers that should be installed on the ChildChannel Pipeline
     private let handlers: [ChannelHandler & Sendable]
-    
+
     /// Create a new `BasicResponder`.
     ///
     ///     let notFound: Responder = BasicResponder { req in
@@ -44,9 +44,9 @@ public struct AsyncBasicResponder: AsyncResponder {
     }
 
     public func respond(to request: Request) async throws -> RawResponse {
-        return try await closure(request)
+        try await closure(request)
     }
-    
+
     public func pipelineConfig(for protocol: String, on: any Connection) -> [any ChannelHandler]? {
         self.handlers
     }

@@ -124,7 +124,7 @@ extension Application {
                 return new
             }
         }
-        
+
         public var asyncCommand: ServeCommand {
             get async {
                 if let existing = self.application.storage.get(CommandKey.self) {

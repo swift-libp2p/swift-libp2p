@@ -203,7 +203,7 @@ extension Application {
 
         @preconcurrency public func use<R: AddressResolver>(_ makeResolver: @Sendable @escaping (Application) -> (R)) {
             let resolver = makeResolver(self.application)
-            self.storage.resolvers.withLockedValue{ $0[R.key] = resolver }
+            self.storage.resolvers.withLockedValue { $0[R.key] = resolver }
         }
 
         let application: Application

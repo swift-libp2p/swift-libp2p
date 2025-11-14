@@ -16,9 +16,9 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
+import AsyncKit
 import NIOCore
 import NIOPosix
-import AsyncKit
 import _NIOFileSystem
 
 extension Environment {
@@ -47,13 +47,16 @@ extension Environment {
     /// - Important: Do _not_ use `.wait()` if loading a secret at any time after the app has booted, such as while
     ///   handling a `Request`. Chain the result as you would any other future instead.
     @available(*, deprecated, message: "Use an async version of secret instead")
-    public static func secret(key: String, fileIO: NonBlockingFileIO, on eventLoop: EventLoop) -> EventLoopFuture<String?> {
+    public static func secret(
+        key: String,
+        fileIO: NonBlockingFileIO,
+        on eventLoop: EventLoop
+    ) -> EventLoopFuture<String?> {
         guard let filePath = self.get(key) else {
             return eventLoop.future(nil)
         }
         return self.secret(path: filePath, fileIO: fileIO, on: eventLoop)
     }
-
 
     /// Load the content of a file at a given path as a secret.
     ///
@@ -66,17 +69,22 @@ extension Environment {
     ///   - On success, a succeeded future with the loaded content of the file.
     ///   - On any kind of error, a succeeded future with a value of `nil`. It is not currently possible to get error details.
     @available(*, deprecated, message: "Use an async version of secret instead")
-    public static func secret(path: String, fileIO: NonBlockingFileIO, on eventLoop: EventLoop) -> EventLoopFuture<String?> {
-        return fileIO
+    public static func secret(
+        path: String,
+        fileIO: NonBlockingFileIO,
+        on eventLoop: EventLoop
+    ) -> EventLoopFuture<String?> {
+        fileIO
             .openFile(path: path, eventLoop: eventLoop)
             .flatMap { handle, region in
                 let handleWrapper = NIOLoopBound(handle, eventLoop: eventLoop)
-                return fileIO
+                return
+                    fileIO
                     .read(fileRegion: region, allocator: .init(), eventLoop: eventLoop)
                     .always { _ in try? handleWrapper.value.close() }
             }
             .map { buffer -> String in
-                return buffer
+                buffer
                     .getString(at: buffer.readerIndex, length: buffer.readableBytes)!
                     .trimmingCharacters(in: .whitespacesAndNewlines)
             }
@@ -97,7 +105,8 @@ extension Environment {
         do {
             return try await FileSystem.shared.withFileHandle(forReadingAt: .init(path)) { handle in
                 let buffer = try await handle.readToEnd(maximumSizeAllowed: .megabytes(32))
-                return buffer
+                return
+                    buffer
                     .getString(at: buffer.readerIndex, length: buffer.readableBytes)!
                     .trimmingCharacters(in: .whitespacesAndNewlines)
             }

@@ -58,7 +58,7 @@ public final class ServeCommand: AsyncCommand, Sendable {
     public var help: String {
         "Begins serving the app over HTTP."
     }
-    
+
     struct SendableBox: Sendable {
         var didShutdown: Bool
         var running: Application.Running?
@@ -66,7 +66,7 @@ public final class ServeCommand: AsyncCommand, Sendable {
         var servers: [Server] = []
         var nextPort: Int?
     }
-    
+
     private let box: NIOLockedValueBox<SendableBox>
 
     /// Create a new `ServeCommand`.
@@ -93,7 +93,7 @@ public final class ServeCommand: AsyncCommand, Sendable {
             let port = address.split(separator: ":").last.flatMap(String.init).flatMap(Int.init)
             try self.box.withLockedValue { box in
                 box.nextPort = port
-                
+
                 for server in context.application.servers.allServers {
                     try server.start(address: .hostname(hostname, port: port))
                     box.nextPort? += 1
@@ -108,7 +108,7 @@ public final class ServeCommand: AsyncCommand, Sendable {
                     box.nextPort! += 1
                 }
             }
-            
+
         default: throw Error.incompatibleFlags
         }
 
@@ -127,7 +127,7 @@ public final class ServeCommand: AsyncCommand, Sendable {
             /// https://github.com/swift-server/swift-service-lifecycle/blob/main/Sources/UnixSignals/UnixSignalsSequence.swift#L77-L82
             signal(code, SIG_IGN)
             #endif
-            
+
             let source = DispatchSource.makeSignalSource(signal: code, queue: signalQueue)
             source.setEventHandler {
                 print()  // clear ^C
@@ -156,7 +156,7 @@ public final class ServeCommand: AsyncCommand, Sendable {
         box.signalSources = []
         self.box.withLockedValue { $0 = box }
     }
-    
+
     func asyncShutdown() async {
         var box = self.box.withLockedValue { $0 }
         box.didShutdown = true
