@@ -16,9 +16,9 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
+import ConsoleKit
 @preconcurrency import Dispatch
 import Foundation
-import ConsoleKit
 import NIOConcurrencyHelpers
 
 /// Boots the application's server. Listens for `SIGINT` and `SIGTERM` for graceful shutdown.
