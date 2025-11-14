@@ -26,7 +26,8 @@ import Logging
 //    ///     - error: `Error` to log.
 //    public func report(
 //        error: Error,
-//        file: String = #file,
+//        metadata: @autoclosure () -> Logger.Metadata? = nil,
+//        file: String = #fileID,
 //        function: String = #function,
 //        line: UInt = #line
 //    ) {
@@ -46,16 +47,8 @@ import Logging
 //            reason = abort.reason
 //            source = nil
 //            level = .warning
-//        case let localized as LocalizedError:
-//            reason = localized.localizedDescription
-//            source = nil
-//            level = .warning
-//        case let convertible as CustomStringConvertible:
-//            reason = convertible.description
-//            source = nil
-//            level = .warning
 //        default:
-//            reason = "\(error)"
+//            reason = String(reflecting: error)
 //            source = nil
 //            level = .warning
 //        }
@@ -63,6 +56,7 @@ import Logging
 //        self.log(
 //            level: level,
 //            .init(stringLiteral: reason),
+//            metadata: metadata(),
 //            file: source?.file ?? file,
 //            function: source?.function ?? function,
 //            line: numericCast(source?.line ?? line)
