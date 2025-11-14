@@ -30,9 +30,7 @@ public
     ) -> UnsafeMutablePointer<CChar>?
 
 func _stdlib_demangleName(_ mangledName: String) -> String {
-    mangledName.utf8CString.withUnsafeBufferPointer {
-        (mangledNameUTF8CStr) in
-
+    mangledName.utf8CString.withUnsafeBufferPointer { mangledNameUTF8CStr in
         let demangledNamePtr = _stdlib_demangleImpl(
             mangledName: mangledNameUTF8CStr.baseAddress,
             mangledNameLength: UInt(mangledNameUTF8CStr.count - 1),
@@ -49,7 +47,3 @@ func _stdlib_demangleName(_ mangledName: String) -> String {
         return mangledName
     }
 }
-
-/// backtrace is included on macOS and Linux, with the same ABI.
-@_silgen_name("backtrace")
-func backtrace(_: UnsafeMutablePointer<UnsafeMutableRawPointer?>!, _: UInt32) -> UInt32
