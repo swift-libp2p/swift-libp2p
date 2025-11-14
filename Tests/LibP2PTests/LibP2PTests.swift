@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import Multiaddr
 import Testing
 
 @testable import LibP2P
@@ -48,6 +49,22 @@ struct LibP2PTests {
         #expect(app.environment == Environment.testing)
 
         try await app.startup()
+
+        try await Task.sleep(for: .seconds(1))
+
+        try await app.asyncShutdown()
+    }
+
+    @Test func testLibP2P_Async_ListeningAddress() async throws {
+        let app = Application(.testing)
+
+        #expect(app.environment == Environment.testing)
+
+        app.servers.use(.tcp)
+
+        try await app.startup()
+
+        #expect(try app.listenAddresses == [Multiaddr("/ip4/127.0.0.1/tcp/10000")])
 
         try await Task.sleep(for: .seconds(1))
 
