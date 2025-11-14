@@ -50,15 +50,14 @@ public struct Environment: Sendable, Equatable {
     ///     - arguments: `CommandInput` to parse `--env` flag from.
     /// - returns: The detected environment, or default env.
     public static func detect(from commandInput: inout CommandInput) throws -> Environment {
-        print("CommandInput: \(commandInput)")
+        //print("CommandInput: \(commandInput)")
         self.sanitize(commandInput: &commandInput)
+        //print("Sanitized CommandInput: \(commandInput)")
 
         struct EnvironmentSignature: CommandSignature {
             @Option(name: "env", short: "e", help: "Change the application's environment")
             var environment: String?
         }
-
-        print("Sanitized CommandInput: \(commandInput)")
 
         var env: Environment
         switch try EnvironmentSignature(from: &commandInput).environment ?? Environment.process.LIBP2P_ENV
@@ -90,7 +89,8 @@ public struct Environment: Sendable, Equatable {
         for (index, argument) in commandInput.arguments.enumerated() {
             if supportedArguments.contains(argument) {
                 argsToKeep.append(argument)
-                if commandInput.arguments.count >= index + 1 {
+                // help flags don't include an argument, the rest should
+                if argument != "-h", argument != "--help", commandInput.arguments.count >= index + 1 {
                     argsToKeep.append(commandInput.arguments[index + 1])
                 }
             }
