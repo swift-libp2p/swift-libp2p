@@ -18,19 +18,77 @@
 
 import RoutingKit
 
-public final class Route: CustomStringConvertible {
-    public var path: [PathComponent]
-    public var responder: Responder
-    public var handlers: [Application.ChildChannelHandlers.Provider]
-    public var requestType: Any.Type
-    public var responseType: Any.Type
+public final class Route: CustomStringConvertible, Sendable {
+    public var path: [PathComponent] {
+        get {
+            self.sendableBox.withLockedValue { $0.path }
+        }
+        set {
+            self.sendableBox.withLockedValue { $0.path = newValue }
+        }
+    }
+    
+    public var responder: Responder {
+        get {
+            self.sendableBox.withLockedValue { $0.responder }
+        }
+        set {
+            self.sendableBox.withLockedValue { $0.responder = newValue }
+        }
+    }
+    
+    public var handlers: [Application.ChildChannelHandlers.Provider] {
+        get {
+            self.sendableBox.withLockedValue { $0.handlers }
+        }
+        set {
+            self.sendableBox.withLockedValue { $0.handlers = newValue }
+        }
+    }
+    
+    public var requestType: Any.Type {
+        get {
+            self.sendableBox.withLockedValue { $0.requestType }
+        }
+        set {
+            self.sendableBox.withLockedValue { $0.requestType = newValue }
+        }
+    }
+    
+    public var responseType: Any.Type {
+        get {
+            self.sendableBox.withLockedValue { $0.responseType }
+        }
+        set {
+            self.sendableBox.withLockedValue { $0.responseType = newValue }
+        }
+    }
 
-    public var userInfo: [AnyHashable: Any]
+    public var userInfo: [AnySendableHashable: Sendable] {
+        get {
+            self.sendableBox.withLockedValue { $0.userInfo }
+        }
+        set {
+            self.sendableBox.withLockedValue { $0.userInfo = newValue }
+        }
+    }
 
     public var description: String {
-        let path = self.path.map { "\($0)" }.joined(separator: "/")
+        let box = self.sendableBox.withLockedValue { $0 }
+        let path = box.path.map { "\($0)" }.joined(separator: "/")
         return "/\(path)"
     }
+    
+    struct SendableBox: Sendable {
+        var path: [PathComponent]
+        var responder: Responder
+        var handlers: [Application.ChildChannelHandlers.Provider]
+        var requestType: Any.Type
+        var responseType: Any.Type
+        var userInfo: [AnySendableHashable: Sendable]
+    }
+    
+    let sendableBox: NIOLockedValueBox<SendableBox>
 
     public init(
         path: [PathComponent],
@@ -39,12 +97,15 @@ public final class Route: CustomStringConvertible {
         requestType: Any.Type,
         responseType: Any.Type
     ) {
-        self.path = path
-        self.responder = responder
-        self.handlers = handlers
-        self.requestType = requestType
-        self.responseType = responseType
-        self.userInfo = [:]
+        let box = SendableBox(
+            path: path,
+            responder: responder,
+            handlers: handlers,
+            requestType: requestType,
+            responseType: responseType,
+            userInfo: [:]
+        )
+        self.sendableBox = .init(box)
     }
 
     @discardableResult
