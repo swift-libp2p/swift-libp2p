@@ -77,6 +77,15 @@ extension AppConnection {
                     return
                 }
 
+                if negotiated.leftoverBytes != nil {
+                    // We shouldn't use the leftover bytes api anymore
+                    // Instead our individual handlers should handle buffering
+                    // and propogating data along the pipeline (the MSS upgrader handles
+                    // this by buffering inbound data until it's removed from the pipeline,
+                    // at which point it passes it along via a 'fireChannelRead(bufferedData)')
+                    self.logger.warning("We have leftover bytes from our upgrade")
+                }
+                
                 // - TODO: we might want to be more specific here with the position we're adding our handlers...
                 secUpgrader.upgradeConnection(self, position: .last, securedPromise: promise).flatMap {
                     self.channel.pipeline.removeHandler(name: "upgrader")
