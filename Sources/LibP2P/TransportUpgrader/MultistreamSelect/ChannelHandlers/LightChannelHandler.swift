@@ -16,16 +16,6 @@ import Foundation
 import NIOCore
 import SwiftState
 
-//protocol MessageExtractable {
-//    func messageBytes() -> ByteBuffer
-//}
-
-//protocol IdentifiedStream {
-//    var id:ObjectIdentifier { get }
-//}
-
-//protocol MessageExtractableHandler:ChannelInboundHandler where InboundOut:MessageExtractable { }
-
 internal final class LightMultistreamSelectHandler: ChannelInboundHandler, RemovableChannelHandler {
     //TODO: Have this be of type `Message` or `DecryptedMessage` (uvarint length prefixed, newline delimited, utf8 bytebuffer)
     public typealias InboundIn = ByteBuffer
@@ -37,42 +27,10 @@ internal final class LightMultistreamSelectHandler: ChannelInboundHandler, Remov
     /// Wether we are listening or initiating the mss negotiation (dialers are expected to initiate the negotiation, listeners / hosts are expected to listen / reply)
     private let mode: LibP2P.Mode
 
-    /// This is a weak link back to our parent connection. We can use this delegate to let the connection know when the channel has reached certain lifecycle events
-    //    private let upgradeType:UpgradeType
-
     enum Errors: Error {
         case invalidNegotiatedProtocol
         case exhaustedProtocolSupport
     }
-
-    /// This can be extended to support additional protocols used for skipping sec/mux negotiations if we know we don't support the final protocol...
-    //    enum UpgradeType {
-    //        case security(protocols:[SecurityProtocolInstaller], peerID:PeerID, expectedPeerID:PeerID?, promise:EventLoopPromise<(String, PeerID?)>)
-    //        case muxer(protocols:[MuxerProtocolInstaller], supportedSecondaryProtocols:[LibP2P.ProtocolRegistration], peerID:PeerID, promise:EventLoopPromise<String>)
-    //        case standard(protocols:[LibP2P.ProtocolRegistration], promise:EventLoopPromise<(String, Channel)>)
-    //
-    //        var protocolStrings:[String] {
-    //            switch self {
-    //            case .security(let protocols, _, _, _):
-    //                return protocols.map { $0.protocolString() }
-    //            case .muxer(let protocols, _, _, _):
-    //                return protocols.map { $0.protocolString() }
-    //            case .standard(let protocols, _):
-    //                return protocols.map { $0.protocolString() }
-    //            }
-    //        }
-    //
-    //        func fail(error:Error) {
-    //            switch self {
-    //            case .security(_, _, _, let promise):
-    //                promise.fail(error)
-    //            case .muxer(_, _, _, let promise):
-    //                promise.fail(error)
-    //            case .standard(_, let promise):
-    //                promise.fail(error)
-    //            }
-    //        }
-    //    }
 
     private enum MSSState: StateType {
         case initialized
@@ -126,12 +84,10 @@ internal final class LightMultistreamSelectHandler: ChannelInboundHandler, Remov
         self.uuid = uuid
         self.logger = logger
         self.mode = mode
-        //self.upgradeType = upgradeType
         self.state = StateMachine<MSSState, MessageEvent>(state: .initialized)
         self.negotiatedPromise = upgradePromise
         supportedProtocols = protocols
 
-        //self.protocolNegotiator = Negotiator(mode: mode, handledProtocols: protocols, loggerID: String(self.uuid.prefix(5)))
         self.protocolNegotiator = Negotiator(mode: mode, handledProtocols: protocols, logger: logger)
 
         self.state = StateMachine<MSSState, MessageEvent>(state: .initialized) { machine in
@@ -209,7 +165,6 @@ internal final class LightMultistreamSelectHandler: ChannelInboundHandler, Remov
         logger.error("ErrorCaught:\(error)")
 
         /// Fail our upgrade promise...
-        //upgradeType.fail(error: error)
         negotiatedPromise.fail(error)
 
         // As we are not really interested getting notified on success or failure we just pass nil as promise to
@@ -300,11 +255,6 @@ internal final class LightMultistreamSelectHandler: ChannelInboundHandler, Remov
 
     private func handleBufferMessage(_ buffer: inout ByteBuffer, context: ChannelHandlerContext) -> MSSState? {
         // Buffer any messages we might recieve while we're installing the negotiatied ChannelHandlers...
-        //self.logger.warning("TODO: Forwarding leftover bytes after protocol upgrade '\(Array<UInt8>(buffer.readableBytesView).asString(base: .base16))'")
-        //        guard self.buffer == nil else {
-        //            self.logger.warning("TODO: handle multiple buffers '\(Array<UInt8>(buffer.readableBytesView).asString(base: .base16))'")
-        //            return nil
-        //        }
         if self.buffer != nil {
             self.logger.warning("Appending multiple buffers while waiting to be removed!")
             self.buffer?.writeBuffer(&buffer)
@@ -314,127 +264,3 @@ internal final class LightMultistreamSelectHandler: ChannelInboundHandler, Remov
         return nil
     }
 }
-
-//            switch upgradeType {
-//            case .security(let protocols, let peerID, let expectedPeerID, let promise):
-//                // We found a common protocol we agree on.
-//                guard let negotiatedProto = protocols.first(where: { $0.protocolString() == negotiatedProtocol }) else {
-//                    self.logger.error("Invalid Negotiated Protocol Returned. '\(negotiatedProtocol)' is not present in our SupportedProtocols list. Aborting Connection.")
-//                    self.upgradeType.fail(error: Errors.invalidNegotiatedProtocol)
-//                    context.close(mode: .all, promise: nil)
-//                    return nil
-//                }
-//
-//                // Make sure to send the response if it's not nil
-//                logger.debug("We aggreed on the protocol `\(negotiatedProto)`, echoing back proto and installing the appropriate handlers")
-//                if let response = response {
-//                    self.writeAndFlush(response, on: context, promise: nil)
-//                }
-//
-//
-//                let secPromise = context.eventLoop.makePromise(of: (Bool, PeerID?).self)
-//
-//                // Install the negotiated proto handlers and remove oursevles from the pipeline
-//                // We install the handlers after ourself, incase we've received extra bytes, these bytes need to be passed into the newly installed handlers and processed...
-//                negotiatedProto.installHandlers(on: context, at: .after(self), peerID: peerID, mode: self.mode, secured: secPromise, expectedRemotePeerID: expectedPeerID?.b58String).flatMap { _ -> EventLoopFuture<Void> in
-//                    //Forward any leftover bytes to the newly installed handlers...
-//                    if let leftover = leftoverBytes {
-//                        self.logger.warning("Forward leftover bytes after protocol upgrade '\(leftover.asString(base: .base16))'")
-//                        context.fireChannelRead(self.wrapInboundOut( context.channel.allocator.buffer(bytes: leftover) ))
-//                    }
-//                    return context.pipeline.removeHandler(self)
-//                }.and(secPromise.futureResult).whenComplete { result in
-//                    switch result {
-//                    case .failure(let err):
-//                        context.close(mode: .all, promise: nil)
-//                        promise.fail(err)
-//                    case .success(let t):
-//                        self.logger.info("Negotiated middleware handlers installed successfully")
-//                        self.state = nil
-//                        promise.succeed((negotiatedProtocol, t.1.1))
-//                    }
-//                }
-//
-//
-//            case .muxer(let protocols, let secondaryProtocols, let localPeer, let promise):
-//                // We found a common protocol we agree on.
-//                guard let negotiatedProto = protocols.first(where: { $0.protocolString() == negotiatedProtocol }) else {
-//                    self.logger.error("Invalid Negotiated Protocol Returned. '\(negotiatedProtocol)' is not present in our SupportedProtocols list. Aborting Connection.")
-//                    self.upgradeType.fail(error: Errors.invalidNegotiatedProtocol)
-//                    context.close(mode: .all, promise: nil)
-//                    return nil
-//                }
-//
-//                // Make sure to send the response if it's not nil
-//                logger.debug("We aggreed on the protocol `\(negotiatedProto)`, echoing back proto and installing the appropriate handlers")
-//                if let response = response {
-//                    self.writeAndFlush(response, on: context, promise: nil)
-//                }
-//
-//                let muxPromise = context.eventLoop.makePromise(of: Void.self)
-//
-//                // Install the negotiated proto handlers and remove oursevles from the pipeline
-//                // We install the handlers after ourself, incase we've received extra bytes, these bytes need to be passed into the newly installed handlers and processed...
-//                negotiatedProto.installHandlers(on: context, at: .after(self), localPeer: localPeer, mode: mode, supportedProtocols: secondaryProtocols, upgraded: muxPromise).flatMap { _ -> EventLoopFuture<Void> in
-//                    //Forward any leftover bytes to the newly installed handlers...
-//                    if let leftover = leftoverBytes {
-//                        self.logger.warning("Forward leftover bytes after protocol upgrade '\(leftover.asString(base: .base16))'")
-//                        context.fireChannelRead(self.wrapInboundOut( context.channel.allocator.buffer(bytes: leftover) ))
-//                    }
-//                    return context.pipeline.removeHandler(self)
-//                }.and(muxPromise.futureResult).whenComplete { result in
-//                    switch result {
-//                    case .failure(let err):
-//                        context.close(mode: .all, promise: nil)
-//                        promise.fail(err)
-//                    case .success:
-//                        self.logger.info("Muxer installed successfully")
-//                        self.state = nil
-//                        promise.succeed(negotiatedProtocol)
-//                    }
-//                }
-//
-//            case .standard(let protocols, let promise):
-//                // We found a common protocol we agree on.
-//                guard let negotiatedProto = protocols.first(where: { $0.protocolString() == negotiatedProtocol }) else {
-//                    self.logger.error("Invalid Negotiated Protocol Returned. '\(negotiatedProtocol)' is not present in our SupportedProtocols list. Aborting Connection.")
-//                    self.upgradeType.fail(error: Errors.invalidNegotiatedProtocol)
-//                    context.close(mode: .all, promise: nil)
-//                    return nil
-//                }
-//
-//                // Make sure to send the response if it's not nil
-//                logger.debug("We aggreed on the protocol `\(negotiatedProto)`, echoing back proto and installing the appropriate handlers")
-//                if let response = response {
-//                    self.writeAndFlush(response, on: context, promise: nil)
-//                }
-//
-//                var handlers:[ChannelHandler] = []
-//                handlers.append(contentsOf: negotiatedProto.middleware)
-//                handlers.append(negotiatedProto.finalHandler)
-//
-//                // Install the negotiated proto handlers and remove oursevles from the pipeline
-//                context.pipeline.addHandlers(handlers, position: .after(self)).flatMap { _ -> EventLoopFuture<Void> in
-//                    //Forward any leftover bytes to the state machine (make sure we actually want to do this, and that we deliver the messages in the correct order)
-//                    if let leftover = leftoverBytes {
-//                        self.logger.warning("TODO: Forward leftover bytes after protocol upgrade '\(leftover.asString(base: .base16))'")
-//                        context.fireChannelRead(self.wrapOutboundOut( context.channel.allocator.buffer(bytes: leftover) ))
-//                    }
-//
-//                    return context.pipeline.removeHandler(self)
-//                }.whenComplete { result in
-//                    switch result {
-//                    case .failure(let err):
-//                        self.logger.error("Failed to install our negotiated handlers, aborting connection")
-//                        self.logger.error("Error: \(err)")
-//                        context.close(mode: .all, promise: nil)
-//                        promise.fail(err)
-//                    case .success:
-//                        self.logger.info("Negotiated middleware handlers installed successfully")
-//                        promise.succeed( (negotiatedProtocol, context.channel) )
-//                    }
-//                    self.state = nil
-//                    //self.delegate = nil
-//                }
-//
-//            }
