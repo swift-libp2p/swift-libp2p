@@ -70,8 +70,9 @@ internal final class LightMultistreamSelectHandler: ChannelInboundHandler, Remov
     /// Instead of having our own id, maybe we should inherit from connection, so we can filter/sort by connection...
     private let uuid: String
 
-    //private let removalToken:RemovalToken
-
+    /// This buffer is used to accumulate inbound data that is received
+    /// after the negotiation is successful and before this handler is removed from the pipeline
+    /// The accumulated data is fired along the pipline in the `handlerRemoved(context:)` function
     private var buffer: ByteBuffer? = nil
 
     init(
@@ -105,7 +106,7 @@ internal final class LightMultistreamSelectHandler: ChannelInboundHandler, Remov
                     return self.handleNegotiationMessage(buf, context: ctx)
 
                 case (.message(var buf, let ctx), .negotiated):
-                    // Buffer reads until handlers have been installed i guess...
+                    // Buffer reads until handlers have been installed and we are removed
                     return self.handleBufferMessage(&buf, context: ctx)
 
                 default:
