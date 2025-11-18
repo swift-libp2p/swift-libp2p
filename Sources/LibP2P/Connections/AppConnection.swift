@@ -77,6 +77,15 @@ extension AppConnection {
                     return
                 }
 
+                if negotiated.leftoverBytes != nil {
+                    // We shouldn't use the leftover bytes api anymore
+                    // Instead our individual handlers should handle buffering
+                    // and propogating data along the pipeline (the MSS upgrader handles
+                    // this by buffering inbound data until it's removed from the pipeline,
+                    // at which point it passes it along via a 'fireChannelRead(bufferedData)')
+                    self.logger.error("We have leftover bytes from our upgrade")
+                }
+
                 // - TODO: we might want to be more specific here with the position we're adding our handlers...
                 secUpgrader.upgradeConnection(self, position: .last, securedPromise: promise).flatMap {
                     self.channel.pipeline.removeHandler(name: "upgrader")
@@ -113,6 +122,15 @@ extension AppConnection {
                 guard let muxUpgrader = self.application.muxers.upgrader(forKey: negotiated.protocol) else {
                     promise.fail(Application.Connections.Errors.invalidProtocolNegotatied)
                     return
+                }
+
+                if negotiated.leftoverBytes != nil {
+                    // We shouldn't use the leftover bytes api anymore
+                    // Instead our individual handlers should handle buffering
+                    // and propogating data along the pipeline (the MSS upgrader handles
+                    // this by buffering inbound data until it's removed from the pipeline,
+                    // at which point it passes it along via a 'fireChannelRead(bufferedData)')
+                    self.logger.error("We have leftover bytes from our upgrade")
                 }
 
                 muxUpgrader.upgradeConnection(self, muxedPromise: promise).flatMap {
