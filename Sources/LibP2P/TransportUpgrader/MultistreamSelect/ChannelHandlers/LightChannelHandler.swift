@@ -172,7 +172,7 @@ internal final class LightMultistreamSelectHandler: ChannelInboundHandler, Remov
         // reduce allocations.
         context.close(promise: nil)
 
-        /// Go ahead an dereference everything we can...
+        /// Go ahead and dereference everything we can...
         self.state = nil
     }
 
@@ -232,17 +232,19 @@ internal final class LightMultistreamSelectHandler: ChannelInboundHandler, Remov
                 self.writeAndFlush(response, on: context, promise: nil)
             }
 
-            let lo: ByteBuffer?
-            if let leftoverBytes = leftoverBytes {
-                lo = context.channel.allocator.buffer(bytes: leftoverBytes)
-            } else {
-                lo = nil
+            // Buffer any remaining data
+            if let leftoverBytes {
+                if self.buffer != nil {
+                    self.buffer?.writeBytes(leftoverBytes)
+                } else {
+                    self.buffer = context.channel.allocator.buffer(bytes: leftoverBytes)
+                }
             }
 
-            // Do we just return our negotiated protocol string and then let the connection handle the installation of the handlers?
-            // How do we handle buffering data during this process and whos responsible for passing the data along?
-            self.negotiatedPromise.succeed((negotiatedProtocol, lo))
+            // Succeed the negotiation promise
+            self.negotiatedPromise.succeed((negotiatedProtocol, nil))
 
+            // Advance our state
             return .negotiated
 
         case .error(let error, _):
@@ -257,7 +259,7 @@ internal final class LightMultistreamSelectHandler: ChannelInboundHandler, Remov
     private func handleBufferMessage(_ buffer: inout ByteBuffer, context: ChannelHandlerContext) -> MSSState? {
         // Buffer any messages we might recieve while we're installing the negotiatied ChannelHandlers...
         if self.buffer != nil {
-            self.logger.warning("Appending multiple buffers while waiting to be removed!")
+            self.logger.trace("Appending multiple buffers while waiting to be removed!")
             self.buffer?.writeBuffer(&buffer)
             return nil
         }
