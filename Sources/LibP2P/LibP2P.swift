@@ -411,6 +411,9 @@ public final class Application: Sendable {
 
         }.futureResult.wait()
 
+        self.logger.trace("Clearing Application storage")
+        self.storage.clear()
+        
         switch self.eventLoopGroupProvider {
         case .shared:
             self.logger.trace("Running on shared EventLoopGroup. Not shutting down EventLoopGroup.")
@@ -422,9 +425,6 @@ public final class Application: Sendable {
                 self.logger.warning("Shutting down EventLoopGroup failed: \(error)")
             }
         }
-
-        self.logger.trace("Clearing Application storage")
-        self.storage.clear()
 
         self._didShutdown.withLockedValue { $0 = true }
         self.logger.trace("Application shutdown complete")
@@ -443,8 +443,16 @@ public final class Application: Sendable {
         self.logger.debug("Attempting to close all connections")
         try? await self.connections.closeAllConnections().get()
 
+        self.logger.trace("Shutting Down All Registered Services")
+        await self.storage.asyncShutdown(allBut: Events.Key.self)
+        
+        try await Task.sleep(nanoseconds: 10_000_000)
+        
+        // Finally shutdown the eventbus...
+        self.logger.trace("Shutting Down EventBus")
+        await self.storage.asyncShutdown(key: Events.Key.self)
+        
         self.logger.trace("Clearing Application storage")
-        await self.storage.asyncShutdown()
         self.storage.clear()
 
         switch self.eventLoopGroupProvider {

@@ -194,6 +194,21 @@ public struct Storage: Sendable {
             await value.asyncShutdown(logger: self.logger)
         }
     }
+
+    func asyncShutdown<Key>(allBut key: Key.Type) async {
+        for (key, value) in self.storage {
+            if key == ObjectIdentifier(Key.self) { return }
+            await value.asyncShutdown(logger: self.logger)
+        }
+    }
+
+    func asyncShutdown<Key>(key: Key.Type) async {
+        for (key, value) in self.storage {
+            if key == ObjectIdentifier(Key.self) {
+                await value.asyncShutdown(logger: self.logger)
+            }
+        }
+    }
 }
 
 /// ``Storage`` uses this protocol internally to generically invoke shutdown closures for arbitrarily-
