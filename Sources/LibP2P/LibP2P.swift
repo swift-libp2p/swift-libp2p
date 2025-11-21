@@ -413,7 +413,7 @@ public final class Application: Sendable {
 
         self.logger.trace("Clearing Application storage")
         self.storage.clear()
-        
+
         switch self.eventLoopGroupProvider {
         case .shared:
             self.logger.trace("Running on shared EventLoopGroup. Not shutting down EventLoopGroup.")
@@ -445,13 +445,13 @@ public final class Application: Sendable {
 
         self.logger.trace("Shutting Down All Registered Services")
         await self.storage.asyncShutdown(allBut: Events.Key.self)
-        
+
         try await Task.sleep(nanoseconds: 10_000_000)
-        
+
         // Finally shutdown the eventbus...
         self.logger.trace("Shutting Down EventBus")
         await self.storage.asyncShutdown(key: Events.Key.self)
-        
+
         self.logger.trace("Clearing Application storage")
         self.storage.clear()
 
