@@ -171,7 +171,7 @@ public struct Storage: Sendable {
             value.shutdown(logger: self.logger)
         }
     }
-    
+
     @available(*, noasync, message: "Use the async asyncShutdown() method instead.")
     func shutdown<Key>(allBut key: Key.Type) {
         self.storage.forEach { key, val in
@@ -179,7 +179,7 @@ public struct Storage: Sendable {
             val.shutdown(logger: self.logger)
         }
     }
-    
+
     @available(*, noasync, message: "Use the async asyncShutdown() method instead.")
     func shutdown<Key>(key: Key.Type) {
         self.storage.forEach { key, val in
