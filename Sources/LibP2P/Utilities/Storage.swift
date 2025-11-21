@@ -171,6 +171,23 @@ public struct Storage: Sendable {
             value.shutdown(logger: self.logger)
         }
     }
+    
+    @available(*, noasync, message: "Use the async asyncShutdown() method instead.")
+    func shutdown<Key>(allBut key: Key.Type) {
+        self.storage.forEach { key, val in
+            if key == ObjectIdentifier(Key.self) { return }
+            val.shutdown(logger: self.logger)
+        }
+    }
+    
+    @available(*, noasync, message: "Use the async asyncShutdown() method instead.")
+    func shutdown<Key>(key: Key.Type) {
+        self.storage.forEach { key, val in
+            if key == ObjectIdentifier(Key.self) {
+                val.shutdown(logger: self.logger)
+            }
+        }
+    }
 
     /// For every key in the container having a shutdown closure, invoke the closure. Designed to
     /// be invoked during an explicit app shutdown process or in a reference type's `deinit`.
