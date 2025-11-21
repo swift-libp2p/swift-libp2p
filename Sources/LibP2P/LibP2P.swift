@@ -400,9 +400,16 @@ public final class Application: Sendable {
         self.logger.debug("Attempting to close all connections")
         try? self.connections.closeAllConnections().wait()
 
-        self.logger.trace("Clearing Application storage")
-        self.storage.shutdown()
-        self.storage.clear()
+        self.logger.trace("Shutting Down All Registered Services")
+        self.storage.shutdown(allBut: Events.Key.self)
+
+        try! self.eventLoopGroup.next().scheduleTask(in: .milliseconds(10)) {
+
+            // Finally shutdown the eventbus...
+            self.logger.trace("Shutting Down EventBus")
+            self.storage.shutdown(key: Events.Key.self)
+
+        }.futureResult.wait()
 
         switch self.eventLoopGroupProvider {
         case .shared:
@@ -415,6 +422,9 @@ public final class Application: Sendable {
                 self.logger.warning("Shutting down EventLoopGroup failed: \(error)")
             }
         }
+
+        self.logger.trace("Clearing Application storage")
+        self.storage.clear()
 
         self._didShutdown.withLockedValue { $0 = true }
         self.logger.trace("Application shutdown complete")
