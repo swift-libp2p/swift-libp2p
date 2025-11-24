@@ -401,15 +401,7 @@ public final class Application: Sendable {
         try? self.connections.closeAllConnections().wait()
 
         self.logger.trace("Shutting Down All Registered Services")
-        self.storage.shutdown(allBut: Events.Key.self)
-
-        try! self.eventLoopGroup.next().scheduleTask(in: .milliseconds(10)) {
-
-            // Finally shutdown the eventbus...
-            self.logger.trace("Shutting Down EventBus")
-            self.storage.shutdown(key: Events.Key.self)
-
-        }.futureResult.wait()
+        self.storage.shutdown(last: Events.Key.self)
 
         self.logger.trace("Clearing Application storage")
         self.storage.clear()
@@ -444,13 +436,7 @@ public final class Application: Sendable {
         try? await self.connections.closeAllConnections().get()
 
         self.logger.trace("Shutting Down All Registered Services")
-        await self.storage.asyncShutdown(allBut: Events.Key.self)
-
-        try await Task.sleep(nanoseconds: 10_000_000)
-
-        // Finally shutdown the eventbus...
-        self.logger.trace("Shutting Down EventBus")
-        await self.storage.asyncShutdown(key: Events.Key.self)
+        await self.storage.asyncShutdown(last: Events.Key.self)
 
         self.logger.trace("Clearing Application storage")
         self.storage.clear()
