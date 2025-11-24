@@ -171,17 +171,14 @@ public struct Storage: Sendable {
             value.shutdown(logger: self.logger)
         }
     }
-
-    func shutdown<Key>(allBut key: Key.Type) {
+    
+    func shutdown<Key>(last k: Key.Type) {
         for (key, value) in self.storage {
-            if key == ObjectIdentifier(Key.self) { return }
+            if key == ObjectIdentifier(k) { continue }
             value.shutdown(logger: self.logger)
         }
-    }
-
-    func shutdown<Key>(key: Key.Type) {
         for (key, value) in self.storage {
-            if key == ObjectIdentifier(Key.self) {
+            if key == ObjectIdentifier(k) {
                 value.shutdown(logger: self.logger)
             }
         }
@@ -194,17 +191,14 @@ public struct Storage: Sendable {
             await value.asyncShutdown(logger: self.logger)
         }
     }
-
-    func asyncShutdown<Key>(allBut key: Key.Type) async {
+    
+    func asyncShutdown<Key>(last k: Key.Type) async {
         for (key, value) in self.storage {
-            if key == ObjectIdentifier(Key.self) { return }
+            if key == ObjectIdentifier(k) { continue }
             await value.asyncShutdown(logger: self.logger)
         }
-    }
-
-    func asyncShutdown<Key>(key: Key.Type) async {
         for (key, value) in self.storage {
-            if key == ObjectIdentifier(Key.self) {
+            if key == ObjectIdentifier(k) {
                 await value.asyncShutdown(logger: self.logger)
             }
         }
