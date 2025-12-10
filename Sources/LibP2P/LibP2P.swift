@@ -401,15 +401,10 @@ public final class Application: Sendable {
         try? self.connections.closeAllConnections().wait()
 
         self.logger.trace("Shutting Down All Registered Services")
-        self.storage.shutdown(allBut: Events.Key.self)
+        self.storage.shutdown(last: Events.Key.self)
 
-        try! self.eventLoopGroup.next().scheduleTask(in: .milliseconds(10)) {
-
-            // Finally shutdown the eventbus...
-            self.logger.trace("Shutting Down EventBus")
-            self.storage.shutdown(key: Events.Key.self)
-
-        }.futureResult.wait()
+        self.logger.trace("Clearing Application storage")
+        self.storage.clear()
 
         switch self.eventLoopGroupProvider {
         case .shared:
@@ -443,8 +438,10 @@ public final class Application: Sendable {
         self.logger.debug("Attempting to close all connections")
         try? await self.connections.closeAllConnections().get()
 
+        self.logger.trace("Shutting Down All Registered Services")
+        await self.storage.asyncShutdown(last: Events.Key.self)
+
         self.logger.trace("Clearing Application storage")
-        await self.storage.asyncShutdown()
         self.storage.clear()
 
         switch self.eventLoopGroupProvider {
