@@ -400,8 +400,10 @@ public final class Application: Sendable {
         self.logger.debug("Attempting to close all connections")
         try? self.connections.closeAllConnections().wait()
 
+        self.logger.trace("Shutting Down All Registered Services")
+        self.storage.shutdown(last: Events.Key.self)
+
         self.logger.trace("Clearing Application storage")
-        self.storage.shutdown()
         self.storage.clear()
 
         switch self.eventLoopGroupProvider {
@@ -433,8 +435,10 @@ public final class Application: Sendable {
         self.logger.debug("Attempting to close all connections")
         try? await self.connections.closeAllConnections().get()
 
+        self.logger.trace("Shutting Down All Registered Services")
+        await self.storage.asyncShutdown(last: Events.Key.self)
+
         self.logger.trace("Clearing Application storage")
-        await self.storage.asyncShutdown()
         self.storage.clear()
 
         switch self.eventLoopGroupProvider {

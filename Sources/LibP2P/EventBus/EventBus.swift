@@ -77,11 +77,17 @@ public final class EventBus: Sendable {
 
     private let application: Application
     private let instanceID: String
+    private let logger: Logger
 
     init(application: Application, instanceID: String? = nil) {
         self.application = application
         self.instanceID = "." + (instanceID ?? UUID().uuidString)
-        application.logger.info("New EventBus Initialized: [\(self.instanceID.dropFirst())]")
+
+        var logger = application.logger
+        logger[metadataKey: "EventBus"] = .string("\(self.instanceID.dropFirst().prefix(5))")
+        self.logger = logger
+
+        self.logger.info("New EventBus Initialized")
     }
 
     public enum EventEmitter {
@@ -194,6 +200,11 @@ public final class EventBus: Sendable {
     //    }
 
     public func post(_ event: EventEmitter) {
+        guard application.isRunning else {
+            self.logger.error("Unable to post events after application shutdown")
+            self.logger.error("\(event)")
+            return
+        }
         SwiftEventBus.post(event.eventName + instanceID, sender: event.payload)
     }
 

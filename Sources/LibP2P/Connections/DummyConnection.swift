@@ -45,7 +45,7 @@ internal class DummyConnection: Connection, @unchecked Sendable {
 
     public var timeline: [ConnectionStats.Status: Date]
 
-    public init(peer: PeerID? = nil) {
+    public init(peer: PeerID? = nil, direction: ConnectionStats.Direction = .inbound) {
         let id = UUID()
         self.channel = EmbeddedChannel()
         self.logger = Logger(label: "DummyConnection")
@@ -55,7 +55,7 @@ internal class DummyConnection: Connection, @unchecked Sendable {
         self.remoteAddr = nil
         self.localPeer = try! peer ?? PeerID(.Ed25519)
         self.remotePeer = nil
-        self.stats = .init(uuid: id, direction: .inbound)
+        self.stats = .init(uuid: id, direction: direction)
         self.tags = nil
         self.registry = [:]
         self.streams = []

@@ -33,7 +33,6 @@ struct MSS: TransportUpgrader {
         logger: Logger,
         promise: EventLoopPromise<(`protocol`: String, leftoverBytes: ByteBuffer?)>
     ) -> [ChannelHandler] {
-        //print("MSS: negotiate() -> Implement Me!")
         let mss = LightMultistreamSelectHandler(
             mode: mode,
             protocols: protocols,

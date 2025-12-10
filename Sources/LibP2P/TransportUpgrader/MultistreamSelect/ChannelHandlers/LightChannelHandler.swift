@@ -70,6 +70,8 @@ internal final class LightMultistreamSelectHandler: ChannelInboundHandler, Remov
     /// Instead of having our own id, maybe we should inherit from connection, so we can filter/sort by connection...
     private let uuid: String
 
+    private let compactNegotiationEnabled: Bool
+
     /// This buffer is used to accumulate inbound data that is received
     /// after the negotiation is successful and before this handler is removed from the pipeline
     /// The accumulated data is fired along the pipline in the `handlerRemoved(context:)` function
@@ -87,6 +89,8 @@ internal final class LightMultistreamSelectHandler: ChannelInboundHandler, Remov
         self.mode = mode
         self.state = StateMachine<MSSState, MessageEvent>(state: .initialized)
         self.negotiatedPromise = upgradePromise
+        // TODO: This flag shoud be set within our Connection
+        self.compactNegotiationEnabled = !protocols.contains("/noise")
         supportedProtocols = protocols
 
         self.protocolNegotiator = Negotiator(mode: mode, handledProtocols: protocols, logger: logger)
@@ -187,7 +191,7 @@ internal final class LightMultistreamSelectHandler: ChannelInboundHandler, Remov
     private func handleChannelActive(context: ChannelHandlerContext) -> MSSState? {
 
         // We take this opportunity to initialize our Security Negotiator and send any necessary initial messages...
-        if let msg = protocolNegotiator.initialize() {
+        if let msg = protocolNegotiator.initialize(compact: self.compactNegotiationEnabled) {
             self.logger.trace("Kicking off negotiation with bytes: \(msg)")
             self.writeAndFlush(msg, on: context, promise: nil)
         }

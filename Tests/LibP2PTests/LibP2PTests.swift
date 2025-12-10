@@ -29,7 +29,7 @@ struct LibP2PTests {
 
         try app.start()
 
-        sleep(1)
+        usleep(10_000)
     }
 
     @Test func testLibP2P_Development_Environment() throws {
@@ -40,7 +40,7 @@ struct LibP2PTests {
 
         try app.start()
 
-        sleep(1)
+        usleep(10_000)
     }
 
     @Test func testLibP2P_Async() async throws {
@@ -50,7 +50,7 @@ struct LibP2PTests {
 
         try await app.startup()
 
-        try await Task.sleep(for: .seconds(1))
+        try await Task.sleep(for: .milliseconds(10))
 
         try await app.asyncShutdown()
     }
@@ -66,7 +66,7 @@ struct LibP2PTests {
 
         #expect(try app.listenAddresses == [Multiaddr("/ip4/127.0.0.1/tcp/10000")])
 
-        try await Task.sleep(for: .seconds(1))
+        try await Task.sleep(for: .milliseconds(10))
 
         try await app.asyncShutdown()
     }
@@ -82,7 +82,7 @@ struct LibP2PTests {
             ]
         )
 
-        sleep(1)
+        usleep(10_000)
 
         app.shutdown()
     }
@@ -98,7 +98,7 @@ struct LibP2PTests {
             ]
         )
 
-        try await Task.sleep(for: .seconds(1))
+        try await Task.sleep(for: .milliseconds(10))
 
         try await app.asyncShutdown()
     }
@@ -128,7 +128,7 @@ struct LibP2PTests {
             ]
         )
 
-        try await Task.sleep(for: .seconds(1))
+        try await Task.sleep(for: .milliseconds(10))
 
         try await app.asyncShutdown()
     }

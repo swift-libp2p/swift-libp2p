@@ -119,7 +119,7 @@ internal final class Negotiator {
 
         switch mode {
         case .initiator:
-            for message in mssMessages {
+            for (idx, message) in mssMessages.enumerated() {
                 self.logger.trace(
                     "Initiator Handling Message: \nHex:'\(message.asString(base: .base16))' \nUTF8:'\(String(data: Data(message), encoding: .utf8) ?? "nil")'"
                 )
@@ -146,7 +146,12 @@ internal final class Negotiator {
                         returnMessages.append(handledProtocols[protocolsTried])
                         protocolsTried += 1
                     } else {
-                        return .stillNegotiating(response: nil)
+                        if mssMessages.count > idx + 1 {
+                            // Read the next message
+                            continue
+                        } else {
+                            return .stillNegotiating(response: nil)
+                        }
                     }
 
                 // When in initiator mode, should we receive LS messages???
