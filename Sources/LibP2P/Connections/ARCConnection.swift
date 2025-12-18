@@ -165,6 +165,7 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
         default:
             break
         }
+        self.cancelTimeoutTask()
         self.logger.trace("Deinitialized")
     }
 
@@ -196,34 +197,52 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
     /// - Note: We take this opportunity to check if there are any active streams and kick off our idleTimeoutTask if there isn't.
     private func onStreamClosed(_ stream: LibP2PCore.Stream) {
         self.logger.trace("On Stream Closed...")
-        if self.newStreamCache.isEmpty && self.pendingStreamCache.isEmpty {
-            self.logger.trace("No Pending Streams")
-        }
-        if let mux = self.muxer, mux.streams.isEmpty {
-            self.logger.trace("No Streams")
-            if self.idleTimeoutTask != nil { return }
-            self.idleTimeoutTask = self.eventLoop.scheduleTask(in: .milliseconds(self.idleTimeoutMilliseconds)) {
-                /// Ask our connection manager to terminate us...
-                //self.application.connections.closeConnection(self)
-                /// Or close ourselves and notify our connection manager
-                self.logger.trace("Idle timeout reached. Terminating self")
-                let _ = self.close()
+        if let mux = self.muxer {
+            if mux.streams.isEmpty {
+                self.logger.trace("No Streams")
+                if self.newStreamCache.isEmpty && self.pendingStreamCache.isEmpty {
+                    self.logger.trace("No Pending Streams")
+                    // Set our idle timeout task
+                    self.armTimeoutTask()
+                }
+
+            } else {
+                self.logger.trace("We still have \(mux.streams.count) streams")
+                self.logger.trace(
+                    "\(mux.streams.map { "Stream[\($0.id)][\($0.protocolCodec)][\($0.direction)][\($0.streamState)]" }.joined(separator: "\n") )"
+                )
             }
-        } else if let mux = self.muxer {
-            self.logger.trace("We still have \(mux.streams.count) streams")
-            self.logger.trace(
-                "\(mux.streams.map { "Stream[\($0.id)][\($0.protocolCodec)][\($0.direction)][\($0.streamState)]" }.joined(separator: "\n") )"
-            )
         } else {
             self.logger.trace("No Muxer Available")
+        }
+    }
+
+    private func cancelTimeoutTask() {
+        self.idleTimeoutTask?.cancel()
+        self.idleTimeoutTask = nil
+    }
+
+    private func armTimeoutTask() {
+        guard self.idleTimeoutTask == nil else { return }
+        self.idleTimeoutTask = self.eventLoop.scheduleTask(in: .milliseconds(self.idleTimeoutMilliseconds)) {
+            /// Ask our connection manager to terminate us...
+            //self.application.connections.closeConnection(self)
+
+            /// Or close ourselves and notify our connection manager
+            guard self.newStreamCache.isEmpty && self.pendingStreamCache.isEmpty else {
+                self.idleTimeoutTask = nil
+                return
+            }
+            self.logger.debug("Idle timeout reached. Terminating self")
+            let _ = self.close()
         }
     }
 
     /// Called by our Muxer when a new stream has been opened
     /// - Note: We take this opportunity to cancel the idleTimeoutTask if one exists.
     private func onNewStream(_ stream: LibP2PCore.Stream) {
-        if let idleTimeoutTask = self.idleTimeoutTask {
-            idleTimeoutTask.cancel()
+        self.eventLoop.execute {
+            self.cancelTimeoutTask()
             self.logger.trace("Notified of new stream, canceling existing idleTimeoutTask")
         }
     }
@@ -356,6 +375,10 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
     /// Take this opportunity to configure the child channels pipeline before data transmission begins
     public func inboundMuxedChildChannelInitializer(_ childChannel: Channel) -> EventLoopFuture<Void> {
         let negotiationPromise = childChannel.eventLoop.makePromise(of: NegotiationResult.self)
+
+        // Cancel our idleTimeoutTask if we have one
+        self.cancelTimeoutTask()
+
         //let log = Logger(label: self.logger.label + " : Stream[\(0)][Inbound]")
         let mssHandlers: [ChannelHandler] = self.application.upgrader.negotiate(
             protocols: self.application.routes.all.map { $0.description },
@@ -433,6 +456,9 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
     public func outboundMuxedChildChannelInitializer(_ childChannel: Channel, protocol: String) -> EventLoopFuture<Void>
     {
         self.eventLoop.flatSubmit {
+            // Cancel our idleTimeoutTask if we have one
+            self.cancelTimeoutTask()
+
             guard let idx = self.newStreamCache.firstIndex(where: { $0.proto == `protocol` }) else {
                 self.logger.error("No Responder For `\(`protocol`)`")
                 self.logger.error("\(self.newStreamCache)")
@@ -631,6 +657,8 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
         )
 
         self.eventLoop.execute {
+            /// Cancel and clear our idleTimeoutTask if we have one
+            self.cancelTimeoutTask()
             /// Ask our muxer to open the stream...
             if self.isMuxed, let mux = self.muxer {
                 /// Store our responder
@@ -724,6 +752,7 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
     public func close() -> EventLoopFuture<Void> {
         //self.channel.close(mode: .all)
         self.registry = [:]
+        self.cancelTimeoutTask()
         self.logger.trace("Close called, attempting to close all streams before shutting down the channel.")
         return eventLoop.flatSubmit { () -> EventLoopFuture<Void> in
             self.onClosing().flatMap { () -> EventLoopFuture<Void> in

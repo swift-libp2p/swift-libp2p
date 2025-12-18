@@ -171,18 +171,18 @@ public struct Storage: Sendable {
             value.shutdown(logger: self.logger)
         }
     }
-    
+
     @available(*, noasync, message: "Use the async asyncShutdown() method instead.")
     func shutdown<Key>(allBut key: Key.Type) {
-        self.storage.forEach { key, val in
-            if key == ObjectIdentifier(Key.self) { return }
+        for (key, val) in self.storage {
+            if key == ObjectIdentifier(Key.self) { continue }
             val.shutdown(logger: self.logger)
         }
     }
-    
+
     @available(*, noasync, message: "Use the async asyncShutdown() method instead.")
     func shutdown<Key>(key: Key.Type) {
-        self.storage.forEach { key, val in
+        for (key, val) in self.storage {
             if key == ObjectIdentifier(Key.self) {
                 val.shutdown(logger: self.logger)
             }
