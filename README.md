@@ -121,7 +121,7 @@ lib.shutdown()
 | `swift-libp2p-tls` | 🔴 | TODO: TLS 1.3+ crypto channel | N/A |
 | **Stream Muxers** |
 | [`swift-libp2p-mplex`](//github.com/swift-libp2p/swift-libp2p-mplex) | 🟢 | MPLEX stream multiplexer | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-mplex/actions/workflows/build+test.yml/badge.svg) |
-| [`swift-libp2p-yamux`](//github.com/swift-libp2p/swift-libp2p-yamux) | 🔴 | TODO: YAMUX stream multiplexer | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-yamux/actions/workflows/build+test.yml/badge.svg)  |
+| [`swift-libp2p-yamux`](//github.com/swift-libp2p/swift-libp2p-yamux) | 🟢 | YAMUX stream multiplexer | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-yamux/actions/workflows/build+test.yml/badge.svg)  |
 | **Private Network** |
 | - | - | - | N/A |
 | **NAT Traversal** |
