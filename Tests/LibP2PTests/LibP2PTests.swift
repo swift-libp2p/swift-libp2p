@@ -44,7 +44,7 @@ struct LibP2PTests {
     }
 
     @Test func testLibP2P_Async() async throws {
-        let app = Application(.testing)
+        let app = try await Application.make(.testing, peerID: .ephemeral())
 
         #expect(app.environment == Environment.testing)
 
@@ -56,7 +56,7 @@ struct LibP2PTests {
     }
 
     @Test func testLibP2P_Async_ListeningAddress() async throws {
-        let app = Application(.testing)
+        let app = try await Application.make(.testing, peerID: .ephemeral())
 
         #expect(app.environment == Environment.testing)
 
@@ -88,7 +88,7 @@ struct LibP2PTests {
     }
 
     @Test func testLibP2PRoutes_Default_Identify_Routes_Async() async throws {
-        let app = try Application(.detect())
+        let app = try await Application.make(.detect(), peerID: .ephemeral())
 
         try await app.startup()
 
@@ -104,7 +104,7 @@ struct LibP2PTests {
     }
 
     @Test func testLibP2PRoutes_Additional_Routes_Async() async throws {
-        let app = try Application(.detect())
+        let app = try await Application.make(.detect(), peerID: .ephemeral())
 
         app.routes.group("api") { api in
             // Ensure that we can register non-async routes
