@@ -71,6 +71,8 @@ public final class ServeCommand: AsyncCommand, Sendable {
 
     private let box: NIOLockedValueBox<SendableBox>
 
+    private static let defaultPort: Int = 10_000
+
     /// Create a new `ServeCommand`.
     init() {
         let box = SendableBox(didShutdown: false, signalSources: [])
@@ -94,17 +96,16 @@ public final class ServeCommand: AsyncCommand, Sendable {
             let hostname = address.split(separator: ":").first.flatMap(String.init)
             let port = address.split(separator: ":").last.flatMap(String.init).flatMap(Int.init)
             try self.box.withLockedValue { box in
-                box.nextPort = port
-
+                box.nextPort = port ?? ServeCommand.defaultPort
                 for server in context.application.servers.allServers {
-                    try server.start(address: .hostname(hostname, port: port))
-                    box.nextPort? += 1
+                    try server.start(address: .hostname(hostname, port: box.nextPort))
+                    box.nextPort! += 1
                 }
             }
 
         case (let hostname, let port, .none, .none):  // hostname / port
             try self.box.withLockedValue { box in
-                box.nextPort = port
+                box.nextPort = port ?? ServeCommand.defaultPort
                 for server in context.application.servers.allServers {
                     try server.start(address: .hostname(hostname, port: box.nextPort!))
                     box.nextPort! += 1
