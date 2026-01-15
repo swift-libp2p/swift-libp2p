@@ -265,12 +265,24 @@ public struct DotEnvFile: Sendable {
     ///     - fileio: File loader.
     public static func read(
         path: String,
-        fileio: NonBlockingFileIO
+        fileio: NonBlockingFileIO? = nil,
+        sanitizeKeys: [String] = []
     ) async throws -> DotEnvFile {
         try await FileSystem.shared.withFileHandle(forReadingAt: .init(path)) { handle in
             let buffer = try await handle.readToEnd(maximumSizeAllowed: .megabytes(32))
             var parser = Parser(source: buffer)
-            return DotEnvFile(lines: parser.parse())
+            // This strips out sensitive info that's only needed during application boot,
+            // such as PeerID passwords and other items that don't need to stick around in memory for the lifetime of the app
+            if !sanitizeKeys.isEmpty {
+                var lines = parser.parse()
+                for key in sanitizeKeys {
+                    lines.removeAll(where: { $0.key == key })
+                }
+                return DotEnvFile(lines: lines)
+            } else {
+                return DotEnvFile(lines: parser.parse())
+            }
+
         }
     }
 
@@ -292,7 +304,7 @@ public struct DotEnvFile: Sendable {
         fileio: NonBlockingFileIO,
         overwrite: Bool = false
     ) async throws {
-        let file = try await self.read(path: path, fileio: fileio)
+        let file = try await self.read(path: path, fileio: fileio, sanitizeKeys: [KeyPairFile.ENV_PEERID_PASSWORD_KEY])
         file.load(overwrite: overwrite)
     }
 
