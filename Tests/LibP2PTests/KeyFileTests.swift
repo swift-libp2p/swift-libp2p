@@ -12,8 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Testing
 import LibP2PCrypto
+import Testing
+
 @testable import LibP2P
 
 @Suite("Libp2p KeyFile Tests", .serialized)
@@ -51,13 +52,13 @@ struct LibP2PKeyFileTests {
         // Dereference our second app
         secondApp = nil
     }
-    
+
     /// Test that a libp2p keyfile `PeerID` is generated on the first run
     /// and that the same value is persisted and subsequently re‑loaded using an inline password.
     @Test(.serialized, arguments: [LibP2PCrypto.Keys.KeyPairType.Ed25519, .RSA(bits: .B1024), .Secp256k1])
     func testLibP2P_KeyFilePersistence_Password(_ keyType: LibP2PCrypto.Keys.KeyPairType) async throws {
         let keyFilePath = KeyPairFile.Location.projectRoot.path(for: .testing, type: keyType)
-        
+
         defer {
             // Removing the test key here should be okay, because peerID's shouldn't exist in the
             // root dir of swift-libp2p, a users keys should be located in their app / project dir
@@ -71,7 +72,7 @@ struct LibP2PKeyFileTests {
                 Issue.record(error)
             }
         }
-        
+
         // PeerID Persistence Mode
         let keyPairFile: KeyPairFile = .persistent(
             type: keyType,
@@ -89,7 +90,7 @@ struct LibP2PKeyFileTests {
         firstApp = nil
 
         // Ensure the file was written to disk
-        #expect(FileManager.default.fileExists(atPath: keyFilePath)) //".peer-id-ed25519.testing"
+        #expect(FileManager.default.fileExists(atPath: keyFilePath))  //".peer-id-ed25519.testing"
 
         // -- Test Happy Path (correct password) --
         var secondApp: Application? = try await Application.make(.testing, peerID: keyPairFile)
@@ -122,7 +123,7 @@ struct LibP2PKeyFileTests {
     func testLibP2P_KeyFilePersistence_Environment(_ keyType: LibP2PCrypto.Keys.KeyPairType) async throws {
         let keyFilePath = KeyPairFile.Location.projectRoot.path(for: .testing, type: keyType)
         let envFilePath = ".env.testing"
-        
+
         defer {
             // Removing the test key here should be okay, because peerID's shouldn't exist in the
             // root dir of swift-libp2p, a users keys should be located in their app / project dir
@@ -130,7 +131,7 @@ struct LibP2PKeyFileTests {
             removeFile(keyFilePath)
             removeFile(envFilePath)
         }
-        
+
         // Create a temporary testing environment file
         generateEnvFile(withPassword: "🔑")
 

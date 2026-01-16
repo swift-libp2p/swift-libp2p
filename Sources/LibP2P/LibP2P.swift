@@ -196,13 +196,17 @@ public final class Application: Sendable {
             async: true,
             logger: logger
         )
-        
+
         await app.asyncCommands.use(app.servers.asyncCommand, as: "serve", isDefault: true)
         await DotEnvFile.load(for: app.environment, fileio: app.fileio, logger: app.logger)
         return app
     }
-    
-    @available(*, deprecated, message: "Migrate to using the Application.make(_: peerID:KeyPairFile) initializer instead")
+
+    @available(
+        *,
+        deprecated,
+        message: "Migrate to using the Application.make(_: peerID:KeyPairFile) initializer instead"
+    )
     public static func make(
         _ environment: Environment = .development,
         peerID: PeerID = try! PeerID(.Ed25519),
