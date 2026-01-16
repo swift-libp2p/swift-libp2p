@@ -152,7 +152,84 @@ public final class Application: Sendable {
     /// The PeerID of our libp2p instance
     public let peerID: PeerID
 
-    public init(
+    @available(
+        *,
+        noasync,
+        message: "This initialiser cannot be used in async contexts, use Application.make(_:_:) instead"
+    )
+    @available(*, deprecated, message: "Migrate to using the async APIs. Use use Application.make(_:_:) instead")
+    public convenience init(
+        _ environment: Environment = .development,
+        peerID: PeerID = try! PeerID(.Ed25519),
+        maxConncurrentConnections: Int = 50,
+        enableAutomaticStreamCounting: Bool = false,
+        eventLoopGroupProvider: EventLoopGroupProvider = .singleton,
+        logger: Logger? = nil
+    ) {
+        self.init(
+            environment,
+            peerID: peerID,
+            maxConncurrentConnections: maxConncurrentConnections,
+            enableAutomaticStreamCounting: enableAutomaticStreamCounting,
+            eventLoopGroupProvider: eventLoopGroupProvider,
+            async: false,
+            logger: logger
+        )
+        self.asyncCommands.use(self.servers.command, as: "serve", isDefault: true)
+        DotEnvFile.load(for: environment, on: .shared(self.eventLoopGroup), fileio: self.fileio, logger: self.logger)
+    }
+
+    public static func make(
+        _ environment: Environment = .development,
+        peerID keyFile: KeyPairFile = .ephemeral(type: .Ed25519),
+        maxConncurrentConnections: Int = 50,
+        enableAutomaticStreamCounting: Bool = false,
+        eventLoopGroupProvider: EventLoopGroupProvider = .singleton,
+        logger: Logger? = nil
+    ) async throws -> Application {
+        let app = Application(
+            environment,
+            peerID: try await keyFile.resolve(for: environment),
+            maxConncurrentConnections: maxConncurrentConnections,
+            enableAutomaticStreamCounting: enableAutomaticStreamCounting,
+            eventLoopGroupProvider: eventLoopGroupProvider,
+            async: true,
+            logger: logger
+        )
+
+        await app.asyncCommands.use(app.servers.asyncCommand, as: "serve", isDefault: true)
+        await DotEnvFile.load(for: app.environment, fileio: app.fileio, logger: app.logger)
+        return app
+    }
+
+    @available(
+        *,
+        deprecated,
+        message: "Migrate to using the Application.make(_: peerID:KeyPairFile) initializer instead"
+    )
+    public static func make(
+        _ environment: Environment = .development,
+        peerID: PeerID = try! PeerID(.Ed25519),
+        maxConncurrentConnections: Int = 50,
+        enableAutomaticStreamCounting: Bool = false,
+        eventLoopGroupProvider: EventLoopGroupProvider = .singleton,
+        logger: Logger? = nil
+    ) async throws -> Application {
+        let app = Application(
+            environment,
+            peerID: peerID,
+            maxConncurrentConnections: maxConncurrentConnections,
+            enableAutomaticStreamCounting: enableAutomaticStreamCounting,
+            eventLoopGroupProvider: eventLoopGroupProvider,
+            async: true,
+            logger: logger
+        )
+        await app.asyncCommands.use(app.servers.asyncCommand, as: "serve", isDefault: true)
+        await DotEnvFile.load(for: app.environment, fileio: app.fileio, logger: app.logger)
+        return app
+    }
+
+    private init(
         _ environment: Environment = .development,
         peerID: PeerID = try! PeerID(.Ed25519),
         maxConncurrentConnections: Int = 50,
@@ -194,7 +271,6 @@ public final class Application: Sendable {
         self.transports.use(.tcp)
 
         // TransportUpgraders
-        // TODO: Should this be renamed to `upgraders`?
         self.transportUpgraders.initialize()
         self.transportUpgraders.use(.mss)
 
@@ -242,35 +318,11 @@ public final class Application: Sendable {
         self.dht.initialize()
 
         // Commands
-        self.asyncCommands.use(self.servers.command, as: "serve", isDefault: true)
         self.asyncCommands.use(RoutesCommand(), as: "routes")
-        //DotEnvFile.load(for: environment, on: .shared(self.eventLoopGroup), fileio: self.fileio, logger: self.logger)
 
         /// Application wide log level...
         self.logger.logLevel = .trace
         self.logger.notice("PeerID: \(self.peerID.b58String)")
-    }
-
-    public static func make(
-        _ environment: Environment = .development,
-        peerID: PeerID = try! PeerID(.Ed25519),
-        maxConncurrentConnections: Int = 50,
-        enableAutomaticStreamCounting: Bool = false,
-        _ eventLoopGroupProvider: EventLoopGroupProvider = .singleton,
-        logger: Logger? = nil
-    ) async throws -> Application {
-        let app = Application(
-            environment,
-            peerID: peerID,
-            maxConncurrentConnections: maxConncurrentConnections,
-            enableAutomaticStreamCounting: enableAutomaticStreamCounting,
-            eventLoopGroupProvider: eventLoopGroupProvider,
-            async: true,
-            logger: logger ?? .init(label: "libp2p.application[\(peerID.shortDescription)]")
-        )
-        await app.asyncCommands.use(app.servers.asyncCommand, as: "serve", isDefault: true)
-        await DotEnvFile.load(for: app.environment, fileio: app.fileio, logger: app.logger)
-        return app
     }
 
     /// Starts the Application using the `start()` method, then waits for any running tasks to complete
@@ -331,6 +383,7 @@ public final class Application: Sendable {
         ).group()
 
         var context = CommandContext(console: self.console, input: self.environment.commandInput)
+        self.logger.notice("\(self.environment.commandInput)")
         context.application = self
         try await self.console.run(combinedCommands, with: context)
     }
