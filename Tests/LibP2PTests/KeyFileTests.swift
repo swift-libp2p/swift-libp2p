@@ -133,7 +133,7 @@ struct LibP2PKeyFileTests {
         }
 
         // Create a temporary testing environment file
-        generateEnvFile(withPassword: "🔑")
+        try await generateEnvFileAndWait(withPassword: "🔑")
 
         // PeerID Persistence Mode
         let keyPairFile: KeyPairFile = .persistent(
@@ -168,7 +168,7 @@ struct LibP2PKeyFileTests {
 
         // -- Test Missing ENV File --
         // Delete the testing environment file
-        removeFile(envFilePath)
+        try await removeFileAndWait(envFilePath)
 
         // Attempting to load the key file using an env that doesn't exist should throw an error
         await #expect(throws: KeyPairFile.Error.noEnvironmentFile.self) {
@@ -177,11 +177,16 @@ struct LibP2PKeyFileTests {
 
         // -- Test Wrong Password --
         // Create a temporary testing environment file with the wrong password
-        generateEnvFile(withPassword: "🗝️")  // Wrong Password
+        try await generateEnvFileAndWait(withPassword: "🗝️")  // Wrong Password
 
         // Attempting to decrypt the key file with the wrong password should throw an error
         await #expect(throws: KeyPairFile.Error.unableToDecryptKeyFile.self) {
             try await Application.make(.testing, peerID: keyPairFile)
+        }
+
+        func generateEnvFileAndWait(withPassword pwd: String) async throws {
+            generateEnvFile(withPassword: pwd)
+            try await Task.sleep(for: .milliseconds(10))
         }
 
         // Creates a `.env.testing` file in the projects root dir
@@ -194,6 +199,12 @@ struct LibP2PKeyFileTests {
                 )
             )
             #expect(FileManager.default.fileExists(atPath: envFilePath))
+
+        }
+
+        func removeFileAndWait(_ filePath: String) async throws {
+            removeFile(filePath)
+            try await Task.sleep(for: .milliseconds(10))
         }
 
         // Deletes the file and checks for deletion
@@ -206,6 +217,7 @@ struct LibP2PKeyFileTests {
             } catch {
                 Issue.record(error)
             }
+
         }
     }
 }
