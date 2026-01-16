@@ -383,7 +383,7 @@ public final class Application: Sendable {
         ).group()
 
         var context = CommandContext(console: self.console, input: self.environment.commandInput)
-        self.logger.notice("\(self.environment.commandInput)")
+        //self.logger.notice("\(self.environment.commandInput)")
         context.application = self
         try await self.console.run(combinedCommands, with: context)
     }
