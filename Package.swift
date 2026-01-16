@@ -82,6 +82,9 @@ let package = Package(
                 .product(name: "SwiftState", package: "SwiftState"),
                 .product(name: "_NIOFileSystem", package: "swift-nio"),
                 .target(name: "COperatingSystem"),
+            ],
+            resources: [
+                .copy("Identify/ID/Protobuf/Identify.proto")
             ]
         ),
         .testTarget(
