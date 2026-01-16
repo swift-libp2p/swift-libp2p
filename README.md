@@ -52,7 +52,7 @@ let package = Package(
     ...
     dependencies: [
         ...
-        .package(name: "LibP2P", url: "https://github.com/swift-libp2p/swift-libp2p.git", .upToNextMajor(from: "0.1.0"))
+        .package(name: "LibP2P", url: "https://github.com/swift-libp2p/swift-libp2p.git", .upToNextMinor(from: "0.3.0"))
     ],
         ...
         .target(
@@ -71,26 +71,27 @@ let package = Package(
 ``` swift
 import LibP2P
 import LibP2PNoise
-import LibP2PMPLEX
+import LibP2PYAMUX
 
 /// Configure your Libp2p networking stack...
-let lib = try Application(.development, peerID: PeerID(.Ed25519))
+let lib = try await Application.make(.detect(), peerID: .ephemeral(.Ed25519))
+// Configure the libp2p instance with the modules of your choosing
 lib.security.use(.noise)
-lib.muxers.use(.mplex)
-lib.servers.use(.tcp(host: "127.0.0.1", port: 0))
+lib.muxers.use(.yamux)
+// Start a TCP server listening on localhost:10000
+lib.servers.use(.tcp(host: "127.0.0.1", port: 10_000))
 
 /// Register your routes handlers...
 /// - Note: Uses the same syntax as swift-vapor
 try lib.routes()
 
 /// Start libp2p
-lib.start()
+try await lib.startup()
 
 /// Do some networking stuff... 📡
 
 /// At some later point, when you're done with libp2p...
-lib.shutdown()
-
+try await lib.asyncShutdown()
 ```
 - Check out the [libp2p-app-template](https://github.com/swift-libp2p/libp2p-app-template) repo for a bare-bones executable app ready to be customized
 - Check out the [Configure an Echo Server](https://swift-libp2p.github.io/tutorials/libp2p/configure-echo-server) tutorial in the documentation for more info
