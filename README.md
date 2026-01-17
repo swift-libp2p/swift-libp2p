@@ -116,6 +116,8 @@ try await lib.asyncShutdown()
 | [`swift-libp2p-websocket`](//github.com/swift-libp2p/swift-libp2p-websocket) | 🟢 | WebSocket transport | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-websocket/actions/workflows/build+test.yml/badge.svg) |
 | `swift-libp2p-http` | 🔴 | TODO: HTTP1 transport | N/A |
 | `swift-libp2p-http2` | 🔴 | TODO: HTTP2 transport | N/A |
+| `swift-libp2p-webrtc` | 🔴 | TODO: WebRTC & WebRTC Direct | N/A |
+| `swift-libp2p-webtransport` | 🔴 | TODO: WebTransport | N/A |
 | **Encrypted Channels** |
 | [`swift-libp2p-plaintext`](//github.com/swift-libp2p/swift-libp2p-plaintext) | 🟢 | Plaintext channel | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-plaintext/actions/workflows/build+test.yml/badge.svg) |
 | [`swift-libp2p-noise`](//github.com/swift-libp2p/swift-libp2p-noise) | 🟢 | Noise crypto channel | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-noise/actions/workflows/build+test.yml/badge.svg) |
@@ -124,15 +126,17 @@ try await lib.asyncShutdown()
 | [`swift-libp2p-mplex`](//github.com/swift-libp2p/swift-libp2p-mplex) | 🟢 | MPLEX stream multiplexer | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-mplex/actions/workflows/build+test.yml/badge.svg) |
 | [`swift-libp2p-yamux`](//github.com/swift-libp2p/swift-libp2p-yamux) | 🟢 | YAMUX stream multiplexer | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-yamux/actions/workflows/build+test.yml/badge.svg)  |
 | **Private Network** |
-| - | - | - | N/A |
+| `swift-libp2p-pnet` | 🔴 | TODO: Private Networks (psk) | N/A |
 | **NAT Traversal** |
-| - | - | - | N/A |
+| `swift-libp2p-autonat` | 🔴 | TODO: AutoNAT v1 & v2 | N/A |
 | **Peerstore** |
 | [`swift-libp2p-peerstore`](https://github.com/swift-libp2p/swift-libp2p/blob/main/Sources/LibP2P/Peerstore/DefaultPeerstore.swift) | 🟡 | Reference implementation of peer metadata storage component  (embedded) | N/A |
 | **Connection Manager** |
 | [`swift-libp2p-connection-manager`](https://github.com/swift-libp2p/swift-libp2p/blob/main/Sources/LibP2P/Connections/Managers/DefaultConnectionManager.swift) | 🟡 | Reference implementation of connection manager  (embedded) | N/A |
 | **Routing** |
 | [`swift-libp2p-kad-dht`](https://github.com/swift-libp2p/swift-libp2p-kad-dht) | 🟡 | Kademlia Distributed Hash Table | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-kad-dht/actions/workflows/build+test.yml/badge.svg) |
+| `swift-libp2p-circuit` | 🔴 | TODO: Circuit Relay v1 & v2 | N/A |
+| `swift-libp2p-dcutr` | 🔴 | TODO: DCUtR (hole punching) | N/A |
 | **Pubsub** |
 | [`swift-libp2p-pubsub`](https://github.com/swift-libp2p/swift-libp2p-pubsub) | 🟡 | Core PubSub Protocols & FloodSub and GossipSub Routers | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-pubsub/actions/workflows/build+test.yml/badge.svg) |
 | **RPC** |
@@ -141,6 +145,7 @@ try await lib.asyncShutdown()
 | [`swift-libp2p-dnsaddr`](//github.com/swift-libp2p/swift-libp2p-dnsaddr) | 🟢 | A DNSAddr Resolver | ![Build & Test (macos)](https://github.com/swift-libp2p/swift-libp2p-dnsaddr/actions/workflows/build+test.yml/badge.svg) |
 | [`swift-libp2p-mdns`](//github.com/swift-libp2p/swift-libp2p-mdns) | 🟡 | MulticastDNS for LAN discovery | ![Build & Test (macos)](https://github.com/swift-libp2p/swift-libp2p-mdns/actions/workflows/build+test.yml/badge.svg) |
 | [`swift-libp2p-identify`](//github.com/swift-libp2p/swift-libp2p-identify) | 🟢 | IPFS Identify Protocols (embedded) | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-identify/actions/workflows/build+test.yml/badge.svg) |
+| `swift-libp2p-rendezvous` | 🔴 | TODO: Rendezvous (protocol poster board) | N/A |
 | **Testing and examples** |
 | `swift-libp2p-testing` | 🔴 | TODO: A collection of testing utilities for libp2p | N/A |
 
