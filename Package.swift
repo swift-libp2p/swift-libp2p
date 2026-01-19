@@ -18,7 +18,7 @@ import PackageDescription
 let package = Package(
     name: "swift-libp2p",
     platforms: [
-        .macOS(.v10_15),
+        .macOS(.v13),
         .iOS(.v13),
     ],
     products: [
@@ -56,6 +56,8 @@ let package = Package(
         .package(url: "https://github.com/cesarferreira/SwiftEventBus.git", .upToNextMajor(from: "5.0.0")),
         // SwiftState for state machines
         .package(url: "https://github.com/ReactKit/SwiftState.git", .upToNextMajor(from: "6.0.0")),
+        // Swift  Subprocess
+        .package(url: "https://github.com/swiftlang/swift-subprocess.git", .upToNextMinor(from: "0.2.1"))
     ],
     targets: [
         // C
@@ -87,9 +89,25 @@ let package = Package(
                 .copy("Identify/ID/Protobuf/Identify.proto")
             ]
         ),
+        .executableTarget(
+            name: "Generate",
+            dependencies: [
+                .target(name: "LibP2P"),
+                .product(name: "ConsoleKit", package: "console-kit"),
+                .product(name: "Subprocess", package: "swift-subprocess")
+            ]
+        ),
         .testTarget(
             name: "LibP2PTests",
-            dependencies: ["LibP2P"]
+            dependencies: [
+                "LibP2P"
+            ]
+        ),
+        .testTarget(
+            name: "GenerateTests",
+            dependencies: [
+                "Generate"
+            ]
         ),
     ]
 )
