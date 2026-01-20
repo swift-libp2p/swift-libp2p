@@ -170,6 +170,40 @@ try await lib.asyncShutdown()
 /// TODO
 ```
 
+## Commands
+### Generate
+  - Run `swift run Generate new --help` from swift-libp2p's root directory for details
+
+**Example**
+```bash
+# Generate a new project named `my-first-app` that uses tcp, noise, plaintext, yamux and mplex
+swift run Generate new "my-first-app" --template "example-echo" --mode listener -t tcp -s noise,plaintext -m yamux,mplex
+
+# Navigate to newly created project
+cd ../my-first-app
+
+# Build and run
+swift run
+```
+
+**Usage**
+```bash
+Usage: Generate new <name> [--template] [--mode] [--transports,-t] [--security,-s] [--muxers,-m] [--extra,-e] 
+
+Generates a new libp2p example app
+
+Arguments:
+        name The name of the new app to generate (no spaces, ex: `my-first-app`)
+
+Options:
+    template One of `example-echo` (1), `test-ping` (2), `test-perf` (3) (defaults to 1)
+        mode Either `dialer` (d, c, client) or `listener` (l, h or host) (defaults to listener)
+  transports A list of comma seperated transports that your app will use (ex: `tcp, udp, ws`) defaults to `tcp`
+    security A list of comma seperated security modules that your app will use (ex: `plaintext, noise`) defaults to `noise`
+      muxers A list of comma seperated muxer modules that your app will use (ex: `mplex, yamux`) defaults to `yamux`
+       extra A list of comma seperated modules that your app will use (ex: `pubsub`, `dht`, `dnsaddr`, `mdns`, `redis`, ect) defaults to none. See the README for a complete list of modules.
+```
+
 ## Contributing
 
 Contributions are welcomed! This code is very much a proof of concept. I can guarantee you there's a better / safer way to accomplish the same results. Any suggestions, improvements, or even just critiques, are welcome! 
