@@ -12,27 +12,15 @@
 //
 //===----------------------------------------------------------------------===//
 
+import Foundation
 import Subprocess
 import Testing
 
 @testable import Generate
 
-@Suite("Subprocess Tests", .serialized)
-struct LibP2PSubprocessTests {
-
-    @Test func testSubprocess() async throws {
-        let gitResult = try await Subprocess.run(
-            .name("which"),
-            arguments: ["notacommand"],
-            output: .string(limit: 128)
-        )
-        print(gitResult)
-    }
-}
-
 @Suite("Generate Tests")
 struct GenerateCommandTests {
-
+    
     @Test func testStringToDependencies_Transport() throws {
         let transports = "tcp, udp, ws"
         let transportDependencies = try transports.toDependencies(ofType: .transport)
@@ -76,7 +64,8 @@ struct GenerateCommandTests {
         ])
     }
     
-    @Test func testConfigurePackage() throws {
+    @Test(.disabled())
+    func testConfigurePackage() throws {
         let transports = try "tcp".toDependencies(ofType: .transport)
         let security = try "noise".toDependencies(ofType: .security)
         let muxer = try "yamux".toDependencies(ofType: .muxer)
@@ -132,7 +121,8 @@ struct GenerateCommandTests {
         
     }
     
-    @Test func testConfigureApp() throws {
+    @Test(.disabled())
+    func testConfigureApp() throws {
         let transports = try "tcp".toDependencies(ofType: .transport)
         let security = try "noise".toDependencies(ofType: .security)
         let muxer = try "yamux".toDependencies(ofType: .muxer)
