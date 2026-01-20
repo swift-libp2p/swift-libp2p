@@ -1,3 +1,17 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the swift-libp2p open source project
+//
+// Copyright (c) 2022-2025 swift-libp2p project authors
+// Licensed under MIT
+//
+// See LICENSE for license information
+// See CONTRIBUTORS for the list of swift-libp2p project authors
+//
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+
 import ConsoleKit
 import LibP2P
 import Subprocess
@@ -82,37 +96,59 @@ struct Generate: AsyncCommand {
                 Name:       \(signature.name)
                 Template:   \(template) as \(mode)
             Modules
-                Transports: \(transports)
-                Security:   \(security)
-                Muxers:     \(muxers)
-                Extra:      \(deps)
+                Transports: \(signature.transports ?? "tcp")
+                Security:   \(signature.securityModules ?? "noise")
+                Muxers:     \(signature.muxerModules ?? "yamux")
+                Extra:      \(signature.additionalDependencies ?? "")
             """
         context.console.print(proj)
+
+        guard !signature.name.isEmpty, !(signature.name.contains(".") || signature.name.contains("/")) else {
+            throw Generate.Error.invalidProjectName(signature.name)
+        }
+
+        // Get the path of our projects dir
+        let path = try Generate.getProjectDirectory(name: signature.name)
+        context.console.print("Path: \(path)")
 
         // Ensure git is installed
         try await Generate.ensureCommandAvailable("git")
 
         // Clone proj into dir
-        let path = try await Generate.cloneRepository(template.repo(for: mode), to: "./..", using: context)
+        try await Generate.cloneRepository(template.repo(for: mode), to: path, using: context)
+        context.console.print("\(path)")
 
-        // Remove .git
-        try await Generate.removeGit(path: path, using: context)
+        // At this point we need to delete the directory if anything goes wrong so we catch these errors
+        do {
+            // Remove .git
+            try await Generate.removeGit(path: path, using: context)
 
-        // Configure Package.swift (names the package and adds the dependencies)
-        let allDeps = transports + security + muxers + deps
-        try configureSwiftPackageFile(at: path, named: signature.name, withDependencies: allDeps)
+            // Configure Package.swift (names the package and adds the dependencies)
+            let allDeps = transports + security + muxers + deps
+            try configureSwiftPackageFile(at: path, named: signature.name, withDependencies: allDeps)
 
-        // Import and install dependencies in configure.swift
-        try configureAppFile(at: path, withDependencies: allDeps)
+            // Import and install dependencies in configure.swift
+            try configureAppFile(at: path, withDependencies: allDeps)
 
-        // For each dependency
-        // Add special scaffolding?
-        // (ex: additional configs and/or routes?)
+            // For each dependency
+            // Add special scaffolding?
+            // (ex: additional configs and/or routes?)
 
-        // Reinit git
-        try await Generate.initGit(path: path, using: context)
+            // Creates the .keys directory and a .env file with a strong random password
+            try Generate.prepareKeyStore(at: path)
 
-        // build it?
+            // Reinit git
+            try await Generate.initGit(path: path, using: context)
+        } catch {
+            // Log the error
+            context.console.print("Error: \(error)")
+            // Remove the project directory as it's in an unknown state
+            try FileManager.default.removeItem(atPath: path)
+            // Rethrow the error
+            throw error
+        }
+        
+        // build it??
         //try await Generate.buildProject(path: path)
     }
 
@@ -156,7 +192,7 @@ struct Generate: AsyncCommand {
         func packageDef(for dep: Dependency, includeTemplate: Bool) -> String {
             """
             // \(dep.comment)
-            \t\t.package(url: "\(dep.packageRepo)", .upToNextMinor("\(dep.tag)"),\(includeTemplate ? "\n\t\t%%DEPENDENCY%%" : "")
+            \t\t.package(url: "\(dep.packageRepo)", .upToNextMinor(from: "\(dep.tag)")),\(includeTemplate ? "\n\t\t%%DEPENDENCY%%" : "")
             """
         }
 
@@ -255,16 +291,44 @@ extension Array where Element == Substring {
 extension Generate {
     static let BaseURL: String = "https://github.com/swift-libp2p"
 
+    /// Enum representing all error conditions that can occur during the
+    /// libp2p application generation process.
     enum Error: Swift.Error {
+        /// The current working directory could not be determined, or it does
+        /// not end with the expected `swift‑libp2p` folder.
+        case unknownWorkingDirectory
+        /// The supplied project name is illegal (e.g. contains spaces, slashes, or
+        /// periods). The associated string is the offending name.
+        case invalidProjectName(String)
+        /// A required system command (e.g. `git`, `swift`) could not be found in
+        /// the machine’s `$PATH`. The associated string is the name of the missing
+        /// command.
         case commandUnavailable(String)
+        /// Cloning the template repository via `git clone` failed – typically due
+        /// to network issues, permissions, or an invalid URL.
         case failedToCloneRepository
+        /// The template identifier supplied by the user is not recognized.
+        /// The associated string is the invalid template name.
         case unsupportedTemplate(String)
+        /// A requested transport module nickname could not be resolved.
+        /// The associated string is the missing nickname.
         case unsupportedTransport(String)
+        /// A requested security module nickname could not be resolved.
+        /// The associated string is the missing nickname.
         case unsupportedSecurityModule(String)
+        /// A requested muxer module nickname could not be resolved.
+        /// The associated string is the missing nickname.
         case unsupportedMuxerModule(String)
+        /// A requested generic module nickname could not be resolved.
+        /// The associated string is the missing nickname.
         case unsupportedModule(String)
+        /// Removing the `.git` directory failed
         case failedToRemoveGit
+        /// A file could not be read.
+        /// The associated string is the absolute path of the file.
         case failedToOpenFileAt(String)
+        /// Failed to configure and/or write the file to disk.
+        /// The associated string is the name of the file.
         case failedToConfigure(String)
 
         static func errorFor(type: Dependency.ModuleType, key: String) -> Error {
@@ -329,6 +393,20 @@ extension Generate {
 
 // MARK: General Helper Methods
 extension Generate {
+    /// Verifies that a specified command is present in the system's executable path.
+    ///
+    /// This method searches for the executable corresponding to the supplied command name
+    /// using the `which` shell utility. It is performed asynchronously and can throw
+    /// if the command is not found or if the `which` invocation fails.
+    ///
+    /// - Parameters:
+    ///   - cmd: The name of the command to locate (e.g., `"git"` or `"swift"`).
+    ///
+    /// - Returns: The absolute path to the executable as a string.
+    ///
+    /// - Throws:
+    ///   - `Generate.Error.commandUnavailable(cmd)`: If the command is not found in
+    ///     the system's `PATH` or if the `which` command fails to execute.
     @discardableResult
     static func ensureCommandAvailable(_ cmd: String) async throws -> String {
         let res = try await Subprocess.run(.name("which"), arguments: [cmd], output: .string(limit: 256))
@@ -337,14 +415,71 @@ extension Generate {
         }
         return stdOut
     }
+
+    /// Returns the full path for a new project directory based on the current working directory.
+    /// - Parameter name: The desired name of the project.
+    /// - Returns: A string containing the absolute path where the project should be created.
+    /// - Throws:
+    ///   - `Generate.Error.unknownWorkingDirectory` if the current working directory
+    ///     cannot be determined or does not end with the expected `swift-libp2p` folder.
+    ///
+    /// The function constructs a URL from `FileManager.default.currentDirectoryPath`,
+    /// validates that the last path component is `swift-libp2p`, then removes that
+    /// component and appends the supplied `name`. The resulting path is returned as a string.
+    static func getProjectDirectory(name: String) throws -> String {
+        guard var pathURL = URL(string: FileManager.default.currentDirectoryPath) else {
+            throw Generate.Error.unknownWorkingDirectory
+        }
+        guard pathURL.lastPathComponent == "swift-libp2p" else {
+            throw Generate.Error.unknownWorkingDirectory
+        }
+        pathURL.deleteLastPathComponent()
+        pathURL.append(component: name)
+
+        return pathURL.path()
+    }
+
+    /// Creates a `.keys` directory and a `.env.development` file at the path provided and populates
+    /// the environment file with a strong random password ready for use with libp2p's persistent PeerID API
+    /// - Parameter path: The path at which you'd like to prepare the keystore at (usually the new project's root directory)
+    /// - Throws:
+    ///   - Will throw an error if we fail to generate the `.keys` directory
+    ///
+    /// - WARNING: This will overwrite an existing .env.development file
+    static func prepareKeyStore(at path: String) throws {
+        // Make .keys directory
+        try FileManager.default.createDirectory(atPath: "\(path)/.keys", withIntermediateDirectories: false)
+
+        // Generate a password
+        let pwd = try PeerID(.Ed25519).b58String.suffix(8)
+
+        // Make .env.development with the PEERID_PASSWORD key set
+        FileManager.default.createFile(
+            atPath: "\(path)/.env.development",
+            contents: "PEERID_PASSWORD=\(pwd)".data(using: .utf8)
+        )
+    }
 }
 
 // MARK: GIT Methods
 extension Generate {
 
+    /// Clones a Git repository into a destination directory and returns the path to the cloned repository.
+    ///
+    /// - Parameters:
+    ///   - url: The URL (or repository identifier) pointing to the Git repository to clone.
+    ///   - path: The local file system path where the repository should be cloned into.
+    ///   - context: The ``CommandContext`` used for console output during the cloning process.
+    /// - Throws: ``Generate.Error.failedToCloneRepository`` if the underlying `git clone` command terminates with a non‑zero exit status or cannot be executed.
+    /// - Returns: The absolute path to the newly cloned repository as a ``String``.
     @discardableResult
     static func cloneRepository(_ url: String, to path: String, using context: CommandContext) async throws -> String {
-        let res = try await Subprocess.run(.name("git"), arguments: ["clone", url, path], output: .string(limit: 1024))
+        let res = try await Subprocess.run(
+            .name("git"),
+            arguments: ["clone", "-b", "template", url, path],
+            output: .string(limit: 1024),
+            error: .string(limit: 1024)
+        )
         guard res.terminationStatus == .exited(0) else {
             context.console.print("Error: \(res)")
             throw Generate.Error.failedToCloneRepository
@@ -353,8 +488,33 @@ extension Generate {
         return path
     }
 
+    /// Removes the `.git` directory from the specified `path`.
+    ///
+    /// This method invokes the system `rm` command to recursively delete the `.git` folder
+    /// from the given directory.  It prints standard output or error to the console
+    /// provided by the `CommandContext`, and throws an error if the command fails.
+    ///
+    /// - Parameters:
+    ///   - path: The absolute file system path of the project whose `.git` directory
+    ///           should be removed.
+    ///   - context: The `CommandContext` used to output messages to the console.
+    ///
+    /// - Throws:
+    ///   - `Generate.Error.failedToRemoveGit` if the `rm` process terminates with
+    ///     a non‑zero exit status.
+    ///   - Any error propagated from the `Subprocess` execution (e.g., if the
+    ///     `rm` command itself cannot be started).
+    ///
+    /// - Note: This function performs no additional validation on `path`; if an
+    ///   incorrect or non‑existent location is supplied, the underlying `rm`
+    ///   command will fail and the corresponding error will be thrown.
     static func removeGit(path: String, using context: CommandContext) async throws {
-        let res = try await Subprocess.run(.name("rm"), arguments: ["\(path)/.git"], output: .string(limit: 1024))
+        let res = try await Subprocess.run(
+            .name("rm"),
+            arguments: ["-r", "\(path)/.git"],
+            output: .string(limit: 1024),
+            error: .string(limit: 1024)
+        )
         guard res.terminationStatus == .exited(0) else {
             context.console.print("Error: \(res)")
             throw Generate.Error.failedToRemoveGit
@@ -362,8 +522,36 @@ extension Generate {
         context.console.print(res.standardOutput ?? "")
     }
 
+    /// Initializes a Git repository at the specified path.
+    ///
+    /// This method runs the `git init` command on the given `path`,
+    /// creating a new `.git` directory and preparing the repository
+    /// for further Git operations.
+    ///
+    /// - Parameters:
+    ///   - path: The absolute file‑system path where the Git repository
+    ///     should be created.  It must be a directory that already exists
+    ///     on disk.
+    ///
+    ///   - context: A `CommandContext` used to output status messages
+    ///     and error information to the console.
+    ///
+    /// - Throws:
+    ///   - `Generate.Error.failedToRemoveGit` if the command exits with a
+    ///     non‑zero exit status or if the underlying process fails.
+    ///   - Any `Subprocess`‑related errors that occur while attempting
+    ///     to execute the `git init` command.
+    ///
+    /// - Returns: This function does not return a value, but it prints the
+    ///   output of the `git init` command to the console for debugging
+    ///   or informational purposes.
     static func initGit(path: String, using context: CommandContext) async throws {
-        let res = try await Subprocess.run(.name("git"), arguments: ["init", path], output: .string(limit: 1024))
+        let res = try await Subprocess.run(
+            .name("git"),
+            arguments: ["init", path],
+            output: .string(limit: 1024),
+            error: .string(limit: 1024)
+        )
         guard res.terminationStatus == .exited(0) else {
             context.console.print("Error: \(res)")
             throw Generate.Error.failedToRemoveGit
@@ -371,189 +559,4 @@ extension Generate {
         context.console.print(res.standardOutput ?? "")
     }
 
-}
-
-struct Dependency: Equatable {
-    enum ModuleType {
-        case transport
-        case security
-        case muxer
-        case other
-    }
-
-    let moduleType: ModuleType
-    let repoName: String
-    let libName: String
-    let tag: String
-    let comment: String
-    let nicknames: [String]
-    let installation: [String]
-    let postInstallation: [String]
-    let isEmbedded: Bool
-
-    // TODO: Have a Installation struct with more params (placement, options, example comments, etc)
-
-    init(
-        moduleType: ModuleType,
-        repoName: String,
-        libName: String,
-        tag: String,
-        comment: String,
-        nicknames: [String],
-        installation: [String],
-        postInstallation: [String] = [],
-        isEmbedded: Bool = false
-    ) {
-        self.moduleType = moduleType
-        self.repoName = repoName
-        self.libName = libName
-        self.tag = tag
-        self.comment = comment
-        self.nicknames = nicknames
-        self.installation = installation
-        self.postInstallation = postInstallation
-        self.isEmbedded = isEmbedded
-    }
-
-    var packageRepo: String {
-        "\(Generate.BaseURL)/\(repoName)"
-    }
-}
-
-extension Dependency {
-    // Transports
-    static let tcp = Dependency(
-        moduleType: .transport,
-        repoName: "swift-libp2p-tcp",
-        libName: "LibP2PTCP",
-        tag: "0.2.0",
-        comment: "TCP Transport",
-        nicknames: ["tcp"],
-        installation: [],
-        postInstallation: ["app.listen( .tcp(host: \"127.0.0.1\", port: 10_000) )"],
-        isEmbedded: true
-    )
-    static let udp = Dependency(
-        moduleType: .transport,
-        repoName: "swift-libp2p-udp",
-        libName: "LibP2PUDP",
-        tag: "0.2.0",
-        comment: "UDP Transport",
-        nicknames: ["udp"],
-        installation: [],
-        postInstallation: ["app.listen( .udp(host: \"127.0.0.1\", port: 10_000) )"],
-        isEmbedded: true
-    )
-    static let ws = Dependency(
-        moduleType: .transport,
-        repoName: "swift-libp2p-websocket",
-        libName: "LibP2PWebSocket",
-        tag: "0.2.0",
-        comment: "WebSocket Transport",
-        nicknames: ["ws", "wss", "websocket"],
-        installation: ["app.transports.use( .ws )"],
-        postInstallation: ["app.listen( .ws(host: \"127.0.0.1\", port: 10_000) )"]
-    )
-
-    // Security
-    static let noise = Dependency(
-        moduleType: .security,
-        repoName: "swift-libp2p-noise",
-        libName: "LibP2PNoise",
-        tag: "0.2.0",
-        comment: "Noise Security Module",
-        nicknames: ["noise"],
-        installation: ["app.security.use( .noise )"]
-    )
-    static let plaintext = Dependency(
-        moduleType: .security,
-        repoName: "swift-libp2p-plaintext",
-        libName: "LibP2PPlaintext",
-        tag: "0.2.0",
-        comment: "Plaintext Faux-cryption Module (does not provide security, use for testing only)",
-        nicknames: ["plaintext", "plaintext-v2"],
-        installation: ["app.security.use( .plaintextV2 )"]
-    )
-
-    // Muxers
-    static let mplex = Dependency(
-        moduleType: .muxer,
-        repoName: "swift-libp2p-mplex",
-        libName: "LibP2PMPLEX",
-        tag: "0.2.0",
-        comment: "MPLEX Muxer Module (technically deprecated, consider using YAMUX instead)",
-        nicknames: ["mplex"],
-        installation: ["app.muxers.use( .mplex )"]
-    )
-    static let yamux = Dependency(
-        moduleType: .muxer,
-        repoName: "swift-libp2p-yamux",
-        libName: "LibP2PYAMUX",
-        tag: "0.2.0",
-        comment: "Yamux Muxer Module",
-        nicknames: ["yamux"],
-        installation: ["app.muxers.use( .yamux )"]
-    )
-
-    // Other
-    static let pubsub = Dependency(
-        moduleType: .other,
-        repoName: "swift-libp2p-pubsub",
-        libName: "LibP2PPubSub",
-        tag: "0.2.0",
-        comment: "LibP2P's PubSub Module",
-        nicknames: ["pubsub"],
-        installation: ["app.pubsub.use( .gossipsub )"]
-    )
-    static let kaddht = Dependency(
-        moduleType: .other,
-        repoName: "swift-libp2p-kad-dht",
-        libName: "LibP2PKadDHT",
-        tag: "0.2.0",
-        comment: "A Kademlia Distributed Hash Table for LibP2P",
-        nicknames: ["dht", "kad-dht", "kaddht"],
-        installation: ["app.dht.use( .kadDHT )", "app.discovery.use( .kadDHT )"]
-    )
-    static let dnsaddr = Dependency(
-        moduleType: .other,
-        repoName: "swift-libp2p-dnsaddr",
-        libName: "LibP2PDNSAddr",
-        tag: "0.2.0",
-        comment: "DNS Address Resolution Module",
-        nicknames: ["dnsaddr"],
-        installation: ["app.resolvers.use( .dnsaddr )"]
-    )
-    static let mdns = Dependency(
-        moduleType: .other,
-        repoName: "swift-libp2p-mdns",
-        libName: "LibP2PMDNS",
-        tag: "0.2.0",
-        comment: "mDNS Discovery Module",
-        nicknames: ["mdns"],
-        installation: ["app.discovery.use( .mdns )"]
-    )
-}
-
-extension Generate {
-
-    static let Dependencies = [
-        // Transports
-        Dependency.tcp,
-        Dependency.udp,
-        Dependency.ws,
-
-        // Security
-        Dependency.noise,
-        Dependency.plaintext,
-
-        // Muxers
-        Dependency.mplex,
-        Dependency.yamux,
-
-        // Other
-        Dependency.pubsub,
-        Dependency.kaddht,
-        Dependency.dnsaddr,
-        Dependency.mdns,
-    ]
 }
