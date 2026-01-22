@@ -262,7 +262,7 @@ public final class Application: Sendable {
         self.isBooted = .init(false)
         self.core.initialize(asyncEnvironment: async)
 
-        //self.caches.initialize()
+        self.caches.initialize()
         self.responder.initialize()
         self.responder.use(.default)
 
