@@ -80,7 +80,7 @@ public struct Environment: Sendable, Equatable {
     }
 
     /// Performs stripping of user defaults overrides where and when appropriate.
-    /// - TODO: This is really flaky way of sanitizing input.
+    /// - TODO: This is really flakey way of sanitizing input.
     /// I think we'd be better off throwing everything out except for installed commands
     private static func sanitize(commandInput: inout CommandInput) {
         #if Xcode
