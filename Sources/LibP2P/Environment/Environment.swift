@@ -50,9 +50,9 @@ public struct Environment: Sendable, Equatable {
     ///     - arguments: `CommandInput` to parse `--env` flag from.
     /// - returns: The detected environment, or default env.
     public static func detect(from commandInput: inout CommandInput) throws -> Environment {
-        //print("CommandInput: \(commandInput)")
+        print("CommandInput: \(commandInput)")
         self.sanitize(commandInput: &commandInput)
-        //print("Sanitized CommandInput: \(commandInput)")
+        print("Sanitized CommandInput: \(commandInput)")
 
         struct EnvironmentSignature: CommandSignature {
             @Option(name: "env", short: "e", help: "Change the application's environment")
@@ -80,6 +80,8 @@ public struct Environment: Sendable, Equatable {
     }
 
     /// Performs stripping of user defaults overrides where and when appropriate.
+    /// - TODO: This is really flakey way of sanitizing input.
+    /// I think we'd be better off throwing everything out except for installed commands
     private static func sanitize(commandInput: inout CommandInput) {
         #if Xcode
         // Strip all leading arguments matching the pattern for assignment to the `NSArgumentsDomain`
@@ -114,6 +116,12 @@ public struct Environment: Sendable, Equatable {
             // Remove the --filter flag and argument if necessary
             if commandInput.arguments.first?.lowercased() == "--filter" && commandInput.arguments.count > 2 {
                 commandInput.arguments.removeFirst(2)
+            }
+            // Remove the --verbose flag if necessary
+            if commandInput.arguments.first?.lowercased() == "--verbose"
+                || commandInput.arguments.first?.lowercased() == "-v"
+            {
+                commandInput.arguments.removeFirst(1)
             }
             // Remove the path argument
             if commandInput.arguments.count >= 3,
