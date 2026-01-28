@@ -50,9 +50,9 @@ public struct Environment: Sendable, Equatable {
     ///     - arguments: `CommandInput` to parse `--env` flag from.
     /// - returns: The detected environment, or default env.
     public static func detect(from commandInput: inout CommandInput) throws -> Environment {
-        print("CommandInput: \(commandInput)")
+        //print("CommandInput: \(commandInput)")
         self.sanitize(commandInput: &commandInput)
-        print("Sanitized CommandInput: \(commandInput)")
+        //print("Sanitized CommandInput: \(commandInput)")
 
         struct EnvironmentSignature: CommandSignature {
             @Option(name: "env", short: "e", help: "Change the application's environment")
