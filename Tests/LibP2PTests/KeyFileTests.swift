@@ -186,7 +186,7 @@ struct LibP2PKeyFileTests {
 
         func generateEnvFileAndWait(withPassword pwd: String) async throws {
             generateEnvFile(withPassword: pwd)
-            try await Task.sleep(for: .milliseconds(10))
+            try await Task.sleep(for: .milliseconds(50))
         }
 
         // Creates a `.env.testing` file in the projects root dir
@@ -204,7 +204,7 @@ struct LibP2PKeyFileTests {
 
         func removeFileAndWait(_ filePath: String) async throws {
             removeFile(filePath)
-            try await Task.sleep(for: .milliseconds(10))
+            try await Task.sleep(for: .milliseconds(50))
         }
 
         // Deletes the file and checks for deletion
