@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import LibP2PCrypto
+import LibP2PTesting
 import Testing
 
 @testable import LibP2P
@@ -34,6 +35,8 @@ struct LibP2PKeyFileTests {
 
         // Dereference our first app
         firstApp = nil
+
+        try await Task.sleep(for: .milliseconds(50))
 
         // `.make` another app and we should get a brand new PeerID
         var secondApp: Application? = try await Application.make(.testing, peerID: keyPair)
@@ -92,6 +95,8 @@ struct LibP2PKeyFileTests {
         // Ensure the file was written to disk
         #expect(FileManager.default.fileExists(atPath: keyFilePath))  //".peer-id-ed25519.testing"
 
+        try await Task.sleep(for: .milliseconds(50))
+
         // -- Test Happy Path (correct password) --
         var secondApp: Application? = try await Application.make(.testing, peerID: keyPairFile)
 
@@ -103,6 +108,8 @@ struct LibP2PKeyFileTests {
 
         // Dereference our second app
         secondApp = nil
+
+        try await Task.sleep(for: .milliseconds(50))
 
         // -- Test Wrong Password --
         let wrongPasswordKeyFile: KeyPairFile = .persistent(
