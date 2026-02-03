@@ -16,13 +16,13 @@
 //  Modified by swift-libp2p
 //
 
+import LibP2PTesting
 import NIOCore
 import Testing
 
-@testable import LibP2P
-
 @Suite("CacheTests")
 struct CacheTests {
+    @available(*, deprecated, message: "Transition to async tests")
     @Test func testInMemoryCache() throws {
         let app = Application(.testing)
         defer { app.shutdown() }
@@ -44,6 +44,7 @@ struct CacheTests {
         try #expect(app.cache.get("foo3", as: String.self).wait() == nil)
     }
 
+    @available(*, deprecated, message: "Transition to async tests")
     @Test func testCustomCache() throws {
         let app = Application(.testing)
         defer { app.shutdown() }
