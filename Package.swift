@@ -92,7 +92,7 @@ let package = Package(
         .target(
             name: "LibP2PTestUtils",
             dependencies: [
-                .target(name: "LibP2P"),
+                .target(name: "LibP2P")
             ],
             swiftSettings: swiftSettings
         ),
@@ -115,11 +115,13 @@ let package = Package(
     ]
 )
 
-var swiftSettings: [SwiftSetting] { [
-    //.enableUpcomingFeature("ExistentialAny"),
-    //.enableUpcomingFeature("InternalImportsByDefault"),
-    //.enableUpcomingFeature("MemberImportVisibility"),
-    .enableUpcomingFeature("InferIsolatedConformances"),
-    //.enableUpcomingFeature("NonisolatedNonsendingByDefault"),
-    .enableUpcomingFeature("ImmutableWeakCaptures"),
-] }
+var swiftSettings: [SwiftSetting] {
+    [
+        //.enableUpcomingFeature("ExistentialAny"),
+        //.enableUpcomingFeature("InternalImportsByDefault"),
+        //.enableUpcomingFeature("MemberImportVisibility"),
+        .enableUpcomingFeature("InferIsolatedConformances"),
+        //.enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+        .enableUpcomingFeature("ImmutableWeakCaptures"),
+    ]
+}
