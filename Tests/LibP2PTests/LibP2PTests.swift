@@ -157,7 +157,7 @@ struct LibP2PTests {
 
             app.environment.arguments = ["serve"]
         }
-        
+
         try await withApp(configure: configure) { app in
             let localAddress = try #require(app.servers.server(for: TCPServer.self)?.listeningAddress)
             guard let tcp = localAddress.tcpAddress else {
@@ -191,7 +191,7 @@ struct LibP2PTests {
 
             app.environment.arguments = ["serve"]
         }
-        
+
         try await withApp(configure: configure) { app in
             let localAddress = try #require(app.servers.server(for: TCPServer.self)?.listeningAddress)
             //#expect("0.0.0.0" == app.servers.server(forKey: TCPServer.key).configuration.hostname)
@@ -232,7 +232,7 @@ struct LibP2PTests {
 
             app.environment.arguments = ["serve", "--hostname", "0.0.0.0", "--port", "3000"]
         }
-        
+
         try await withApp(configure: configure) { app in
             //XCTAssertNotNil(app.http.server.shared.localAddress)
             //XCTAssertEqual("0.0.0.0", app.http.server.configuration.hostname)
