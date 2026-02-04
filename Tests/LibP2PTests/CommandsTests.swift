@@ -15,44 +15,47 @@
 import LibP2PTesting
 import Testing
 
-@Suite("Libp2p Commands Tests", .serialized)
-struct LibP2PCommandsTests {
+extension LibP2PTests {
 
-    @available(*, deprecated, message: "Transition to async tests")
-    @Test func testCommands() throws {
+    @Suite("Libp2p Commands Tests")
+    struct LibP2PCommandsTests {
 
-        let app = Application(.testing)
+        @available(*, deprecated, message: "Transition to async tests")
+        @Test func testCommands() throws {
 
-        app.commands.use(FooCommand(), as: "foo")
+            let app = Application(.testing)
 
-        app.environment.arguments = ["libp2p", "foo", "bar"]
+            app.commands.use(FooCommand(), as: "foo")
 
-        try app.start()
+            app.environment.arguments = ["libp2p", "foo", "bar"]
 
-        #expect(app.storage[TestStorageKey.self] ?? false)
+            try app.start()
 
-        app.shutdown()
+            #expect(app.storage[TestStorageKey.self] ?? false)
+
+            app.shutdown()
+        }
+
+        @Test func testAsyncCommands() async throws {
+
+            let app = try await Application.make(peerID: .ephemeral)
+
+            app.asyncCommands.use(FooCommandAsync(), as: "foo")
+
+            app.environment.arguments = ["libp2p", "foo", "bar"]
+
+            try await app.startup()
+
+            #expect(app.storage[TestStorageKey.self] ?? false)
+
+            try await app.asyncShutdown()
+        }
+
     }
-
-    @Test func testAsyncCommands() async throws {
-
-        let app = try await Application.make(peerID: .ephemeral)
-
-        app.asyncCommands.use(FooCommandAsync(), as: "foo")
-
-        app.environment.arguments = ["libp2p", "foo", "bar"]
-
-        try await app.startup()
-
-        #expect(app.storage[TestStorageKey.self] ?? false)
-
-        try await app.asyncShutdown()
-    }
-
 }
 
 // Futures
-extension LibP2PCommandsTests {
+extension LibP2PTests.LibP2PCommandsTests {
     struct TestStorageKey: StorageKey {
         typealias Value = Bool
     }
@@ -72,7 +75,7 @@ extension LibP2PCommandsTests {
 }
 
 // Async
-extension LibP2PCommandsTests {
+extension LibP2PTests.LibP2PCommandsTests {
     struct FooCommandAsync: AsyncCommand {
         struct Signature: CommandSignature {
             @Argument(name: "name")

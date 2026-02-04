@@ -15,196 +15,200 @@
 import LibP2PTesting
 import Testing
 
-@Suite("Libp2p Lifecycle Tests", .serialized)
-struct LibP2PLifecycleTests {
-    @available(*, deprecated, message: "Transition to async tests")
-    @Test func testLifecycleHandler() throws {
-        final class Foo: LifecycleHandler {
-            let willBootFlag: NIOLockedValueBox<Bool>
-            let didBootFlag: NIOLockedValueBox<Bool>
-            let shutdownFlag: NIOLockedValueBox<Bool>
-            let willBootAsyncFlag: NIOLockedValueBox<Bool>
-            let didBootAsyncFlag: NIOLockedValueBox<Bool>
-            let shutdownAsyncFlag: NIOLockedValueBox<Bool>
+extension LibP2PTests {
 
-            init() {
-                self.willBootFlag = .init(false)
-                self.didBootFlag = .init(false)
-                self.shutdownFlag = .init(false)
-                self.didBootAsyncFlag = .init(false)
-                self.willBootAsyncFlag = .init(false)
-                self.shutdownAsyncFlag = .init(false)
+    @Suite("Libp2p Lifecycle Tests")
+    struct LibP2PLifecycleTests {
+
+        @available(*, deprecated, message: "Transition to async tests")
+        @Test func testLifecycleHandler() throws {
+            final class Foo: LifecycleHandler {
+                let willBootFlag: NIOLockedValueBox<Bool>
+                let didBootFlag: NIOLockedValueBox<Bool>
+                let shutdownFlag: NIOLockedValueBox<Bool>
+                let willBootAsyncFlag: NIOLockedValueBox<Bool>
+                let didBootAsyncFlag: NIOLockedValueBox<Bool>
+                let shutdownAsyncFlag: NIOLockedValueBox<Bool>
+
+                init() {
+                    self.willBootFlag = .init(false)
+                    self.didBootFlag = .init(false)
+                    self.shutdownFlag = .init(false)
+                    self.didBootAsyncFlag = .init(false)
+                    self.willBootAsyncFlag = .init(false)
+                    self.shutdownAsyncFlag = .init(false)
+                }
+
+                func willBootAsync(_ application: Application) async throws {
+                    self.willBootAsyncFlag.withLockedValue { $0 = true }
+                }
+
+                func didBootAsync(_ application: Application) async throws {
+                    self.didBootAsyncFlag.withLockedValue { $0 = true }
+                }
+
+                func shutdownAsync(_ application: Application) async {
+                    self.shutdownAsyncFlag.withLockedValue { $0 = true }
+                }
+
+                func willBoot(_ application: Application) throws {
+                    self.willBootFlag.withLockedValue { $0 = true }
+                }
+
+                func didBoot(_ application: Application) throws {
+                    self.didBootFlag.withLockedValue { $0 = true }
+                }
+
+                func shutdown(_ application: Application) {
+                    self.shutdownFlag.withLockedValue { $0 = true }
+                }
             }
 
-            func willBootAsync(_ application: Application) async throws {
-                self.willBootAsyncFlag.withLockedValue { $0 = true }
-            }
+            let app = Application(.testing)
 
-            func didBootAsync(_ application: Application) async throws {
-                self.didBootAsyncFlag.withLockedValue { $0 = true }
-            }
+            let foo = Foo()
+            app.lifecycle.use(foo)
 
-            func shutdownAsync(_ application: Application) async {
-                self.shutdownAsyncFlag.withLockedValue { $0 = true }
-            }
+            #expect(foo.willBootFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.didBootFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.shutdownFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.willBootAsyncFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.didBootAsyncFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.shutdownAsyncFlag.withLockedValue({ $0 }) == false)
 
-            func willBoot(_ application: Application) throws {
-                self.willBootFlag.withLockedValue { $0 = true }
-            }
+            try app.boot()
 
-            func didBoot(_ application: Application) throws {
-                self.didBootFlag.withLockedValue { $0 = true }
-            }
+            #expect(foo.willBootFlag.withLockedValue({ $0 }) == true)
+            #expect(foo.didBootFlag.withLockedValue({ $0 }) == true)
+            #expect(foo.shutdownFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.willBootAsyncFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.didBootAsyncFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.shutdownAsyncFlag.withLockedValue({ $0 }) == false)
 
-            func shutdown(_ application: Application) {
-                self.shutdownFlag.withLockedValue { $0 = true }
-            }
+            app.shutdown()
+
+            #expect(foo.willBootFlag.withLockedValue({ $0 }) == true)
+            #expect(foo.didBootFlag.withLockedValue({ $0 }) == true)
+            #expect(foo.shutdownFlag.withLockedValue({ $0 }) == true)
+            #expect(foo.willBootAsyncFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.didBootAsyncFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.shutdownAsyncFlag.withLockedValue({ $0 }) == false)
         }
 
-        let app = Application(.testing)
+        @Test func testLifecycleHandlerAsync() async throws {
+            final class Foo: LifecycleHandler {
+                let willBootFlag: NIOLockedValueBox<Bool>
+                let didBootFlag: NIOLockedValueBox<Bool>
+                let shutdownFlag: NIOLockedValueBox<Bool>
+                let willBootAsyncFlag: NIOLockedValueBox<Bool>
+                let didBootAsyncFlag: NIOLockedValueBox<Bool>
+                let shutdownAsyncFlag: NIOLockedValueBox<Bool>
 
-        let foo = Foo()
-        app.lifecycle.use(foo)
+                init() {
+                    self.willBootFlag = .init(false)
+                    self.didBootFlag = .init(false)
+                    self.shutdownFlag = .init(false)
+                    self.didBootAsyncFlag = .init(false)
+                    self.willBootAsyncFlag = .init(false)
+                    self.shutdownAsyncFlag = .init(false)
+                }
 
-        #expect(foo.willBootFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.didBootFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.shutdownFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.willBootAsyncFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.didBootAsyncFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.shutdownAsyncFlag.withLockedValue({ $0 }) == false)
+                func willBootAsync(_ application: Application) async throws {
+                    self.willBootAsyncFlag.withLockedValue { $0 = true }
+                }
 
-        try app.boot()
+                func didBootAsync(_ application: Application) async throws {
+                    self.didBootAsyncFlag.withLockedValue { $0 = true }
+                }
 
-        #expect(foo.willBootFlag.withLockedValue({ $0 }) == true)
-        #expect(foo.didBootFlag.withLockedValue({ $0 }) == true)
-        #expect(foo.shutdownFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.willBootAsyncFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.didBootAsyncFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.shutdownAsyncFlag.withLockedValue({ $0 }) == false)
+                func shutdownAsync(_ application: Application) async {
+                    self.shutdownAsyncFlag.withLockedValue { $0 = true }
+                }
 
-        app.shutdown()
+                func willBoot(_ application: Application) throws {
+                    self.willBootFlag.withLockedValue { $0 = true }
+                }
 
-        #expect(foo.willBootFlag.withLockedValue({ $0 }) == true)
-        #expect(foo.didBootFlag.withLockedValue({ $0 }) == true)
-        #expect(foo.shutdownFlag.withLockedValue({ $0 }) == true)
-        #expect(foo.willBootAsyncFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.didBootAsyncFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.shutdownAsyncFlag.withLockedValue({ $0 }) == false)
-    }
+                func didBoot(_ application: Application) throws {
+                    self.didBootFlag.withLockedValue { $0 = true }
+                }
 
-    @Test func testLifecycleHandlerAsync() async throws {
-        final class Foo: LifecycleHandler {
-            let willBootFlag: NIOLockedValueBox<Bool>
-            let didBootFlag: NIOLockedValueBox<Bool>
-            let shutdownFlag: NIOLockedValueBox<Bool>
-            let willBootAsyncFlag: NIOLockedValueBox<Bool>
-            let didBootAsyncFlag: NIOLockedValueBox<Bool>
-            let shutdownAsyncFlag: NIOLockedValueBox<Bool>
-
-            init() {
-                self.willBootFlag = .init(false)
-                self.didBootFlag = .init(false)
-                self.shutdownFlag = .init(false)
-                self.didBootAsyncFlag = .init(false)
-                self.willBootAsyncFlag = .init(false)
-                self.shutdownAsyncFlag = .init(false)
+                func shutdown(_ application: Application) {
+                    self.shutdownFlag.withLockedValue { $0 = true }
+                }
             }
 
-            func willBootAsync(_ application: Application) async throws {
-                self.willBootAsyncFlag.withLockedValue { $0 = true }
-            }
+            let app = try await Application.make(.testing, peerID: .ephemeral)
 
-            func didBootAsync(_ application: Application) async throws {
-                self.didBootAsyncFlag.withLockedValue { $0 = true }
-            }
+            let foo = Foo()
+            app.lifecycle.use(foo)
 
-            func shutdownAsync(_ application: Application) async {
-                self.shutdownAsyncFlag.withLockedValue { $0 = true }
-            }
+            #expect(foo.willBootFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.didBootFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.shutdownFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.willBootAsyncFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.didBootAsyncFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.shutdownAsyncFlag.withLockedValue({ $0 }) == false)
 
-            func willBoot(_ application: Application) throws {
-                self.willBootFlag.withLockedValue { $0 = true }
-            }
+            try await app.asyncBoot()
 
-            func didBoot(_ application: Application) throws {
-                self.didBootFlag.withLockedValue { $0 = true }
-            }
+            #expect(foo.willBootFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.didBootFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.shutdownFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.willBootAsyncFlag.withLockedValue({ $0 }) == true)
+            #expect(foo.didBootAsyncFlag.withLockedValue({ $0 }) == true)
+            #expect(foo.shutdownAsyncFlag.withLockedValue({ $0 }) == false)
 
-            func shutdown(_ application: Application) {
-                self.shutdownFlag.withLockedValue { $0 = true }
-            }
+            try await app.asyncShutdown()
+
+            #expect(foo.willBootFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.didBootFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.shutdownFlag.withLockedValue({ $0 }) == false)
+            #expect(foo.willBootAsyncFlag.withLockedValue({ $0 }) == true)
+            #expect(foo.didBootAsyncFlag.withLockedValue({ $0 }) == true)
+            #expect(foo.shutdownAsyncFlag.withLockedValue({ $0 }) == true)
         }
 
-        let app = try await Application.make(.testing, peerID: .ephemeral)
+        @available(*, deprecated, message: "Transition to async tests")
+        @Test func testBootDoesNotTriggerLifecycleHandlerMultipleTimes() throws {
+            let app = Application(.testing)
+            defer { app.shutdown() }
 
-        let foo = Foo()
-        app.lifecycle.use(foo)
-
-        #expect(foo.willBootFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.didBootFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.shutdownFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.willBootAsyncFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.didBootAsyncFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.shutdownAsyncFlag.withLockedValue({ $0 }) == false)
-
-        try await app.asyncBoot()
-
-        #expect(foo.willBootFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.didBootFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.shutdownFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.willBootAsyncFlag.withLockedValue({ $0 }) == true)
-        #expect(foo.didBootAsyncFlag.withLockedValue({ $0 }) == true)
-        #expect(foo.shutdownAsyncFlag.withLockedValue({ $0 }) == false)
-
-        try await app.asyncShutdown()
-
-        #expect(foo.willBootFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.didBootFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.shutdownFlag.withLockedValue({ $0 }) == false)
-        #expect(foo.willBootAsyncFlag.withLockedValue({ $0 }) == true)
-        #expect(foo.didBootAsyncFlag.withLockedValue({ $0 }) == true)
-        #expect(foo.shutdownAsyncFlag.withLockedValue({ $0 }) == true)
-    }
-
-    @available(*, deprecated, message: "Transition to async tests")
-    @Test func testBootDoesNotTriggerLifecycleHandlerMultipleTimes() throws {
-        let app = Application(.testing)
-        defer { app.shutdown() }
-
-        final class Handler: LifecycleHandler, Sendable {
-            let bootCount = NIOLockedValueBox(0)
-            func willBoot(_ application: Application) throws {
-                bootCount.withLockedValue { $0 += 1 }
+            final class Handler: LifecycleHandler, Sendable {
+                let bootCount = NIOLockedValueBox(0)
+                func willBoot(_ application: Application) throws {
+                    bootCount.withLockedValue { $0 += 1 }
+                }
             }
+
+            let handler = Handler()
+            app.lifecycle.use(handler)
+
+            try app.boot()
+            try app.boot()
+
+            #expect(handler.bootCount.withLockedValue({ $0 }) == 1)
         }
 
-        let handler = Handler()
-        app.lifecycle.use(handler)
+        @Test func testAsyncBootDoesNotTriggerLifecycleHandlerMultipleTimes() async throws {
+            let app = try await Application.make(peerID: .ephemeral)
 
-        try app.boot()
-        try app.boot()
-
-        #expect(handler.bootCount.withLockedValue({ $0 }) == 1)
-    }
-
-    @Test func testAsyncBootDoesNotTriggerLifecycleHandlerMultipleTimes() async throws {
-        let app = try await Application.make(peerID: .ephemeral)
-
-        final class Handler: LifecycleHandler, Sendable {
-            let bootCount = NIOLockedValueBox(0)
-            func willBoot(_ application: Application) throws {
-                bootCount.withLockedValue { $0 += 1 }
+            final class Handler: LifecycleHandler, Sendable {
+                let bootCount = NIOLockedValueBox(0)
+                func willBoot(_ application: Application) throws {
+                    bootCount.withLockedValue { $0 += 1 }
+                }
             }
+
+            let handler = Handler()
+            app.lifecycle.use(handler)
+
+            try await app.asyncBoot()
+            try await app.asyncBoot()
+
+            #expect(handler.bootCount.withLockedValue({ $0 }) == 1)
+
+            try await app.asyncShutdown()
         }
-
-        let handler = Handler()
-        app.lifecycle.use(handler)
-
-        try await app.asyncBoot()
-        try await app.asyncBoot()
-
-        #expect(handler.bootCount.withLockedValue({ $0 }) == 1)
-
-        try await app.asyncShutdown()
     }
 }

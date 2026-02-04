@@ -20,87 +20,90 @@ import LibP2PTesting
 import NIOCore
 import Testing
 
-@Suite("CacheTests")
-struct CacheTests {
-    @available(*, deprecated, message: "Transition to async tests")
-    @Test func testInMemoryCache() throws {
-        let app = Application(.testing)
-        defer { app.shutdown() }
+extension LibP2PTests {
 
-        try #expect(app.cache.get("foo", as: String.self).wait() == nil)
-        try app.cache.set("foo", to: "bar").wait()
-        try #expect(app.cache.get("foo").wait() == "bar")
+    @Suite("CacheTests")
+    struct CacheTests {
+        @available(*, deprecated, message: "Transition to async tests")
+        @Test func testInMemoryCache() throws {
+            let app = Application(.testing)
+            defer { app.shutdown() }
 
-        // Test expiration
-        try app.cache.set("foo2", to: "bar2", expiresIn: .seconds(1)).wait()
-        try #expect(app.cache.get("foo2").wait() == "bar2")
-        sleep(1)
-        try #expect(app.cache.get("foo2", as: String.self).wait() == nil)
-
-        // Test reset value
-        try app.cache.set("foo3", to: "bar3").wait()
-        try #expect(app.cache.get("foo3").wait() == "bar3")
-        try app.cache.delete("foo3").wait()
-        try #expect(app.cache.get("foo3", as: String.self).wait() == nil)
-    }
-
-    @available(*, deprecated, message: "Transition to async tests")
-    @Test func testCustomCache() throws {
-        let app = Application(.testing)
-        defer { app.shutdown() }
-        app.caches.use(.foo)
-        try app.cache.set("1", to: "2").wait()
-        try #expect(app.cache.get("foo").wait() == "bar")
-    }
-}
-
-@Suite("AsyncCacheTests")
-struct AsyncCacheTests {
-
-    @Test func testInMemoryCache() async throws {
-        let app = try await Application.make(.testing, peerID: .ephemeral())
-        do {
-            let value1 = try await app.cache.get("foo", as: String.self)
-            #expect(value1 == nil)
-            try await app.cache.set("foo", to: "bar")
-            let value2: String? = try await app.cache.get("foo")
-            #expect(value2 == "bar")
+            try #expect(app.cache.get("foo", as: String.self).wait() == nil)
+            try app.cache.set("foo", to: "bar").wait()
+            try #expect(app.cache.get("foo").wait() == "bar")
 
             // Test expiration
-            try await app.cache.set("foo2", to: "bar2", expiresIn: .seconds(1))
-
-            let value3: String? = try await app.cache.get("foo2")
-            #expect(value3 == "bar2")
-
-            try await Task.sleep(for: .seconds(1))
-
-            let value4 = try await app.cache.get("foo2", as: String.self)
-            #expect(value4 == nil)
+            try app.cache.set("foo2", to: "bar2", expiresIn: .seconds(1)).wait()
+            try #expect(app.cache.get("foo2").wait() == "bar2")
+            sleep(1)
+            try #expect(app.cache.get("foo2", as: String.self).wait() == nil)
 
             // Test reset value
-            try await app.cache.set("foo3", to: "bar3")
-            let value5: String? = try await app.cache.get("foo3")
-            #expect(value5 == "bar3")
-            try await app.cache.delete("foo3")
-            let value6 = try await app.cache.get("foo3", as: String.self)
-            #expect(value6 == nil)
-        } catch {
-            Issue.record(error)
+            try app.cache.set("foo3", to: "bar3").wait()
+            try #expect(app.cache.get("foo3").wait() == "bar3")
+            try app.cache.delete("foo3").wait()
+            try #expect(app.cache.get("foo3", as: String.self).wait() == nil)
         }
-        try await app.asyncShutdown()
+
+        @available(*, deprecated, message: "Transition to async tests")
+        @Test func testCustomCache() throws {
+            let app = Application(.testing)
+            defer { app.shutdown() }
+            app.caches.use(.foo)
+            try app.cache.set("1", to: "2").wait()
+            try #expect(app.cache.get("foo").wait() == "bar")
+        }
     }
 
-    @Test func testCustomCache() async throws {
-        let app = try await Application.make(.testing, peerID: .ephemeral())
-        do {
-            app.caches.use(.foo)
-            try await app.cache.set("1", to: "2")
-            let value = try await app.cache.get("foo", as: String.self)
-            #expect(value == "bar")
-        } catch {
-            Issue.record(error)
+    @Suite("AsyncCacheTests")
+    struct AsyncCacheTests {
+
+        @Test func testInMemoryCache() async throws {
+            let app = try await Application.make(.testing, peerID: .ephemeral())
+            do {
+                let value1 = try await app.cache.get("foo", as: String.self)
+                #expect(value1 == nil)
+                try await app.cache.set("foo", to: "bar")
+                let value2: String? = try await app.cache.get("foo")
+                #expect(value2 == "bar")
+
+                // Test expiration
+                try await app.cache.set("foo2", to: "bar2", expiresIn: .seconds(1))
+
+                let value3: String? = try await app.cache.get("foo2")
+                #expect(value3 == "bar2")
+
+                try await Task.sleep(for: .seconds(1))
+
+                let value4 = try await app.cache.get("foo2", as: String.self)
+                #expect(value4 == nil)
+
+                // Test reset value
+                try await app.cache.set("foo3", to: "bar3")
+                let value5: String? = try await app.cache.get("foo3")
+                #expect(value5 == "bar3")
+                try await app.cache.delete("foo3")
+                let value6 = try await app.cache.get("foo3", as: String.self)
+                #expect(value6 == nil)
+            } catch {
+                Issue.record(error)
+            }
+            try await app.asyncShutdown()
         }
-        try await app.asyncShutdown()
+
+        @Test func testCustomCache() async throws {
+            let app = try await Application.make(.testing, peerID: .ephemeral())
+            do {
+                app.caches.use(.foo)
+                try await app.cache.set("1", to: "2")
+                let value = try await app.cache.get("foo", as: String.self)
+                #expect(value == "bar")
+            } catch {
+                Issue.record(error)
+            }
+            try await app.asyncShutdown()
+        }
     }
 }
 
