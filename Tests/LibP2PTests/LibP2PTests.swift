@@ -146,7 +146,7 @@ struct LibP2PTests {
 
     @Test(.disabled(), .bug("https://github.com/swift-libp2p/swift-libp2p/issues/45"))
     func testAutomaticPortPickingWorks() async throws {
-        try await withApp(configure: { app in
+        func configure(_ app: Application) async throws {
             app.listen(.tcp(host: "127.0.0.1", port: 0))
 
             app.on("hello") { req in
@@ -156,8 +156,9 @@ struct LibP2PTests {
             #expect(app.servers.server(for: TCPServer.self)?.localAddress == nil)
 
             app.environment.arguments = ["serve"]
-
-        }) { app in
+        }
+        
+        try await withApp(configure: configure) { app in
             let localAddress = try #require(app.servers.server(for: TCPServer.self)?.listeningAddress)
             guard let tcp = localAddress.tcpAddress else {
                 Issue.record("couldn't get ip/port from `\(localAddress)`")
@@ -176,7 +177,7 @@ struct LibP2PTests {
             let port: Int
         }
 
-        try await withApp(configure: { app in
+        func configure(_ app: Application) async throws {
             app.servers.use(.tcp(host: "0.0.0.0", port: 0))
 
             app.on("hello") { req -> Response<ByteBuffer> in
@@ -189,7 +190,9 @@ struct LibP2PTests {
             }
 
             app.environment.arguments = ["serve"]
-        }) { app in
+        }
+        
+        try await withApp(configure: configure) { app in
             let localAddress = try #require(app.servers.server(for: TCPServer.self)?.listeningAddress)
             //#expect("0.0.0.0" == app.servers.server(forKey: TCPServer.key).configuration.hostname)
             //#expect(app.http.server.shared.localAddress?.port == app.http.server.configuration.port)
@@ -215,7 +218,7 @@ struct LibP2PTests {
             let port: Int
         }
 
-        try await withApp(configure: { app in
+        func configure(_ app: Application) async throws {
             app.servers.use(.tcp(host: "0.0.0.0", port: 3000))
 
             app.on("hello") { req -> Response<ByteBuffer> in
@@ -228,7 +231,9 @@ struct LibP2PTests {
             }
 
             app.environment.arguments = ["serve", "--hostname", "0.0.0.0", "--port", "3000"]
-        }) { app in
+        }
+        
+        try await withApp(configure: configure) { app in
             //XCTAssertNotNil(app.http.server.shared.localAddress)
             //XCTAssertEqual("0.0.0.0", app.http.server.configuration.hostname)
             //XCTAssertEqual(3000, app.http.server.configuration.port)

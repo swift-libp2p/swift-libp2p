@@ -76,7 +76,7 @@ struct LibP2PRouteTests {
     }
 
     @Test func testLibP2PRoutes_Additional_Routes_WithApp_Async() async throws {
-        try await withApp(configure: { app in
+        func configure(_ app: Application) async throws {
             // Register routes in our configure closure
             app.routes.group("api") { api in
                 // Ensure that we can register non-async routes
@@ -90,7 +90,9 @@ struct LibP2PRouteTests {
                     return .respondThenClose(req.payload)
                 }
             }
-        }) { app in
+        }
+        
+        try await withApp(configure: configure) { app in
             #expect(
                 app.routes.all.map { $0.description } == [
                     "/ipfs/id/1.0.0", "/ipfs/id/push/1.0.0", "/ipfs/ping/1.0.0", "/p2p/id/delta/1.0.0",
@@ -101,9 +103,12 @@ struct LibP2PRouteTests {
     }
 
     @Test func testLibP2PTestPing() async throws {
-        try await withApp(configure: { app in
+        
+        func configure(_ app: Application) async throws {
             app.logger.logLevel = .trace
-        }) { app in
+        }
+        
+        try await withApp(configure: configure) { app in
             let addr = try Multiaddr("/ip4/127.0.0.1/tcp/10000").encapsulate(proto: .p2p, address: app.peerID.b58String)
 
             let payload: [UInt8] = (0..<32).map { _ in UInt8.random() }
@@ -122,7 +127,8 @@ struct LibP2PRouteTests {
     }
 
     @Test func testLibP2PTestCustomRoutes() async throws {
-        try await withApp(configure: { app in
+        
+        func configure(_ app: Application) async throws {
             app.listen(.tcp)
             app.logger.logLevel = .trace
 
@@ -170,7 +176,9 @@ struct LibP2PRouteTests {
                     }
                 }
             }
-        }) { app in
+        }
+        
+        try await withApp(configure: configure) { app in
             let addr = try app.listenAddresses.first!.encapsulate(proto: .p2p, address: app.peerID.b58String)
             let message = "Hello World!"
 
@@ -209,7 +217,8 @@ struct LibP2PRouteTests {
     }
 
     @Test func testDoubleSlashRouteAccess() async throws {
-        try await withApp(configure: { app in
+        
+        func configure(_ app: Application) async throws {
             app.on(":foo", ":bar", "buz") { req -> String in
                 guard req.streamDirection == .inbound,
                     case .data = req.event
@@ -218,7 +227,9 @@ struct LibP2PRouteTests {
                 }
                 return "\(try req.parameters.require("foo"))\(try req.parameters.require("bar"))"
             }
-        }) { app in
+        }
+        
+        try await withApp(configure: configure) { app in
             let from = try Multiaddr("/ip4/127.0.0.1/tcp/10001")
             try await app.testing().test(from, protocol: "/foop/barp/buz") { res in
                 #expect(res.payload.string == "foopbarp")
