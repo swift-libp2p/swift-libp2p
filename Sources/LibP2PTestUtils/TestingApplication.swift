@@ -181,9 +181,6 @@ extension Application {
                 responses.writeBuffer(&res.payload)
             }
 
-            print("Response")
-            print(responses)
-            print("--------")
             return TestingResponse(
                 payload: responses
             )
