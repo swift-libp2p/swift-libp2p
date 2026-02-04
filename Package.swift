@@ -85,11 +85,43 @@ let package = Package(
             ],
             resources: [
                 .copy("Identify/ID/Protobuf/Identify.proto")
-            ]
+            ],
+            swiftSettings: swiftSettings
+        ),
+        // Testing
+        .target(
+            name: "LibP2PTestUtils",
+            dependencies: [
+                .target(name: "LibP2P")
+            ],
+            swiftSettings: swiftSettings
+        ),
+        .target(
+            name: "LibP2PTesting",
+            dependencies: [
+                .target(name: "LibP2PTestUtils"),
+                .target(name: "LibP2P"),
+            ],
+            swiftSettings: swiftSettings
         ),
         .testTarget(
             name: "LibP2PTests",
-            dependencies: ["LibP2P"]
+            dependencies: [
+                .target(name: "LibP2P"),
+                .target(name: "LibP2PTesting"),
+            ],
+            swiftSettings: swiftSettings
         ),
     ]
 )
+
+var swiftSettings: [SwiftSetting] {
+    [
+        //.enableUpcomingFeature("ExistentialAny"),
+        //.enableUpcomingFeature("InternalImportsByDefault"),
+        //.enableUpcomingFeature("MemberImportVisibility"),
+        .enableUpcomingFeature("InferIsolatedConformances"),
+        //.enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+        .enableUpcomingFeature("ImmutableWeakCaptures"),
+    ]
+}
