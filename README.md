@@ -146,6 +146,8 @@ try await lib.asyncShutdown()
 | [`swift-libp2p-mdns`](//github.com/swift-libp2p/swift-libp2p-mdns) | 🟡 | MulticastDNS for LAN discovery | ![Build & Test (macos)](https://github.com/swift-libp2p/swift-libp2p-mdns/actions/workflows/build+test.yml/badge.svg) |
 | [`swift-libp2p-identify`](//github.com/swift-libp2p/swift-libp2p-identify) | 🟢 | IPFS Identify Protocols (embedded) | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-identify/actions/workflows/build+test.yml/badge.svg) |
 | `swift-libp2p-rendezvous` | 🔴 | TODO: Rendezvous (protocol poster board) | N/A |
+| **Integrations** |
+| [`swift-libp2p-queues-redis-driver`](//github.com/swift-libp2p/swift-libp2p-queues-redis-driver) | 🟢 | A [Queues](https://docs.vapor.codes/advanced/queues/) driver powered by Redis | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-queues-redis-driver/actions/workflows/build+test.yml/badge.svg) |
 | **Testing and examples** |
 | `swift-libp2p-testing` | 🔴 | TODO: A collection of testing utilities for libp2p | N/A |
 
