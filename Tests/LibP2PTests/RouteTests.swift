@@ -279,7 +279,7 @@ extension LibP2PTests {
                 let timestamp: Date
                 let version: String
             }
-            
+
             func configure(_ app: Application) async throws {
                 app.listen(.tcp)
                 app.logger.logLevel = .trace

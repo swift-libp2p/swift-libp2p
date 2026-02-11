@@ -122,29 +122,29 @@ extension ResponseEncodable where Self: Encodable {
     }
 }
 
-public protocol Content: Codable, ResponseEncodable, AsyncResponseEncodable, Sendable { }
+public protocol Content: Codable, ResponseEncodable, AsyncResponseEncodable, Sendable {}
 
-extension String: Content { }
+extension String: Content {}
 
-extension FixedWidthInteger where Self: Content { }
+extension FixedWidthInteger where Self: Content {}
 
-extension Int: Content { }
-extension Int8: Content { }
-extension Int16: Content { }
-extension Int32: Content { }
-extension Int64: Content { }
-extension UInt: Content { }
-extension UInt8: Content { }
-extension UInt16: Content { }
-extension UInt32: Content { }
-extension UInt64: Content { }
+extension Int: Content {}
+extension Int8: Content {}
+extension Int16: Content {}
+extension Int32: Content {}
+extension Int64: Content {}
+extension UInt: Content {}
+extension UInt8: Content {}
+extension UInt16: Content {}
+extension UInt32: Content {}
+extension UInt64: Content {}
 
 extension Bool: Content {}
 
-extension BinaryFloatingPoint where Self: Content { }
-extension Double: Content { }
-extension Float: Content { }
+extension BinaryFloatingPoint where Self: Content {}
+extension Double: Content {}
+extension Float: Content {}
 
 //extension Array: Content where Element: Content { }
 
-extension Dictionary: Content, ResponseEncodable, AsyncResponseEncodable where Key == String, Value: Content { }
+extension Dictionary: Content, ResponseEncodable, AsyncResponseEncodable where Key == String, Value: Content {}
