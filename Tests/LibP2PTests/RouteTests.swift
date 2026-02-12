@@ -272,5 +272,113 @@ extension LibP2PTests {
             }
         }
 
+        @Test func testLibP2PTestCustomRoutesContent() async throws {
+
+            struct Echo: Content {
+                let msg: String
+                let timestamp: Date
+                let version: String
+            }
+
+            func configure(_ app: Application) async throws {
+                app.listen(.tcp)
+                app.logger.logLevel = .trace
+
+                @Sendable func handleEcho(
+                    request req: Request,
+                    modifyingMessage: ((String) -> String)? = nil
+                ) -> Response<Echo> {
+                    switch req.streamDirection {
+                    case .inbound:
+                        switch req.event {
+                        case .ready:
+                            return .stayOpen
+                        case .data(let payload):
+                            let modified = modifyingMessage?(payload.string) ?? payload.string
+                            let echo = Echo(msg: modified, timestamp: .now, version: req.route?.description ?? "")
+                            return .respondThenClose(echo)
+                        case .closed:
+                            return .close
+                        case .error(let error):
+                            Issue.record(error)
+                            return .reset(error)
+                        }
+                    case .outbound:
+                        Issue.record("Received Unexpected Outbound Echo Request")
+                        return .close
+                    }
+                }
+
+                app.routes.group("echo") { echo in
+                    echo.on("1.0.0") { req -> Response<Echo> in
+                        handleEcho(request: req)
+                    }
+
+                    echo.group("2.0.0") { echo2 in
+
+                        echo2.on { req -> Response<Echo> in
+                            handleEcho(request: req)
+                        }
+
+                        echo2.on("lower") { req -> Response<Echo> in
+                            handleEcho(request: req, modifyingMessage: { $0.lowercased() })
+                        }
+
+                        echo2.on("upper") { req -> Response<Echo> in
+                            handleEcho(request: req, modifyingMessage: { $0.uppercased() })
+                        }
+                    }
+                }
+            }
+
+            try await withApp(configure: configure) { app in
+                let addr = try app.listenAddresses.first!.encapsulate(proto: .p2p, address: app.peerID.b58String)
+                let message = "Hello World!"
+
+                try await app.testing().test(
+                    addr,
+                    protocol: "echo/1.0.0",
+                    payload: .init(string: message)
+                ) { resp in
+                    let echo = try JSONDecoder().decode(Echo.self, from: Data(resp.payload.readableBytesView))
+                    #expect(echo.msg == message)
+                    #expect(echo.timestamp < .now)
+                    #expect(echo.version == "/echo/1.0.0")
+                }
+
+                try await app.testing().test(
+                    addr,
+                    protocol: "echo/2.0.0",
+                    payload: .init(string: message)
+                ) { resp in
+                    let echo = try JSONDecoder().decode(Echo.self, from: Data(resp.payload.readableBytesView))
+                    #expect(echo.msg == message)
+                    #expect(echo.timestamp < .now)
+                    #expect(echo.version == "/echo/2.0.0")
+                }
+
+                try await app.testing().test(
+                    addr,
+                    protocol: "echo/2.0.0/lower",
+                    payload: .init(string: message)
+                ) { resp in
+                    let echo = try JSONDecoder().decode(Echo.self, from: Data(resp.payload.readableBytesView))
+                    #expect(echo.msg == message.lowercased())
+                    #expect(echo.timestamp < .now)
+                    #expect(echo.version == "/echo/2.0.0/lower")
+                }
+
+                try await app.testing().test(
+                    addr,
+                    protocol: "echo/2.0.0/upper",
+                    payload: .init(string: message)
+                ) { resp in
+                    let echo = try JSONDecoder().decode(Echo.self, from: Data(resp.payload.readableBytesView))
+                    #expect(echo.msg == message.uppercased())
+                    #expect(echo.timestamp < .now)
+                    #expect(echo.version == "/echo/2.0.0/upper")
+                }
+            }
+        }
     }
 }
