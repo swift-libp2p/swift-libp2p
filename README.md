@@ -148,6 +148,7 @@ try await lib.asyncShutdown()
 | `swift-libp2p-rendezvous` | 🔴 | TODO: Rendezvous (protocol poster board) | N/A |
 | **Integrations** |
 | [`swift-libp2p-queues-redis-driver`](//github.com/swift-libp2p/swift-libp2p-queues-redis-driver) | 🟢 | A [Queues](https://docs.vapor.codes/advanced/queues/) driver powered by Redis | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-queues-redis-driver/actions/workflows/build+test.yml/badge.svg) |
+| [`swift-libp2p-fluent`](//github.com/swift-libp2p/swift-libp2p-fluent) | 🟢 | [Fluent](https://docs.vapor.codes/fluent/overview/), a Database Abstraction Layer | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-fluent/actions/workflows/build+test.yml/badge.svg) |
 | **Testing and examples** |
 | `swift-libp2p-testing` | 🔴 | TODO: A collection of testing utilities for libp2p | N/A |
 
