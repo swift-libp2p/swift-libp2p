@@ -60,7 +60,7 @@ extension Application {
             self.storage.manager.withLockedValue { $0 = makeManager(self.application) }
         }
 
-        let application: Application
+        public let application: Application
 
         var storage: Storage {
             guard let storage = self.application.storage[Key.self] else {

@@ -21,6 +21,10 @@ import _NIOFileSystem
 public enum KeyPairFile {
     public static let ENV_PEERID_PASSWORD_KEY = "PEERID_PASSWORD"
 
+    public static var ephemeral: KeyPairFile {
+        .ephemeral(type: .Ed25519)
+    }
+
     /// A new PeerID will be generated and stored in memory only it will be destoyed when the application stops and will be unrecoverable
     case ephemeral(type: LibP2PCrypto.Keys.KeyPairType = .Ed25519)
 

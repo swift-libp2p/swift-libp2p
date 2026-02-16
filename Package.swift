@@ -23,11 +23,8 @@ let package = Package(
     ],
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
-        .library(
-            name: "LibP2P",
-            targets: ["LibP2P"]
-        )
-        //.library(name: "LibP2PCore", targets: ["LibP2PCore"])
+        .library(name: "LibP2P", targets: ["LibP2P"]),
+        .library(name: "LibP2PTesting", targets: ["LibP2PTesting"]),
     ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
@@ -87,7 +84,24 @@ let package = Package(
             ],
             resources: [
                 .copy("Identify/ID/Protobuf/Identify.proto")
-            ]
+            ],
+            swiftSettings: swiftSettings
+        ),
+        // Testing
+        .target(
+            name: "LibP2PTestUtils",
+            dependencies: [
+                .target(name: "LibP2P")
+            ],
+            swiftSettings: swiftSettings
+        ),
+        .target(
+            name: "LibP2PTesting",
+            dependencies: [
+                .target(name: "LibP2PTestUtils"),
+                .target(name: "LibP2P"),
+            ],
+            swiftSettings: swiftSettings
         ),
         .executableTarget(
             name: "Generate",
@@ -100,6 +114,10 @@ let package = Package(
         .testTarget(
             name: "LibP2PTests",
             dependencies: [
+                .target(name: "LibP2P"),
+                .target(name: "LibP2PTesting"),
+            ],
+            swiftSettings: swiftSettings
                 "LibP2P"
             ]
         ),
@@ -111,3 +129,14 @@ let package = Package(
         ),
     ]
 )
+
+var swiftSettings: [SwiftSetting] {
+    [
+        //.enableUpcomingFeature("ExistentialAny"),
+        //.enableUpcomingFeature("InternalImportsByDefault"),
+        //.enableUpcomingFeature("MemberImportVisibility"),
+        .enableUpcomingFeature("InferIsolatedConformances"),
+        //.enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+        .enableUpcomingFeature("ImmutableWeakCaptures"),
+    ]
+}
