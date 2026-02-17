@@ -109,7 +109,8 @@ let package = Package(
                 .target(name: "LibP2P"),
                 .product(name: "ConsoleKit", package: "console-kit"),
                 .product(name: "Subprocess", package: "swift-subprocess")
-            ]
+            ],
+            swiftSettings: swiftSettings
         ),
         .testTarget(
             name: "LibP2PTests",
@@ -118,14 +119,13 @@ let package = Package(
                 .target(name: "LibP2PTesting"),
             ],
             swiftSettings: swiftSettings
-                "LibP2P"
-            ]
         ),
         .testTarget(
             name: "GenerateTests",
             dependencies: [
                 "Generate"
-            ]
+            ],
+            swiftSettings: swiftSettings
         ),
     ]
 )
