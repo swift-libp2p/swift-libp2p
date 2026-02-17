@@ -72,8 +72,8 @@ struct Generate: AsyncCommand {
         var muxerModules: String?
 
         @Option(
-            name: "extra",
-            short: "e",
+            name: "other",
+            short: "o",
             help:
                 "A list of comma seperated modules that your app will use (ex: `pubsub`, `dht`, `dnsaddr`, `mdns`, `redis`, ect) defaults to none. See the README for a complete list of modules."
         )
@@ -91,6 +91,14 @@ struct Generate: AsyncCommand {
         let security = try (signature.securityModules ?? "noise").toDependencies(ofType: .security)
         let muxers = try (signature.muxerModules ?? "yamux").toDependencies(ofType: .muxer)
         let deps = try (signature.additionalDependencies ?? "").toDependencies(ofType: .other)
+        let database = try (signature.additionalDependencies ?? "").toDependencies(ofType: .database).first
+        var databaseString = ""
+        if let database {
+            databaseString = """
+            Database
+                \(database.nicknames.first ?? "nil")
+            """
+        }
         let proj = """
             Project Overview    
                 Name:       \(signature.name)
@@ -100,6 +108,7 @@ struct Generate: AsyncCommand {
                 Security:   \(signature.securityModules ?? "noise")
                 Muxers:     \(signature.muxerModules ?? "yamux")
                 Extra:      \(signature.additionalDependencies ?? "")
+            \(databaseString)
             """
         context.console.print(proj)
 
@@ -115,7 +124,7 @@ struct Generate: AsyncCommand {
         try await Generate.ensureCommandAvailable("git")
 
         // Clone proj into dir
-        try await Generate.cloneRepository(template.repo(for: mode), to: path, using: context)
+        try await Generate.cloneRepository(template.repo(for: mode), branch: template.branch, to: path, using: context)
         context.console.print("\(path)")
 
         // At this point we need to delete the directory if anything goes wrong so we catch these errors
@@ -124,12 +133,21 @@ struct Generate: AsyncCommand {
             try await Generate.removeGit(path: path, using: context)
 
             // Configure Package.swift (names the package and adds the dependencies)
-            let allDeps = transports + security + muxers + deps
+            var allDeps = transports + security + muxers + deps
+            if let database { allDeps += [Dependency.fluent, database] }
             try configureSwiftPackageFile(at: path, named: signature.name, withDependencies: allDeps)
 
             // Import and install dependencies in configure.swift
-            try configureAppFile(at: path, withDependencies: allDeps)
+            try configureAppFile(at: path, withDependencies: allDeps, verbose: template == .exampleEcho)
 
+            // If we're testing fluent, ensure we configure our AppTests.swift as well
+            switch template {
+            case .exampleEcho:
+                break
+            case .testFluent, .testPing:
+                try configureAppTestFile(at: path, withDependencies: allDeps, verbose: false)
+            }
+            
             // For each dependency
             // Add special scaffolding?
             // (ex: additional configs and/or routes?)
@@ -192,18 +210,18 @@ struct Generate: AsyncCommand {
         func packageDef(for dep: Dependency, includeTemplate: Bool) -> String {
             """
             // \(dep.comment)
-            \t\t.package(url: "\(dep.packageRepo)", .upToNextMinor(from: "\(dep.tag)")),\(includeTemplate ? "\n\t\t%%DEPENDENCY%%" : "")
+            \t\t.package(url: "\(dep.repo.url)", \(dep.tag.toString)),\(includeTemplate ? "\n\t\t%%DEPENDENCY%%" : "")
             """
         }
 
         func productDef(for dep: Dependency, includeTemplate: Bool) -> String {
             """
-            .product(name: "\(dep.libName)", package: "\(dep.repoName)"),\(includeTemplate ? "\n\t\t\t\t%%TARGET_DEPENDENCY%%" : "")
+            .product(name: "\(dep.libName)", package: "\(dep.repo.name)"),\(includeTemplate ? "\n\t\t\t\t%%TARGET_DEPENDENCY%%" : "")
             """
         }
     }
 
-    func configureAppFile(at path: String, withDependencies deps: [Dependency]) throws {
+    func configureAppFile(at path: String, withDependencies deps: [Dependency], verbose: Bool = false) throws {
         let confPath = "\(path)/Sources/App/configure.swift"
         guard let configureData = FileManager.default.contents(atPath: confPath) else {
             throw Generate.Error.failedToOpenFileAt(confPath)
@@ -213,21 +231,39 @@ struct Generate: AsyncCommand {
         }
 
         // Inject deps into configure.swift
-        Generate.configureApp(conf: &conf, withDependencies: deps)
+        Generate.configureApp(conf: &conf, withDependencies: deps, tabCount: 1, verbose: verbose)
 
         guard FileManager.default.createFile(atPath: confPath, contents: conf.data(using: .utf8)) else {
             throw Generate.Error.failedToConfigure("configure.swift")
         }
     }
+    
+    func configureAppTestFile(at path: String, withDependencies deps: [Dependency], verbose: Bool = false) throws {
+        let confPath = "\(path)/Tests/AppTests/AppTests.swift"
+        guard let configureData = FileManager.default.contents(atPath: confPath) else {
+            throw Generate.Error.failedToOpenFileAt(confPath)
+        }
+        guard var conf = String(data: configureData, encoding: .utf8) else {
+            throw Generate.Error.failedToOpenFileAt(confPath)
+        }
 
-    static func configureApp(conf: inout String, withDependencies deps: [Dependency]) {
+        // Inject deps into configure.swift
+        Generate.configureApp(conf: &conf, withDependencies: deps, tabCount: 2, testing: true, verbose: verbose)
+
+        guard FileManager.default.createFile(atPath: confPath, contents: conf.data(using: .utf8)) else {
+            throw Generate.Error.failedToConfigure("AppTests.swift")
+        }
+    }
+
+    static func configureApp(conf: inout String, withDependencies deps: [Dependency], tabCount: Int = 1, testing: Bool = false, verbose: Bool) {
         // Configure configure.swift with deps
+        let tabs = String(repeating: "\t", count: tabCount)
         for dep in deps {
             if !dep.isEmbedded {
                 conf = conf.replacingOccurrences(
                     of: "%%IMPORT%%",
                     with: """
-                        import \(dep.libName)
+                        \(dep.libraryImportDecl(testing))
                         %%IMPORT%%
                         """
                 )
@@ -237,16 +273,27 @@ struct Generate: AsyncCommand {
                     of: "%%INSTALLATION%%",
                     with: """
                         \(install)
-                        \t%%INSTALLATION%%
+                        \(tabs)%%INSTALLATION%%
                         """
                 )
+            }
+            if verbose {
+                for verboseInstall in dep.verboseInstallation {
+                    conf = conf.replacingOccurrences(
+                        of: "%%INSTALLATION%%",
+                        with: """
+                            \(verboseInstall)
+                            \(tabs)%%INSTALLATION%%
+                            """
+                    )
+                }
             }
             for postInstall in dep.postInstallation {
                 conf = conf.replacingOccurrences(
                     of: "%%POST_INSTALLATION%%",
                     with: """
                         \(postInstall)
-                        \t%%POST_INSTALLATION%%
+                        \(tabs)%%POST_INSTALLATION%%
                         """
                 )
             }
@@ -275,12 +322,13 @@ extension String {
 
 extension Array where Element == Substring {
     func toDependencies(ofType type: Dependency.ModuleType) throws -> [Dependency] {
-        try self.map { key in
+        try self.compactMap { key in
             guard
                 let dep = Generate.Dependencies.first(where: {
                     $0.moduleType == type && $0.nicknames.contains(key.lowercased())
                 })
             else {
+                if type == .other || type == .database { return nil }
                 throw Generate.Error.errorFor(type: type, key: key.lowercased())
             }
             return dep
@@ -330,7 +378,9 @@ extension Generate {
         /// Failed to configure and/or write the file to disk.
         /// The associated string is the name of the file.
         case failedToConfigure(String)
-
+        /// The provided tag string is invalid
+        case invalidTag(String)
+        
         static func errorFor(type: Dependency.ModuleType, key: String) -> Error {
             switch type {
             case .transport:
@@ -340,6 +390,8 @@ extension Generate {
             case .muxer:
                 return .unsupportedMuxerModule(key)
             case .other:
+                return .unsupportedModule(key)
+            case .database:
                 return .unsupportedModule(key)
             }
         }
@@ -353,7 +405,7 @@ extension Generate {
     enum Template {
         case exampleEcho
         case testPing
-        //case testPerf
+        case testFluent
 
         init(_ str: String) throws {
             switch str.lowercased() {
@@ -361,6 +413,8 @@ extension Generate {
                 self = .exampleEcho
             case "test-ping":
                 self = .testPing
+            case "test-fluent":
+                self = .testFluent
             default:
                 throw Generate.Error.unsupportedTemplate(str)
             }
@@ -370,6 +424,15 @@ extension Generate {
             switch self {
             case .exampleEcho: "\(Generate.BaseURL)/libp2p-app-template"
             case .testPing: "\(Generate.BaseURL)/libp2p-tests-ping"
+            case .testFluent: "\(Generate.BaseURL)/test-fluent-driver"
+            }
+        }
+        
+        var branch: String? {
+            switch self {
+            case .exampleEcho: "template"
+            case .testPing: nil
+            case .testFluent: nil
             }
         }
     }
@@ -473,10 +536,15 @@ extension Generate {
     /// - Throws: ``Generate.Error.failedToCloneRepository`` if the underlying `git clone` command terminates with a non‑zero exit status or cannot be executed.
     /// - Returns: The absolute path to the newly cloned repository as a ``String``.
     @discardableResult
-    static func cloneRepository(_ url: String, to path: String, using context: CommandContext) async throws -> String {
+    static func cloneRepository(_ url: String, branch: String? = nil, to path: String, using context: CommandContext) async throws -> String {
+        // Construct our arguments
+        var args:[String] = ["clone"]
+        if let branch { args += ["-b", branch] }
+        args += [url, path]
+        // execute the clone
         let res = try await Subprocess.run(
             .name("git"),
-            arguments: ["clone", "-b", "template", url, path],
+            arguments: Arguments(args),
             output: .string(limit: 1024),
             error: .string(limit: 1024)
         )
