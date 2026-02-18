@@ -75,7 +75,7 @@ struct Generate: AsyncCommand {
             name: "other",
             short: "o",
             help:
-                "A list of comma seperated modules that your app will use (ex: `pubsub`, `dht`, `dnsaddr`, `mdns`, `redis`, ect) defaults to none. See the README for a complete list of modules."
+                "A list of comma seperated modules that your app will use (ex: `pubsub`, `dht`, `dnsaddr`, `mdns`, `redis`, `sqlite`, `postgres`, `mysql`, ect) defaults to none. See the README for a complete list of modules."
         )
         var additionalDependencies: String?
     }
