@@ -95,9 +95,9 @@ struct Generate: AsyncCommand {
         var databaseString = ""
         if let database {
             databaseString = """
-            Database
-                \(database.nicknames.first ?? "nil")
-            """
+                Database
+                    \(database.nicknames.first ?? "nil")
+                """
         }
         let proj = """
             Project Overview    
@@ -147,7 +147,7 @@ struct Generate: AsyncCommand {
             case .testFluent, .testPing:
                 try configureAppTestFile(at: path, withDependencies: allDeps, verbose: false)
             }
-            
+
             // For each dependency
             // Add special scaffolding?
             // (ex: additional configs and/or routes?)
@@ -165,7 +165,7 @@ struct Generate: AsyncCommand {
             // Rethrow the error
             throw error
         }
-        
+
         // build it??
         //try await Generate.buildProject(path: path)
     }
@@ -237,7 +237,7 @@ struct Generate: AsyncCommand {
             throw Generate.Error.failedToConfigure("configure.swift")
         }
     }
-    
+
     func configureAppTestFile(at path: String, withDependencies deps: [Dependency], verbose: Bool = false) throws {
         let confPath = "\(path)/Tests/AppTests/AppTests.swift"
         guard let configureData = FileManager.default.contents(atPath: confPath) else {
@@ -255,7 +255,13 @@ struct Generate: AsyncCommand {
         }
     }
 
-    static func configureApp(conf: inout String, withDependencies deps: [Dependency], tabCount: Int = 1, testing: Bool = false, verbose: Bool) {
+    static func configureApp(
+        conf: inout String,
+        withDependencies deps: [Dependency],
+        tabCount: Int = 1,
+        testing: Bool = false,
+        verbose: Bool
+    ) {
         // Configure configure.swift with deps
         let tabs = String(repeating: "\t", count: tabCount)
         for dep in deps {
@@ -380,7 +386,7 @@ extension Generate {
         case failedToConfigure(String)
         /// The provided tag string is invalid
         case invalidTag(String)
-        
+
         static func errorFor(type: Dependency.ModuleType, key: String) -> Error {
             switch type {
             case .transport:
@@ -427,7 +433,7 @@ extension Generate {
             case .testFluent: "\(Generate.BaseURL)/test-fluent-driver"
             }
         }
-        
+
         var branch: String? {
             switch self {
             case .exampleEcho: "template"
@@ -536,9 +542,14 @@ extension Generate {
     /// - Throws: ``Generate.Error.failedToCloneRepository`` if the underlying `git clone` command terminates with a non‑zero exit status or cannot be executed.
     /// - Returns: The absolute path to the newly cloned repository as a ``String``.
     @discardableResult
-    static func cloneRepository(_ url: String, branch: String? = nil, to path: String, using context: CommandContext) async throws -> String {
+    static func cloneRepository(
+        _ url: String,
+        branch: String? = nil,
+        to path: String,
+        using context: CommandContext
+    ) async throws -> String {
         // Construct our arguments
-        var args:[String] = ["clone"]
+        var args: [String] = ["clone"]
         if let branch { args += ["-b", branch] }
         args += [url, path]
         // execute the clone

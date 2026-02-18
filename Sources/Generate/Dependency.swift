@@ -20,11 +20,11 @@ struct Dependency: Equatable {
         case other
         case database
     }
-    
+
     enum Repository: Equatable {
         case swift_libp2p(String)
         case vapor(String)
-        
+
         var url: String {
             switch self {
             case .swift_libp2p(let repoName):
@@ -33,7 +33,7 @@ struct Dependency: Equatable {
                 return "https://github.com/vapor/" + repoName
             }
         }
-        
+
         var name: String {
             switch self {
             case .swift_libp2p(let repoName):
@@ -43,13 +43,13 @@ struct Dependency: Equatable {
             }
         }
     }
-    
+
     enum Range: Equatable {
         case upToNextMinor(String)
         case upToNextMajor(String)
         case from(String)
         case branch(String)
-        
+
         var toString: String {
             do {
                 switch self {
@@ -66,10 +66,10 @@ struct Dependency: Equatable {
                 fatalError("Invalid Tag Encountered: \(self) Error: \(error)")
             }
         }
-        
+
         struct Tag {
             let tag: String
-            
+
             init(_ tag: String) throws {
                 let parts = tag.split(separator: ".").compactMap { Int($0) }
                 guard parts.count == 3 else { throw Generate.Error.invalidTag(tag) }
@@ -117,7 +117,7 @@ struct Dependency: Equatable {
         self.isEmbedded = isEmbedded
         self.isTestable = isTestable
     }
-    
+
     func libraryImportDecl(_ testing: Bool = false) -> String {
         if testing && self.isTestable {
             return "@testable import \(self.libName)"
@@ -238,7 +238,7 @@ extension Dependency {
         nicknames: ["mdns"],
         installation: ["app.discovery.use( .mdns )"]
     )
-    
+
     // Redis
     static let redis = Dependency(
         moduleType: .other,
@@ -249,7 +249,7 @@ extension Dependency {
         nicknames: ["queues", "redis"],
         installation: [
             """
-            
+
                 // TODO: Configure me!!
                 // try app.queues.use(.redis(url: "redis://127.0.0.1:6379"))
                 app.queues.use(.redis(
@@ -262,7 +262,7 @@ extension Dependency {
         ],
         verboseInstallation: [
             """
-            
+
                 // TODO: Add your queues / jobs
                 // app.queues.add( EmailJob() )
                 // app.queues.schedule(CleanupJob())
@@ -280,7 +280,7 @@ extension Dependency {
                 
                 // Remember to either start your jobs in process
                 try app.queues.startInProcessJobs(on: .default)
-            
+
                 // Or run your jobs in a seperate instance with
                 // swift run App queues
                 
@@ -289,7 +289,7 @@ extension Dependency {
             """
         ]
     )
-    
+
     // Fluent / Database
     static let fluent = Dependency(
         moduleType: .database,
@@ -297,11 +297,11 @@ extension Dependency {
         libName: "Fluent",
         tag: .upToNextMinor("0.0.3"),
         comment: "LibP2P's Fluent Integration for Databases",
-        nicknames: [], // we dont expose this individually
+        nicknames: [],  // we dont expose this individually
         installation: [],
         verboseInstallation: [
             """
-            
+
                 // TODO: Add your Model Migrations
                 // app.migrations.add(MyModelsMigration())
             """
@@ -311,7 +311,7 @@ extension Dependency {
                 
                 // And make sure to either run the migrations manually with
                 // swift run App migrate
-            
+
                 // Or programatically with
                 // try await app.autoMigrate()
             """
@@ -332,7 +332,7 @@ extension Dependency {
                 
                 // An ephemeral, in memory database
                 app.databases.use( .sqlite(.memory), as: .sqlite )
-            
+
                 // Or provide a file path to persist the database across app launches
                 // app.databases.use(.sqlite(.file("db.sqlite")), as: .sqlite)
             """
@@ -363,7 +363,7 @@ extension Dependency {
         ],
         verboseInstallation: [
             """
-            
+
                 // TODO: Uncomment if you'd like swift-libp2p to persist its peerstore in the database
                 // app.peerstore.use( .fluent )
                 
@@ -382,11 +382,11 @@ extension Dependency {
         nicknames: ["mysql", "fluent-mysql", "mariadb", "sql"],
         installation: [
             """
-            
+
                 // TODO: Set up a secure connection!!
                 var tls = TLSConfiguration.makeClientConfiguration()
                 tls.certificateVerification = .none
-            
+
                 // TODO: Configure me!!
                 app.databases.use(.mysql(
                     hostname: Environment.get("DB_HOSTNAME") ?? "localhost",
@@ -399,7 +399,7 @@ extension Dependency {
         ],
         verboseInstallation: [
             """
-            
+
                 // TODO: Uncomment if you'd like swift-libp2p to persist its peerstore in the database
                 // app.peerstore.use( .fluent )
                 
@@ -418,7 +418,7 @@ extension Dependency {
         nicknames: ["mongo", "mongodb", "nosql"],
         installation: [
             """
-            
+
                 // TODO: Configure me!!
                 let hostname = Environment.get("DB_HOSTNAME") ?? "localhost"
                 let port = Int(Environment.get("DB_PORT") ?? "") ?? 27017
@@ -436,7 +436,7 @@ extension Dependency {
         ],
         verboseInstallation: [
             """
-            
+
                 // TODO: Uncomment if you'd like swift-libp2p to persist its peerstore in the database
                 // app.peerstore.use( .fluent )
                 
@@ -468,10 +468,10 @@ extension Generate {
         Dependency.kaddht,
         Dependency.dnsaddr,
         Dependency.mdns,
-        
+
         // Redis
         Dependency.redis,
-        
+
         // Databases
         Dependency.sqlite,
         Dependency.postgres,
