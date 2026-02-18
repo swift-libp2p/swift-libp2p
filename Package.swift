@@ -54,7 +54,7 @@ let package = Package(
         // SwiftState for state machines
         .package(url: "https://github.com/ReactKit/SwiftState.git", .upToNextMajor(from: "6.0.0")),
         // Swift Subprocess
-        .package(url: "https://github.com/swiftlang/swift-subprocess.git", .upToNextMajor(from: "0.1.0"))
+        .package(url: "https://github.com/swiftlang/swift-subprocess.git", .upToNextMajor(from: "0.2.0"))
     ],
     targets: [
         // C
