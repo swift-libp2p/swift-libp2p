@@ -372,7 +372,79 @@ extension Dependency {
             """
         ]
     )
-    
+    // MySQL & MariaDB
+    static let mysql = Dependency(
+        moduleType: .database,
+        repo: .vapor("fluent-mysql-driver"),
+        libName: "FluentMySQLDriver",
+        tag: .upToNextMajor("4.8.0"),
+        comment: "LibP2P's MySQL Fluent Driver",
+        nicknames: ["mysql", "fluent-mysql", "mariadb", "sql"],
+        installation: [
+            """
+            
+                // TODO: Set up a secure connection!!
+                var tls = TLSConfiguration.makeClientConfiguration()
+                tls.certificateVerification = .none
+            
+                // TODO: Configure me!!
+                app.databases.use(.mysql(
+                    hostname: Environment.get("DB_HOSTNAME") ?? "localhost",
+                    username: Environment.get("DB_USERNAME") ?? "libp2p",
+                    password: Environment.get("DB_PASSWORD") ?? "libp2p",
+                    database: Environment.get("DB_DATABASE") ?? "libp2p",
+                    tlsConfiguration: tls
+                ), as: .mysql)
+            """
+        ],
+        verboseInstallation: [
+            """
+            
+                // TODO: Uncomment if you'd like swift-libp2p to persist its peerstore in the database
+                // app.peerstore.use( .fluent )
+                
+                // TODO: Uncomment if you'd like swift-libp2p to use the database as it's caching layer
+                // app.caches.use( .fluent )
+            """
+        ]
+    )
+    // MongoDB
+    static let mongoDB = Dependency(
+        moduleType: .database,
+        repo: .vapor("fluent-mongo-driver"),
+        libName: "FluentMongoDriver",
+        tag: .upToNextMajor("1.4.0"),
+        comment: "LibP2P's MongoDB Fluent Driver",
+        nicknames: ["mongo", "mongodb", "nosql"],
+        installation: [
+            """
+            
+                // TODO: Configure me!!
+                let hostname = Environment.get("DB_HOSTNAME") ?? "localhost"
+                let port = Int(Environment.get("DB_PORT") ?? "") ?? 27017
+                let username = Environment.get("DB_USERNAME")
+                let password = Environment.get("DB_PASSWORD")
+                let database = Environment.get("DB_DATABASE") ?? "libp2p"
+                let connectionURI: String
+                if let username, let password {
+                    connectionURI = "mongodb://\\(username):\\(password)@\\(hostname):\\(port)/\\(database)"
+                } else {
+                    connectionURI = "mongodb://\\(hostname):\\(port)/\\(database)"
+                }
+                try app.databases.use(.mongo(connectionString: connectionURI), as: .mongo)
+            """
+        ],
+        verboseInstallation: [
+            """
+            
+                // TODO: Uncomment if you'd like swift-libp2p to persist its peerstore in the database
+                // app.peerstore.use( .fluent )
+                
+                // TODO: Uncomment if you'd like swift-libp2p to use the database as it's caching layer
+                // app.caches.use( .fluent )
+            """
+        ]
+    )
 }
 
 extension Generate {
@@ -403,5 +475,7 @@ extension Generate {
         // Databases
         Dependency.sqlite,
         Dependency.postgres,
+        Dependency.mysql,
+        Dependency.mongoDB,
     ]
 }
