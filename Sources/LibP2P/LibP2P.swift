@@ -56,6 +56,24 @@ public final class Application: Sendable {
         self._didShutdown.withLockedValue { $0 }
     }
 
+    /// `true` once ``shutdown()`` or ``asyncShutdown()`` has begun
+    /// dismantling this Application — flipped *before* any storage
+    /// is cleared, providers torn down, or event loops drained.
+    /// Stays `true` until the Application is deallocated. Distinct
+    /// from ``didShutdown``, which only flips once shutdown has
+    /// fully completed.
+    ///
+    /// The race this guards: an event-loop task queued before
+    /// shutdown began but executed after `storage.clear()` would
+    /// otherwise hit `fatalError("X not initialized")` inside the
+    /// post-shutdown storage accessors (Transports, EventBus,
+    /// ConnectionManager, …). Those accessors check this flag and
+    /// return an empty sentinel instead of crashing, so the
+    /// stranded callback completes vacuously.
+    public var isShuttingDown: Bool {
+        self._isShuttingDown.withLockedValue { $0 }
+    }
+
     public var logger: Logger {
         get {
             self._logger.withLockedValue { $0 }
@@ -144,6 +162,7 @@ public final class Application: Sendable {
     private let _environment: NIOLockedValueBox<Environment>
     private let _storage: NIOLockedValueBox<Storage>
     private let _didShutdown: NIOLockedValueBox<Bool>
+    private let _isShuttingDown: NIOLockedValueBox<Bool>
     private let _logger: NIOLockedValueBox<Logger>
     private let _traceAutoPropagation: NIOLockedValueBox<Bool>
     private let _lifecycle: NIOLockedValueBox<Lifecycle>
@@ -251,6 +270,7 @@ public final class Application: Sendable {
         }
         self._locks = .init(.init())
         self._didShutdown = .init(false)
+        self._isShuttingDown = .init(false)
         self._isRunning = .init(false)
 
         let logger = logger ?? .init(label: "libp2p.application[\(peerID.shortDescription)]")
@@ -442,6 +462,13 @@ public final class Application: Sendable {
     )
     public func shutdown() {
         assert(!self.didShutdown, "Application has already shut down")
+        // Flip `isShuttingDown` *before* touching any storage so
+        // stranded event-loop callbacks fall through the defensive
+        // checks in the post-shutdown storage accessors instead of
+        // tripping `fatalError("X not initialized")`. Set early and
+        // never cleared — distinct from `didShutdown`, which only
+        // flips once shutdown has fully completed.
+        self._isShuttingDown.withLockedValue { $0 = true }
         self.logger.debug("Application shutting down")
         self._isRunning.withLockedValue { $0 = false }
 
@@ -479,6 +506,8 @@ public final class Application: Sendable {
 
     public func asyncShutdown() async throws {
         assert(!self.didShutdown, "Application has already shut down")
+        // See the matching block in the sync `shutdown()` above.
+        self._isShuttingDown.withLockedValue { $0 = true }
         self.logger.debug("Application shutting down")
 
         self.logger.trace("Shutting down providers")

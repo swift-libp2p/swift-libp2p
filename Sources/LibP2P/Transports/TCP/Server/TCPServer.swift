@@ -241,10 +241,18 @@ public final class TCPServer: Server, @unchecked Sendable {
 
     /// TODO: FIXME!
     public var listeningAddress: Multiaddr {
-        guard didStart else {
+        // `didStart` flips to `true` slightly *before* `localAddress`
+        // is populated by the underlying NIO channel — under
+        // concurrent load (many Applications booting in parallel) the
+        // race window opens reliably and a force-unwrap on
+        // `self.localAddress` traps. Fall back to the configured
+        // hostname/port when the live address isn't ready yet; it's
+        // the same fallback the `!didStart` branch already uses, so
+        // semantics are unchanged for callers.
+        guard didStart, let live = self.localAddress else {
             return try! Multiaddr("/ip4/\(self.configuration.hostname)/tcp/\(self.configuration.port)")
         }
-        return try! self.localAddress!.toMultiaddr()
+        return try! live.toMultiaddr()
     }
 
     deinit {
