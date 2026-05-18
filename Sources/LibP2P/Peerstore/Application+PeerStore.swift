@@ -22,10 +22,17 @@ extension Application {
 
     public var peers: PeerStore {
         let manager = self.peerstore.storage.manager.withLockedValue { $0 }
-        guard let manager else {
-            fatalError("No Peerstore configured. Configure with app.peerstore.use(...)")
+        if let manager { return manager }
+        if self.isShuttingDown {
+            // Race window: see `app.events` / `app.connections` /
+            // `app.identify` for matching guards. Hand back a fresh
+            // `BasicInMemoryPeerStore` (the default Peerstore impl
+            // — file `DefaultPeerstore.swift` but the type itself is
+            // named `BasicInMemoryPeerStore`) so stranded callbacks
+            // complete vacuously instead of trapping.
+            return BasicInMemoryPeerStore(application: self)
         }
-        return manager
+        fatalError("No Peerstore configured. Configure with app.peerstore.use(...)")
     }
 
     public struct PeerStores: Sendable {

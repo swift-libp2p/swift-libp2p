@@ -22,10 +22,17 @@ extension Application {
 
     public var identify: IdentityManager {
         let manager = self.identityManager.storage.manager.withLockedValue { $0 }
-        guard let manager else {
-            fatalError("No IdentityManager configured. Configure with app.identityManager.use(...)")
+        if let manager { return manager }
+        if self.isShuttingDown {
+            // Race window: see `app.events` / `app.connections` for
+            // the matching guards. Hand back a fresh `LibP2P.Identify`
+            // (the top-level default IdentityManager class — disam-
+            // biguated from the `Application.Identify` namespace
+            // struct above) so stranded callbacks complete vacuously
+            // instead of trapping.
+            return LibP2P.Identify(application: self)
         }
-        return manager
+        fatalError("No IdentityManager configured. Configure with app.identityManager.use(...)")
     }
 
     public struct Identify: Sendable {
