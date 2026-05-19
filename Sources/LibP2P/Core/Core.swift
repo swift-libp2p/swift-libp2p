@@ -159,6 +159,21 @@ extension Application {
         let application: Application
 
         var storage: Storage {
+            if self.application.isShuttingDown {
+                // Race window: this Application has begun teardown.
+                // Returning a fresh empty `Storage` lets stranded
+                // event-loop callbacks finish vacuously instead of
+                // trapping at the `fatalError` below.
+                //
+                // Confirmed 2026-05-19: under serial `swift test`
+                // runs of BurrowsNet (Phase 8.4 CI), the previous
+                // suite's in-flight YAMUX streams can deliver to a
+                // stack whose Core storage has already been cleared,
+                // hitting this path during the next suite's setUp.
+                // Same guard pattern as `Application+Clients`,
+                // `Application+Identify`, `Application+Topology`.
+                return Storage()
+            }
             guard let storage = self.application.storage[Key.self] else {
                 fatalError("Core not configured. Configure with app.core.initialize()")
             }
