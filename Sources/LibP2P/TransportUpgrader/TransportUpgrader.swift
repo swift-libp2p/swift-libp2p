@@ -132,7 +132,25 @@ private struct _NoOpTransportUpgrader: TransportUpgrader {
         logger: Logger,
         promise: EventLoopPromise<(`protocol`: String, leftoverBytes: ByteBuffer?)>
     ) -> [ChannelHandler] {
+        // The caller (e.g. `ARCConnection.upgradeChildChannel`)
+        // force-unwraps `handlers.first!`, so we MUST return at
+        // least one ChannelHandler. The handler closes the
+        // channel as soon as it's added to the pipeline so the
+        // stranded inbound stream unwinds.
         promise.fail(ChannelError.alreadyClosed)
-        return []
+        return [_ChannelClosingHandler()]
+    }
+}
+
+/// Inbound channel handler returned by ``_NoOpTransportUpgrader``
+/// during application shutdown. Closes the channel as soon as it
+/// is added to a pipeline, so the stranded inbound stream that
+/// reached `app.upgrader` post-shutdown unwinds without inspecting
+/// any traffic.
+private final class _ChannelClosingHandler: ChannelInboundHandler {
+    typealias InboundIn = ByteBuffer
+
+    func handlerAdded(context: ChannelHandlerContext) {
+        context.close(promise: nil)
     }
 }
