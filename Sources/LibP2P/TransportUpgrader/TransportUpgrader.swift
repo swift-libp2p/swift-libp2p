@@ -39,10 +39,21 @@ extension Application {
 
     public var upgrader: TransportUpgrader {
         let makeUpgrader = self.transportUpgraders.storage.makeUpgrader.withLockedValue { $0 }
-        guard let upgrader = makeUpgrader.factory?(self) else {
-            fatalError("No transport upgrader configured. Configure with app.transportUpgraders.use(...)")
+        if let upgrader = makeUpgrader.factory?(self) { return upgrader }
+        if self.isShuttingDown {
+            // Race window: a stranded inbound stream from a
+            // previous Application's still-alive YAMUX state can
+            // reach `app.upgrader` after `isShuttingDown` is set
+            // and the storage accessor has begun handing back a
+            // fresh empty Storage (whose factory is nil). Return
+            // a no-op upgrader that immediately closes any
+            // channel offered to it and fails any negotiation
+            // promise — same "complete vacuously" idea as the
+            // other defensive guards on this fork
+            // (Application+Identify, Application+EventBus, …).
+            return _NoOpTransportUpgrader()
         }
-        return upgrader
+        fatalError("No transport upgrader configured. Configure with app.transportUpgraders.use(...)")
     }
 
     public struct TransportUpgraders: Sendable {
@@ -95,5 +106,33 @@ extension Application {
             }
             return storage
         }
+    }
+}
+
+/// Stand-in `TransportUpgrader` returned by `app.upgrader` once
+/// the owning `Application` has flipped `isShuttingDown`. It does
+/// not negotiate any protocol — any channel offered to it is
+/// closed immediately, and any negotiation promise is failed
+/// with `ChannelError.alreadyClosed`.
+///
+/// Purpose is to let stranded inbound streams from a previous
+/// `Application`'s still-alive YAMUX state unwind cleanly after
+/// shutdown has started, instead of tripping the `fatalError` at
+/// `app.upgrader`. Behaviour matches the other defensive guards
+/// on this fork (see `Application+Identify.identify` and
+/// `Application+EventBus.events`).
+private struct _NoOpTransportUpgrader: TransportUpgrader {
+    func installHandlers(on channel: Channel) {
+        channel.close(promise: nil)
+    }
+
+    func negotiate(
+        protocols: [String],
+        mode: LibP2P.Mode,
+        logger: Logger,
+        promise: EventLoopPromise<(`protocol`: String, leftoverBytes: ByteBuffer?)>
+    ) -> [ChannelHandler] {
+        promise.fail(ChannelError.alreadyClosed)
+        return []
     }
 }
