@@ -74,6 +74,13 @@ extension Application {
         }
 
         var storage: Storage {
+            if self.application.isShuttingDown {
+                // Same teardown-race shape as `Application+Identify`,
+                // `Application+EventBus`, etc. The Cache subsystem
+                // is not on libp2p's stream-handling hot path, but
+                // mirroring the guard here keeps the fork uniform.
+                return Storage()
+            }
             guard let storage = self.application.storage[Key.self] else {
                 fatalError("Caches not configured. Configure with app.caches.initialize()")
             }
