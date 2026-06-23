@@ -21,10 +21,18 @@ extension Application {
 
     public var events: EventBus {
         let eventBus = self.eventbus.storage.eventBus.withLockedValue { $0 }
-        guard let eventBus else {
-            fatalError("No EventBus configured. Configure with app.eventbus.use(...)")
+        if let eventBus { return eventBus }
+        if self.isShuttingDown {
+            // Race window: Application has begun teardown so the
+            // post-shutdown `storage` getter returned an empty
+            // `Storage` whose `eventBus` is `nil`. Hand back a
+            // fresh `EventBus` — its `post(_:)` already guards on
+            // `application.isRunning`, so events get dropped
+            // silently and `on(_:event:)` registrations are
+            // harmless on an app that will never dispatch again.
+            return EventBus(application: self)
         }
-        return eventBus
+        fatalError("No EventBus configured. Configure with app.eventbus.use(...)")
     }
 
     public struct Events: Sendable {
@@ -62,6 +70,13 @@ extension Application {
         let application: Application
 
         var storage: Storage {
+            if self.application.isShuttingDown {
+                // Race window: this Application has begun teardown.
+                // Returning a fresh empty `Storage` lets stranded
+                // event-loop callbacks finish vacuously instead of
+                // trapping at the `fatalError` below.
+                return Storage()
+            }
             guard let storage = self.application.storage[Key.self] else {
                 fatalError("EventBus not initialized. Configure with app.eventbus.initialize()")
             }
