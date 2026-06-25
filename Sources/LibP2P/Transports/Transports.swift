@@ -85,6 +85,13 @@ extension Application {
         }
 
         var storage: Storage {
+            if self.application.isShuttingDown {
+                // Race window: this Application has begun teardown.
+                // Returning a fresh empty `Storage` lets stranded
+                // event-loop callbacks finish vacuously instead of
+                // trapping at the `fatalError` below.
+                return Storage()
+            }
             guard let storage = self.application.storage[Key.self] else {
                 fatalError("Transports not initialized. Initialize with app.transports.initialize()")
             }

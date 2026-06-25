@@ -24,10 +24,18 @@ extension Application {
 
     public var connections: ConnectionManager {
         let manager = self.connectionManager.storage.manager.withLockedValue { $0 }
-        guard let manager else {
-            fatalError("No ConnectionManager configured. Configure with app.connectionManager.use(...)")
+        if let manager { return manager }
+        if self.isShuttingDown {
+            // Race window: Application has begun teardown so the
+            // post-shutdown `storage` getter returned an empty
+            // `Storage` whose `manager` is `nil`. Hand back a
+            // fresh `BasicInMemoryConnectionManager` — operations
+            // on this throwaway instance are vacuous (no
+            // connections registered) and any callers racing the
+            // teardown complete without crashing.
+            return BasicInMemoryConnectionManager(application: self)
         }
-        return manager
+        fatalError("No ConnectionManager configured. Configure with app.connectionManager.use(...)")
     }
 
     public struct Connections: Sendable {
@@ -84,6 +92,13 @@ extension Application {
         let application: Application
 
         var storage: Storage {
+            if self.application.isShuttingDown {
+                // Race window: this Application has begun teardown.
+                // Returning a fresh empty `Storage` lets stranded
+                // event-loop callbacks finish vacuously instead of
+                // trapping at the `fatalError` below.
+                return Storage()
+            }
             guard let storage = self.application.storage[Key.self] else {
                 fatalError("ConnectionManager not initialized. Configure with app.connectionManager.initialize()")
             }

@@ -94,6 +94,13 @@ extension Application {
         }
 
         var storage: Storage {
+            if self.application.isShuttingDown {
+                // Same teardown-race shape as `Application+Identify`,
+                // `Application+EventBus`, etc. Sessions is not on
+                // libp2p's stream-handling hot path, but mirroring
+                // the guard here keeps the fork uniform.
+                return Storage()
+            }
             guard let storage = self.application.storage[Key.self] else {
                 fatalError("Sessions not configured. Configure with app.sessions.initialize()")
             }

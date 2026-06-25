@@ -62,10 +62,18 @@ extension Application {
         public let application: Application
 
         public var current: LibP2P.Responder {
-            guard let factory = self.storage.factory.withLockedValue({ $0.factory }) else {
-                fatalError("No responder configured. Configure with app.responder.use(...)")
+            if let factory = self.storage.factory.withLockedValue({ $0.factory }) {
+                return factory(self.application)
             }
-            return factory(self.application)
+            if self.application.isShuttingDown {
+                // Stranded inbound stream reached `app.responder`
+                // post-shutdown — return a no-op so the pipeline
+                // unwinds (`pipelineConfig` returning nil is the
+                // documented "I don't handle this protocol" path
+                // in ARCConnection.upgradeChildChannel).
+                return _NoOpResponder()
+            }
+            fatalError("No responder configured. Configure with app.responder.use(...)")
         }
 
         public var `default`: LibP2P.Responder {
@@ -84,6 +92,13 @@ extension Application {
         }
 
         var storage: Storage {
+            if self.application.isShuttingDown {
+                // Same teardown-race shape as `Application+Identify`,
+                // `Application+EventBus`, etc. Return a fresh empty
+                // Storage so the caller can fall back to the
+                // `_NoOpResponder` path in `current`.
+                return Storage()
+            }
             guard let storage = self.application.storage[Key.self] else {
                 fatalError("Responder not configured. Configure with app.responder.initialize()")
             }
@@ -103,5 +118,22 @@ extension Application.Responder: Responder {
 
     public func pipelineConfig(for protocol: String, on connection: Connection) -> [ChannelHandler]? {
         self.current.pipelineConfig(for: `protocol`, on: connection)
+    }
+}
+
+/// No-op `Responder` returned by `app.responder.current` once the
+/// owning `Application` has flipped `isShuttingDown`. Fails any
+/// in-flight `respond(to:)` promise and returns `nil` from
+/// `pipelineConfig(for:on:)` — the latter is the documented "I
+/// don't handle this protocol" path that lets stranded inbound
+/// streams unwind cleanly through
+/// `ARCConnection.upgradeChildChannel`.
+private struct _NoOpResponder: Responder {
+    func respond(to request: Request) -> EventLoopFuture<RawResponse> {
+        request.eventLoop.makeFailedFuture(ChannelError.alreadyClosed)
+    }
+
+    func pipelineConfig(for protocol: String, on connection: Connection) -> [ChannelHandler]? {
+        nil
     }
 }
