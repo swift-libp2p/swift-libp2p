@@ -341,7 +341,6 @@ public final class Application: Sendable {
         self.asyncCommands.use(RoutesCommand(), as: "routes")
 
         /// Application wide log level...
-        self.logger.logLevel = .trace
         self.logger.notice("PeerID: \(self.peerID.b58String)")
     }
 
