@@ -123,7 +123,7 @@ public final class WritabilityObserver: ChannelInboundHandler, @unchecked Sendab
     public init() {
         self.transitions = []
     }
-    
+
     public func channelWritabilityChanged(context: ChannelHandlerContext) {
         transitions.append(context.channel.isWritable)
     }
@@ -144,7 +144,14 @@ where Handler.InboundIn == Packet, Handler.OutboundOut == Packet {
     public let listenerHandler: Handler
     public let listenerCollectors: NIOLockedValueBox<[UInt32: StreamCollector]>
 
-    public init(loop: EmbeddedEventLoop, initiatorChannel: EmbeddedChannel, listenerChannel: EmbeddedChannel, initiatorHandler: Handler, listenerHandler: Handler, listenerCollectors: NIOLockedValueBox<[UInt32 : StreamCollector]>) {
+    public init(
+        loop: EmbeddedEventLoop,
+        initiatorChannel: EmbeddedChannel,
+        listenerChannel: EmbeddedChannel,
+        initiatorHandler: Handler,
+        listenerHandler: Handler,
+        listenerCollectors: NIOLockedValueBox<[UInt32: StreamCollector]>
+    ) {
         self.loop = loop
         self.initiatorChannel = initiatorChannel
         self.listenerChannel = listenerChannel
@@ -152,7 +159,7 @@ where Handler.InboundIn == Packet, Handler.OutboundOut == Packet {
         self.listenerHandler = listenerHandler
         self.listenerCollectors = listenerCollectors
     }
-    
+
     /// Shuttle packets between the two channels until both are idle.
     /// Optionally records every packet seen on either side for assertions.
     @discardableResult
