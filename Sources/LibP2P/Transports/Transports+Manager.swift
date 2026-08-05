@@ -104,4 +104,15 @@ extension Multiaddr {
         let desc = self.description
         return desc.contains("127.0.0.1") || desc.contains("::1") || desc.contains("192.168.")
     }
+
+    /// True when this multiaddr's IP component is the unspecified/wildcard
+    /// address (IPv4 `0.0.0.0` or IPv6 `::`). A wildcard is a *bind* address,
+    /// never a dialable destination, so it must never be advertised to remote
+    /// peers. Parsed via `tcpAddress` (not a substring match) so a real address
+    /// like `10.0.0.0` — which *contains* the substring `0.0.0.0` — is not
+    /// misclassified.
+    public var isUnspecifiedAddress: Bool {
+        guard let tcp = self.tcpAddress else { return false }
+        return tcp.address == "0.0.0.0" || tcp.address == "::"
+    }
 }

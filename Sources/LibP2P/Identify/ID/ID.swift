@@ -207,21 +207,13 @@ extension Identify {
     /// - This message is ready to be sent to a remote peer who's opened a new `/ipfs/id/1.0.0` stream on our connection
     internal func constructIdentifyMessage(req: Request) throws -> [UInt8] {
         //Construct our Local Nodes Identify Message
-        let listenAddrs: [Multiaddr]
-
-        if req.addr.isInternalAddress {
-            /// A computer on our network is reaching out to us, respond with internal addresses...
-            req.logger.trace(
-                "Identify::A computer on our network is reaching out to us, responding with internal addresses..."
-            )
-            listenAddrs = req.application.listenAddresses
-        } else {
-            /// A computer outside of our network is asking for our ID, respond with externally reachable addresses only...
-            req.logger.trace(
-                "Identify::A computer outside of our network is asking for our ID, responding with externally reachable addresses only..."
-            )
-            listenAddrs = req.application.listenAddresses.stripInternalAddresses()
-        }
+        //
+        // Advertise the announce override unioned with our (wildcard-expanded)
+        // listen addresses, scoped to the caller (internal callers may receive
+        // internal addresses) and with the unspecified/wildcard address stripped
+        // as a backstop. Previously this advertised raw `listenAddresses`, which
+        // could leak `/ip4/0.0.0.0/...` to peers and poison their peerstore.
+        let listenAddrs = req.application.advertisedAddresses(forRemote: req.addr.isInternalAddress)
 
         var id = IdentifyMessage()
         id.publicKey = try self.localPeerID.keyPair!.publicKey.marshal()
