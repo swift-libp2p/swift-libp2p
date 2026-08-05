@@ -10,4 +10,4 @@ jobs:
     uses: swift-libp2p/github-workflows/.github/workflows/providers.yml@main
     with:
       # Eventually include integration test
-      dependents: "[]"
+      dependents: "[\"swift-libp2p/integration-tests\"]"
