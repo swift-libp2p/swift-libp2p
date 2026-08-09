@@ -24,16 +24,16 @@ extension LibP2PTests {
     ///
     /// A malformed varint on an inbound (potentially malicious) stream previously crashed the whole
     /// process via `fatalError` / an `Int(value)` overflow trap. The decoder now throws
-    /// `VarintDecodingError.invalidVarint`, which NIO surfaces as a channel error so only the
+    /// `VarIntDecodingError.invalidVarInt`, which NIO surfaces as a channel error so only the
     /// offending peer's connection is torn down.
-    @Suite("VarintFrameDecoderTests")
-    struct VarintFrameDecoderTests {
+    @Suite("VarIntFrameDecoderTests")
+    struct VarIntFrameDecoderTests {
 
-        /// The raw decoder must throw `VarintDecodingError.invalidVarint` for both malformed shapes:
+        /// The raw decoder must throw `VarIntDecodingError.invalidVarInt` for both malformed shapes:
         /// an overlong varint (continuation past bit 63) and a terminating varint whose value
         /// overflows `Int.max`.
-        @Test("VarintFrameDecoder throws .invalidVarint on malformed varints")
-        func testInvalidVarintThrows() throws {
+        @Test("VarIntFrameDecoder throws .invalidVarInt on malformed varints")
+        func testInvalidVarIntThrows() throws {
             // Overlong: ten continuation bytes push `shift` past 63 before ever terminating.
             do {
                 let channel = EmbeddedChannel(handler: ByteToMessageHandler(VarintFrameDecoder()))
