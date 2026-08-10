@@ -63,9 +63,18 @@ public struct Environment: Sendable, Equatable {
         case "test", "testing": env = .testing
         case .some(let name): env = .init(name: name)
         case .none:
-            if let ep = commandInput.executablePath.first,
-                ep.hasSuffix("xctest") || ep.hasSuffix("swiftpm-testing-helper")
-            {
+            // Recognize the various test-harness executables across toolchains:
+            //   - `xctest`                    (XCTest, Apple platforms)
+            //   - `swiftpm-testing-helper`    (SwiftPM's XCTest shim)
+            //   - `*-test-runner`             (Swift 6.4+ swift-testing runner, e.g. `LibP2PTests-test-runner`)
+            // As a further signal, swift-testing injects a `--testing-library` argument.
+            let executablePath = commandInput.executablePath.first
+            let isTestExecutable =
+                executablePath.map {
+                    $0.hasSuffix("xctest") || $0.hasSuffix("swiftpm-testing-helper")
+                        || $0.hasSuffix("-test-runner")
+                } ?? false
+            if isTestExecutable || commandInput.arguments.contains("--testing-library") {
                 env = .testing
             } else {
                 env = .development
