@@ -164,6 +164,7 @@ extension LibP2PTests {
                 loop.run()
                 try await closeFuture.get()
 
+                #expect(connection.streams.count == 0)
                 #expect(stream.streamState == .closed)
                 #expect(channel.isActive == false)
                 _ = muxer  // retain the (weakly-referenced) muxer through close()
