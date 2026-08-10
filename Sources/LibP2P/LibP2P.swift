@@ -401,7 +401,13 @@ public final class Application: Sendable {
             enableAutocomplete: self.asyncCommands.enableAutocomplete || self.commands.enableAutocomplete
         ).group()
 
-        var context = CommandContext(console: self.console, input: self.environment.commandInput)
+        // Filter the raw process arguments down to just those relevant to a registered command,
+        // discarding any host-injected noise (Xcode/xctest/SwiftPM flags, UserDefaults overrides, etc.).
+        let input = Environment.filterCommandInput(
+            self.environment.commandInput,
+            registeredCommands: Set(combinedCommands.commands.keys)
+        )
+        var context = CommandContext(console: self.console, input: input)
         context.application = self
         try await self.console.run(combinedCommands, with: context)
     }
