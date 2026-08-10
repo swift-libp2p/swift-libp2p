@@ -388,10 +388,12 @@ public enum KeyPairFile {
         case .some(let pwd):
             // TODO check app for testing environment and use a smaller pbkdf iteration when so (speed up tests)
             if environment == .testing {
-                pem = try peerID.exportKeyPair(as: .privatePEMString(
-                    encryptedWithPassword: pwd,
-                    usingPBKDF: .pbkdf2(salt: LibP2PCrypto.random16ByteSalt(), iterations: 2048)
-                ))
+                pem = try peerID.exportKeyPair(
+                    as: .privatePEMString(
+                        encryptedWithPassword: pwd,
+                        usingPBKDF: .pbkdf2(salt: LibP2PCrypto.random16ByteSalt(), iterations: 2048)
+                    )
+                )
             } else {
                 // Export with the strong defaults
                 pem = try peerID.exportKeyPair(as: .privatePEMString(encryptedWithPassword: pwd))
