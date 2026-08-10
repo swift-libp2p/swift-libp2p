@@ -666,9 +666,13 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
                 self.newStreamCache.append(pendingStream)
                 /// Ask our installed Muxer to open / initialize a new stream for us...
                 self.logger.debug("Asking Muxer to open / initialize new stream for protocol `\(proto)`")
-                try! mux.newStream(channel: self.channel, proto: proto).whenSuccess { stream in
-                    //print("Skipping Stream Registry")
-                    //self.registry[stream.id] = stream
+                do {
+                    let streamFuture = try mux.newStream(channel: self.channel, proto: proto)
+                    streamFuture.whenFailure { error in
+                        self.logger.error("Muxer failed to open new stream for protocol `\(proto)`: \(error)")
+                    }
+                } catch {
+                    self.logger.error("Muxer threw while opening new stream for protocol `\(proto)`: \(error)")
                 }
 
             } else {
@@ -682,6 +686,12 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
     public func newStreamSync(_ proto: String) throws -> LibP2PCore.Stream {
         let stream: _Stream
         if isMuxed, let mux = self.muxer {
+            // A synchronous API must never block the very event loop it depends on to make
+            // progress — doing so would deadlock. Callers on the loop must use the async
+            // `newStream(_:)` / `newStream(forProtocol:)` APIs instead.
+            guard !self.channel.eventLoop.inEventLoop else {
+                throw Application.Connections.Errors.cannotBlockEventLoop
+            }
             // Ask our installed Muxer to open / initialize a new stream for us...
             self.logger.debug("Asking Muxer to open / initialize new stream")
             stream = try mux.newStream(channel: self.channel, proto: proto).wait()

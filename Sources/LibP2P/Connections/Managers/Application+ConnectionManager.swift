@@ -46,6 +46,9 @@ extension Application {
             case failedToCloseAllStreams
             case noStreamForID(UInt64)
             case timedOut
+            /// Thrown when a synchronous, blocking API (e.g. `newStreamSync`) is invoked from the
+            /// connection's own event loop, which would deadlock. Use the async/future API instead.
+            case cannotBlockEventLoop
         }
 
         public struct Provider {
