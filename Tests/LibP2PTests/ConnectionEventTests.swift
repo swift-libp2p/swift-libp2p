@@ -63,9 +63,12 @@ extension LibP2PTests {
 
                 let subscriber = Subscriber()
                 let received = NIOLockedValueBox<[UUID]>([])
-                app.events.on(subscriber, event: .connected { connection in
-                    received.withLockedValue { $0.append(connection.id) }
-                })
+                app.events.on(
+                    subscriber,
+                    event: .connected { connection in
+                        received.withLockedValue { $0.append(connection.id) }
+                    }
+                )
 
                 let connection = DummyConnection(direction: .outbound)
                 app.events.post(.connected(connection))
@@ -83,9 +86,12 @@ extension LibP2PTests {
 
                 let subscriber = Subscriber()
                 let received = NIOLockedValueBox<(id: UUID, peerWasNil: Bool)?>(nil)
-                app.events.on(subscriber, event: .disconnected { connection, peer in
-                    received.withLockedValue { $0 = (connection.id, peer == nil) }
-                })
+                app.events.on(
+                    subscriber,
+                    event: .disconnected { connection, peer in
+                        received.withLockedValue { $0 = (connection.id, peer == nil) }
+                    }
+                )
 
                 let connection = DummyConnection(direction: .inbound)
                 app.events.post(.disconnected(connection, nil))
@@ -105,9 +111,12 @@ extension LibP2PTests {
 
                 let subscriber = Subscriber()
                 let received = NIOLockedValueBox<[UUID]>([])
-                app.events.on(subscriber, event: .upgraded { connection in
-                    received.withLockedValue { $0.append(connection.id) }
-                })
+                app.events.on(
+                    subscriber,
+                    event: .upgraded { connection in
+                        received.withLockedValue { $0.append(connection.id) }
+                    }
+                )
 
                 let connection = DummyConnection(direction: .outbound)
                 app.events.post(.upgraded(connection))
@@ -126,9 +135,12 @@ extension LibP2PTests {
                 let peer = try PeerID(.Ed25519)
                 let subscriber = Subscriber()
                 let received = NIOLockedValueBox<String?>(nil)
-                app.events.on(subscriber, event: .remotePeer { info in
-                    received.withLockedValue { $0 = info.peer.b58String }
-                })
+                app.events.on(
+                    subscriber,
+                    event: .remotePeer { info in
+                        received.withLockedValue { $0 = info.peer.b58String }
+                    }
+                )
 
                 app.events.post(.remotePeer(PeerInfo(peer: peer, addresses: [])))
 
@@ -148,12 +160,18 @@ extension LibP2PTests {
                 let subscriber = Subscriber()
                 let opened = NIOLockedValueBox<[UInt64]>([])
                 let closed = NIOLockedValueBox<[UInt64]>([])
-                app.events.on(subscriber, event: .openedStream { stream in
-                    opened.withLockedValue { $0.append(stream.id) }
-                })
-                app.events.on(subscriber, event: .closedStream { stream in
-                    closed.withLockedValue { $0.append(stream.id) }
-                })
+                app.events.on(
+                    subscriber,
+                    event: .openedStream { stream in
+                        opened.withLockedValue { $0.append(stream.id) }
+                    }
+                )
+                app.events.on(
+                    subscriber,
+                    event: .closedStream { stream in
+                        closed.withLockedValue { $0.append(stream.id) }
+                    }
+                )
 
                 let stream = MockStream(
                     channel: EmbeddedChannel(),
@@ -185,9 +203,12 @@ extension LibP2PTests {
 
                 let subscriber = Subscriber()
                 let count = NIOLockedValueBox<Int>(0)
-                app.events.on(subscriber, event: .connected { _ in
-                    count.withLockedValue { $0 += 1 }
-                })
+                app.events.on(
+                    subscriber,
+                    event: .connected { _ in
+                        count.withLockedValue { $0 += 1 }
+                    }
+                )
 
                 app.events.post(.connected(DummyConnection(direction: .outbound)))
 
@@ -213,9 +234,12 @@ extension LibP2PTests {
 
                 let subscriber = Subscriber()
                 let received = NIOLockedValueBox<[UUID]>([])
-                app.events.on(subscriber, event: .disconnected { connection, _ in
-                    received.withLockedValue { $0.append(connection.id) }
-                })
+                app.events.on(
+                    subscriber,
+                    event: .disconnected { connection, _ in
+                        received.withLockedValue { $0.append(connection.id) }
+                    }
+                )
 
                 let loop = EmbeddedEventLoop()
                 let channel = EmbeddedChannel(loop: loop)
@@ -231,7 +255,9 @@ extension LibP2PTests {
                 try await channel.close().get()
                 loop.run()
 
-                #expect(await ConnectionEventTests.waitUntil { received.withLockedValue { $0.contains(connection.id) } })
+                #expect(
+                    await ConnectionEventTests.waitUntil { received.withLockedValue { $0.contains(connection.id) } }
+                )
                 _ = (subscriber, connection)
             }
         }
