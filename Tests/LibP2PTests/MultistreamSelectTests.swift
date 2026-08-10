@@ -168,7 +168,7 @@ extension LibP2PTests {
         }
 
         /// When an initiator exhausts every protocol it supports without finding a match, the handler must
-        /// fail the negotiation promise and tear the channel down — never hang or crash.
+        /// fail the negotiation promise and tear the channel down — never stall or crash.
         @Test("Initiator that exhausts its protocols fails the promise and closes the channel")
         func testInitiatorExhaustsProtocolsFailsAndClosesChannel() throws {
             let proto = "/echo/1.0.0"

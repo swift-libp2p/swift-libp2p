@@ -60,7 +60,9 @@ public final class MockStream: _Stream, @unchecked Sendable {
     }
 
     public func write(_ bytes: [UInt8]) -> EventLoopFuture<Void> { self.channel.eventLoop.makeSucceededVoidFuture() }
-    public func write(_ buffer: ByteBuffer) -> EventLoopFuture<Void> { self.channel.eventLoop.makeSucceededVoidFuture() }
+    public func write(_ buffer: ByteBuffer) -> EventLoopFuture<Void> {
+        self.channel.eventLoop.makeSucceededVoidFuture()
+    }
 
     public func close(gracefully: Bool) -> EventLoopFuture<Void> {
         self._streamState.withLockedValue { $0 = .closed }
