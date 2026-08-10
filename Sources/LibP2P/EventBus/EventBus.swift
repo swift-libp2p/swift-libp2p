@@ -87,7 +87,9 @@ public final class EventBus: Sendable {
         logger[metadataKey: "EventBus"] = .string("\(self.instanceID.dropFirst().prefix(5))")
         self.logger = logger
 
-        self.logger.info("New EventBus Initialized")
+        if !application.isShuttingDown {
+            self.logger.info("New EventBus Initialized")
+        }
     }
 
     public enum EventEmitter {
