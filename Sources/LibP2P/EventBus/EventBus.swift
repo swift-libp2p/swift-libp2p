@@ -87,7 +87,9 @@ public final class EventBus: Sendable {
         logger[metadataKey: "EventBus"] = .string("\(self.instanceID.dropFirst().prefix(5))")
         self.logger = logger
 
-        self.logger.info("New EventBus Initialized")
+        if !application.isShuttingDown {
+            self.logger.info("New EventBus Initialized")
+        }
     }
 
     public enum EventEmitter {
@@ -212,7 +214,7 @@ public final class EventBus: Sendable {
     public func on(_ register: AnyObject, event: EventHandler) {
         switch event {
         case .connected(let handler):
-            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.Connected + instanceID) {
+            self.subscribe(register, name: SwiftEventBus.Event.Connected) {
                 notification in
                 guard let not = notification, let connection = not.object as? Connection else {
                     return
@@ -220,7 +222,7 @@ public final class EventBus: Sendable {
                 return handler(connection)
             }
         case .disconnected(let handler):
-            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.Disconnected + instanceID) {
+            self.subscribe(register, name: SwiftEventBus.Event.Disconnected) {
                 notification in
                 guard let not = notification, let (connection, peerID) = not.object as? (Connection, PeerID?) else {
                     return
@@ -228,7 +230,7 @@ public final class EventBus: Sendable {
                 return handler(connection, peerID)
             }
         case .openedStream(let handler):
-            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.OpenedStream + instanceID) {
+            self.subscribe(register, name: SwiftEventBus.Event.OpenedStream) {
                 notification in
                 guard let not = notification, let stream = not.object as? LibP2PCore.Stream else {
                     //guard let not = notification, let proto = not.object as? String else {
@@ -237,7 +239,7 @@ public final class EventBus: Sendable {
                 return handler(stream)
             }
         case .closedStream(let handler):
-            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.ClosedStream + instanceID) {
+            self.subscribe(register, name: SwiftEventBus.Event.ClosedStream) {
                 notification in
                 guard let not = notification, let stream = not.object as? LibP2PCore.Stream else {
                     //guard let not = notification, let proto = not.object as? String else {
@@ -246,7 +248,7 @@ public final class EventBus: Sendable {
                 return handler(stream)
             }
         case .remotePeer(let handler):
-            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.RemotePeer + instanceID) {
+            self.subscribe(register, name: SwiftEventBus.Event.RemotePeer) {
                 notification in
                 guard let not = notification, let remotePeer = not.object as? PeerInfo else {
                     return
@@ -254,7 +256,7 @@ public final class EventBus: Sendable {
                 return handler(remotePeer)
             }
         case .upgraded(let handler):
-            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.Upgraded + instanceID) {
+            self.subscribe(register, name: SwiftEventBus.Event.Upgraded) {
                 notification in
                 guard let not = notification, let connection = not.object as? Connection else {
                     return
@@ -262,7 +264,7 @@ public final class EventBus: Sendable {
                 return handler(connection)
             }
         case .identifiedPeer(let handler):
-            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.IdentifiedPeer + instanceID) {
+            self.subscribe(register, name: SwiftEventBus.Event.IdentifiedPeer) {
                 notification in
                 guard let not = notification, let identifiedPeer = not.object as? IdentifiedPeer else {
                     return
@@ -270,7 +272,7 @@ public final class EventBus: Sendable {
                 return handler(identifiedPeer)
             }
         case .peerDiscovered(let handler):
-            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.PeerDiscovered + instanceID) {
+            self.subscribe(register, name: SwiftEventBus.Event.PeerDiscovered) {
                 notification in
                 guard let not = notification, let peerInfo = not.object as? PeerInfo else {
                     return
@@ -280,14 +282,14 @@ public final class EventBus: Sendable {
 
         /// What used to be internal
         case .listen(let handler):
-            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.Listen + instanceID) { notification in
+            self.subscribe(register, name: SwiftEventBus.Event.Listen) { notification in
                 guard let not = notification, let obj = not.object as? (String, Multiaddr) else {
                     return
                 }
                 return handler(obj.0, obj.1)
             }
         case .listenClosed(let handler):
-            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.ListenClose + instanceID) {
+            self.subscribe(register, name: SwiftEventBus.Event.ListenClose) {
                 notification in
                 guard let not = notification, let obj = not.object as? (String, Multiaddr) else {
                     return
@@ -296,8 +298,7 @@ public final class EventBus: Sendable {
             }
 
         case .remotePeerProtocolChange(let handler):
-            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.RemotePeerProtocolChange + instanceID)
-            { notification in
+            self.subscribe(register, name: SwiftEventBus.Event.RemotePeerProtocolChange) { notification in
                 guard let not = notification, let protocolChange = not.object as? LibP2P.RemotePeerProtocolChange else {
                     return
                 }
@@ -306,31 +307,47 @@ public final class EventBus: Sendable {
         }
     }
 
+    /// Registers a `NotificationCenter` observer for `name`, siloed by this bus's `instanceID`.
+    ///
+    /// - Important: We register with `queue: nil`, so the observer block runs **synchronously on the
+    ///   posting thread**. We deliberately avoid `SwiftEventBus.onBackgroundThread`: its background
+    ///   `OperationQueue`-based delivery does not fire on Swift 6.3 / swift-corelibs-foundation (the
+    ///   observer block is never scheduled), which silently disabled the entire `EventBus` on Linux 6.3.
+    ///   Synchronous, `queue: nil` delivery works on every platform; existing handlers already hop to their
+    ///   own event loops, so being invoked synchronously on the poster's thread is safe.
+    private func subscribe(
+        _ register: AnyObject,
+        name: String,
+        _ handler: @escaping (Notification?) -> Void
+    ) {
+        SwiftEventBus.on(register, name: name + instanceID, sender: nil, queue: nil, handler: handler)
+    }
+
     //    internal func on(_ register:AnyObject, event:_EventHandler) {
     //        switch event {
     //        case .listen(let handler):
-    //            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.Listen + instanceID) { notification in
+    //            self.subscribe(register, name: SwiftEventBus.Event.Listen) { notification in
     //                guard let not = notification, let obj = not.object as? (String, Multiaddr) else {
     //                    return
     //                }
     //                return handler(obj.0, obj.1)
     //            }
     //        case .listenClosed(let handler):
-    //            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.ListenClose + instanceID) { notification in
+    //            self.subscribe(register, name: SwiftEventBus.Event.ListenClose) { notification in
     //                guard let not = notification, let obj = not.object as? (String, Multiaddr) else {
     //                    return
     //                }
     //                return handler(obj.0, obj.1)
     //            }
     ////        case .identifiedPeer(let handler):
-    ////            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.IdentifiedPeer + instanceID) { notification in
+    ////            self.subscribe(register, name: SwiftEventBus.Event.IdentifiedPeer) { notification in
     ////                guard let not = notification, let identifiedPeer = not.object as? IdentifiedPeer else {
     ////                    return
     ////                }
     ////                return handler(identifiedPeer)
     ////            }
     //        case .remotePeerProtocolChange(let handler):
-    //            SwiftEventBus.onBackgroundThread(register, name: SwiftEventBus.Event.RemotePeerProtocolChange + instanceID) { notification in
+    //            self.subscribe(register, name: SwiftEventBus.Event.RemotePeerProtocolChange) { notification in
     //                guard let not = notification, let protocolChange = not.object as? LibP2P.RemotePeerProtocolChange else {
     //                    return
     //                }

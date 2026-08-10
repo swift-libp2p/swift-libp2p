@@ -50,10 +50,6 @@ public struct Environment: Sendable, Equatable {
     ///     - arguments: `CommandInput` to parse `--env` flag from.
     /// - returns: The detected environment, or default env.
     public static func detect(from commandInput: inout CommandInput) throws -> Environment {
-        //print("CommandInput: \(commandInput)")
-        self.sanitize(commandInput: &commandInput)
-        //print("Sanitized CommandInput: \(commandInput)")
-
         struct EnvironmentSignature: CommandSignature {
             @Option(name: "env", short: "e", help: "Change the application's environment")
             var environment: String?
@@ -67,9 +63,18 @@ public struct Environment: Sendable, Equatable {
         case "test", "testing": env = .testing
         case .some(let name): env = .init(name: name)
         case .none:
-            if let ep = commandInput.executablePath.first,
-                ep.hasSuffix("xctest") || ep.hasSuffix("swiftpm-testing-helper")
-            {
+            // Recognize the various test-harness executables across toolchains:
+            //   - `xctest`                    (XCTest, Apple platforms)
+            //   - `swiftpm-testing-helper`    (SwiftPM's XCTest shim)
+            //   - `*-test-runner`             (Swift 6.4+ swift-testing runner, e.g. `LibP2PTests-test-runner`)
+            // As a further signal, swift-testing injects a `--testing-library` argument.
+            let executablePath = commandInput.executablePath.first
+            let isTestExecutable =
+                executablePath.map {
+                    $0.hasSuffix("xctest") || $0.hasSuffix("swiftpm-testing-helper")
+                        || $0.hasSuffix("-test-runner")
+                } ?? false
+            if isTestExecutable || commandInput.arguments.contains("--testing-library") {
                 env = .testing
             } else {
                 env = .development
@@ -79,69 +84,43 @@ public struct Environment: Sendable, Equatable {
         return env
     }
 
-    /// Performs stripping of user defaults overrides where and when appropriate.
-    /// - TODO: This is really flakey way of sanitizing input.
-    /// I think we'd be better off throwing everything out except for installed commands
-    private static func sanitize(commandInput: inout CommandInput) {
-        #if Xcode
-        // Strip all leading arguments matching the pattern for assignment to the `NSArgumentsDomain`
-        // of `UserDefaults`. Matching this pattern means being prefixed by `-NS` or `-Apple` and being
-        // followed by a value argument. Since this is mainly just to get around Xcode's habit of
-        // passing a bunch of these when no other arguments are specified in a test scheme, we ignore
-        // any that don't match the Apple patterns and assume the app knows what it's doing.
-        while commandInput.arguments.first?.prefix(6) == "-Apple" || commandInput.arguments.first?.prefix(3) == "-NS",
-            commandInput.arguments.count > 1
-        {
-            commandInput.arguments.removeFirst(2)
-        }
-        #elseif os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-        // When tests are invoked directly through SwiftPM using `--filter`, SwiftPM will pass `-XCTest <filter>` to the
-        // runner binary, and also the test bundle path unconditionally. These must be stripped for Libp2p to be satisfied
-        // with the validity of the arguments. We detect this case reliably the hard way, by looking for the `xctest`
-        // runner executable and a leading argument with the `.xctest` bundle suffix.
-        if commandInput.executable.hasSuffix("/usr/bin/xctest") {
-            if commandInput.arguments.first?.lowercased() == "-xctest" && commandInput.arguments.count > 1 {
-                commandInput.arguments.removeFirst(2)
-            }
-            if commandInput.arguments.first?.hasSuffix(".xctest") ?? false {
-                commandInput.arguments.removeFirst()
-            }
-        }
-        #endif
-        if commandInput.executable.hasSuffix("swiftpm-testing-helper") || commandInput.executable.hasSuffix(".xctest") {
-            // Remove the --test-bundle-path flag and argument
-            if commandInput.arguments.first?.lowercased() == "--test-bundle-path" && commandInput.arguments.count > 1 {
-                commandInput.arguments.removeFirst(2)
-            }
-            // Remove the --filter flag and argument if necessary
-            if commandInput.arguments.first?.lowercased() == "--filter" && commandInput.arguments.count > 2 {
-                commandInput.arguments.removeFirst(2)
-            }
-            // Remove the --verbose flag if necessary
-            if commandInput.arguments.first?.lowercased() == "--verbose"
-                || commandInput.arguments.first?.lowercased() == "-v"
-            {
-                commandInput.arguments.removeFirst(1)
-            }
-            // Remove the path argument
-            if commandInput.arguments.count >= 3,
-                commandInput.arguments.contains(where: { $0.lowercased() == "--testing-library" })
-            {
-                commandInput.arguments.removeFirst(1)
-            }
-            // Remove the --testing-library flag and argument if necessary
-            if commandInput.arguments.first?.lowercased() == "--testing-library" && commandInput.arguments.count > 1 {
-                commandInput.arguments.removeFirst(2)
-            }
-        }
-    }
+    /// The top-level flags that `ConsoleKit` interprets at the command-group level before
+    /// dispatching to a specific command (see `ConsoleKit`'s `GlobalSignature`). These are
+    /// preserved by `filterCommandInput(_:registeredCommands:)` so that, for example, `--help`
+    /// continues to work even when no command is named.
+    private static let globalFlags: Set<String> = [
+        "--help", "-h", "--yes", "-y", "--no", "-n", "--autocomplete",
+    ]
 
-    /// Invokes `sanitize(commandInput:)` over a set of raw arguments and returns the
-    /// resulting arguments, including the executable path.
-    private static func sanitizeArguments(_ arguments: [String] = ProcessInfo.processInfo.arguments) -> [String] {
-        var commandInput = CommandInput(arguments: arguments)
-        sanitize(commandInput: &commandInput)
-        return commandInput.executablePath + commandInput.arguments
+    /// Reduces a `CommandInput` down to only the arguments that are relevant to a registered command.
+    ///
+    /// `ConsoleKit` dispatches by treating the first unconsumed token as a command name, so any
+    /// leading, host-injected arguments — Xcode's `-NSDocumentRevisionsDebugMode YES` /
+    /// `-ApplePersistenceIgnoreState YES`, xctest's `--test-bundle-path …`, SwiftPM's `--filter …`,
+    /// and friends — otherwise cause an `unknownCommand` failure the moment the application starts.
+    ///
+    /// Rather than parsing every such pattern / input (which is brittle and changes across toolchains),
+    /// this keeps only the first token that matches a registered command name and everything after it
+    /// — the command's own `Signature` is responsible for validating its options and arguments — plus
+    /// any recognized top-level flags. Because `ConsoleKit` requires the command name to precede its
+    /// options, everything the caller legitimately wants lives at or after that token. When no
+    /// registered command is present, the argument list is cleared so the default command runs against
+    /// clean input.
+    ///
+    /// - parameters:
+    ///     - input: The raw `CommandInput` (typically `Environment.commandInput`).
+    ///     - registeredCommands: The names of all commands installed via `app.commands.use(_:as:)`
+    ///       and `app.asyncCommands.use(_:as:)`.
+    /// - returns: A `CommandInput` containing only command-relevant arguments.
+    static func filterCommandInput(_ input: CommandInput, registeredCommands: Set<String>) -> CommandInput {
+        var input = input
+        if let commandIndex = input.arguments.firstIndex(where: { registeredCommands.contains($0) }) {
+            let preservedFlags = input.arguments[..<commandIndex].filter { globalFlags.contains($0) }
+            input.arguments = preservedFlags + Array(input.arguments[commandIndex...])
+        } else {
+            input.arguments = input.arguments.filter { globalFlags.contains($0) }
+        }
+        return input
     }
 
     // MARK: - Presets
@@ -150,14 +129,14 @@ public struct Environment: Sendable, Equatable {
     public static var production: Environment { .init(name: "production") }
 
     /// An environment for developing your application.
-    public static var development: Environment { .init(name: "development", arguments: sanitizeArguments()) }
+    public static var development: Environment { .init(name: "development") }
 
     /// An environment for testing your application.
     ///
-    /// Performs an explicit sanitization step because this preset is often used directly in unit tests, without the
-    /// benefit of the logic usually invoked through either form of `detect()`. This means that when `--env test` is
-    /// explicitly specified, the sanitize logic is run twice, but this should be harmless.
-    public static var testing: Environment { .init(name: "testing", arguments: sanitizeArguments()) }
+    /// Host-injected arguments (from Xcode/xctest/SwiftPM) are no longer stripped here; instead they
+    /// are filtered against the set of registered commands at dispatch time via
+    /// `filterCommandInput(_:registeredCommands:)`, so this preset can simply use the raw arguments.
+    public static var testing: Environment { .init(name: "testing") }
 
     /// Creates a custom environment.
     public static func custom(name: String) -> Environment { .init(name: name) }
