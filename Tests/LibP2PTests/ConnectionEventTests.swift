@@ -182,8 +182,11 @@ extension LibP2PTests {
                     }
                 )
 
+                // Use a `NIOAsyncTestingChannel` (thread-safe loop) rather than an `EmbeddedChannel`: the
+                // stream is posted onto the running app's `EventBus` and is retained/torn down on background
+                // delivery threads, which would touch a single-thread-affine `EmbeddedEventLoop` off-thread.
                 let stream = MockStream(
-                    channel: EmbeddedChannel(),
+                    channel: NIOAsyncTestingChannel(),
                     mode: .initiator,
                     id: 42,
                     name: "42",
@@ -250,8 +253,16 @@ extension LibP2PTests {
                     }
                 )
 
-                let loop = EmbeddedEventLoop()
-                let channel = EmbeddedChannel(loop: loop)
+                // Back the connection with a `NIOAsyncTestingChannel` rather than an `EmbeddedChannel`. Both
+                // are in-memory test channels, but `EmbeddedChannel`'s `EmbeddedEventLoop` is single-thread
+                // affine: it asserts ("EmbeddedEventLoop is not thread-safe") the moment it is touched from any
+                // thread other than the one that created it. Once we post this real connection onto the running
+                // app's `EventBus`, the connection is retained by the delivered `.disconnected` event and handled
+                // on background delivery threads; its eventual `deinit` also fails its event-loop-bound
+                // `securedPromise`/`muxedPromise` from whichever thread releases it. Every one of those is an
+                // off-thread touch of the loop. `NIOAsyncTestingChannel`'s `NIOAsyncTestingEventLoop` is
+                // thread-safe (lock-guarded), so it tolerates all of that without tripping the misuse assertion.
+                let channel = NIOAsyncTestingChannel()
                 let connection = BasicConnectionLight(
                     application: app,
                     channel: channel,
@@ -260,10 +271,9 @@ extension LibP2PTests {
                     expectedRemotePeer: nil
                 )
 
-                // Close the channel and run the loop so the connection's close-future handler fires and posts
-                // `disconnected`.
-                channel.close(promise: nil)
-                loop.run()
+                // Close the channel so the connection's close-future handler fires and posts `disconnected`.
+                // `finish()` closes the channel and drives the testing loop to completion, all thread-safely.
+                _ = try await channel.finish()
 
                 #expect(
                     await ConnectionEventTests.waitUntil { received.withLockedValue { $0.contains(connection.id) } }
