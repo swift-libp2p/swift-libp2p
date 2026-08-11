@@ -23,13 +23,15 @@ extension Application {
         let eventBus = self.eventbus.storage.eventBus.withLockedValue { $0 }
         if let eventBus { return eventBus }
         if self.isShuttingDown {
-            // Race window: Application has begun teardown so the
-            // post-shutdown `storage` getter returned an empty
-            // `Storage` whose `eventBus` is `nil`. Hand back a
-            // fresh `EventBus` — its `post(_:)` already guards on
-            // `application.isRunning`, so events get dropped
-            // silently and `on(_:event:)` registrations are
-            // harmless on an app that will never dispatch again.
+            // Race window: Application teardown has already run
+            // `storage.clear()`, so the post-shutdown `storage` getter
+            // returned an empty `Storage` whose `eventBus` is `nil`
+            // (before `clear()` it hands back the real, configured bus).
+            // Mint a fresh ephemeral `EventBus` — its `post(_:)` already
+            // guards on `application.isRunning`, so events get dropped
+            // silently and `on(_:event:)` registrations are harmless on
+            // an app that will never dispatch again. It logs at `.trace`
+            // (see `EventBus.init`) so it isn't mistaken for a re-init.
             return EventBus(application: self)
         }
         fatalError("No EventBus configured. Configure with app.eventbus.use(...)")
@@ -71,11 +73,15 @@ extension Application {
 
         var storage: Storage {
             if self.application.isShuttingDown {
-                // Race window: this Application has begun teardown.
-                // Returning a fresh empty `Storage` lets stranded
-                // event-loop callbacks finish vacuously instead of
-                // trapping at the `fatalError` below.
-                return Storage()
+                // Race window: this Application has begun teardown. Hand
+                // back the real storage while it's still present so
+                // stranded event-loop callbacks reuse the configured
+                // `EventBus` instead of minting a throwaway one on every
+                // access. Only once `storage.clear()` has removed it do we
+                // fall back to a fresh empty `Storage`, letting those
+                // callbacks finish vacuously instead of trapping at the
+                // `fatalError` below.
+                return self.application.storage[Key.self] ?? Storage()
             }
             guard let storage = self.application.storage[Key.self] else {
                 fatalError("EventBus not initialized. Configure with app.eventbus.initialize()")

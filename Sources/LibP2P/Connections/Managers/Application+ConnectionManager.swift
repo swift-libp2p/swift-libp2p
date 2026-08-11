@@ -46,6 +46,9 @@ extension Application {
             case failedToCloseAllStreams
             case noStreamForID(UInt64)
             case timedOut
+            /// Thrown when a synchronous, blocking API (e.g. `newStreamSync`) is invoked from the
+            /// connection's own event loop, which would deadlock. Use the async/future API instead.
+            case cannotBlockEventLoop
         }
 
         public struct Provider {
@@ -92,17 +95,20 @@ extension Application {
         let application: Application
 
         var storage: Storage {
+            // Prefer the real storage whenever it still exists — even after
+            // `isShuttingDown` has been set. This lets teardown itself (notably
+            // `closeAllConnections()`) reach the *real* ConnectionManager to drain
+            // and reject connections, instead of a vacuous throwaway. We only fall
+            // back once `storage.clear()` has actually removed our key: at that
+            // point `isShuttingDown` lets stranded event-loop callbacks racing the
+            // teardown finish vacuously instead of tripping the `fatalError`.
+            if let storage = self.application.storage[Key.self] {
+                return storage
+            }
             if self.application.isShuttingDown {
-                // Race window: this Application has begun teardown.
-                // Returning a fresh empty `Storage` lets stranded
-                // event-loop callbacks finish vacuously instead of
-                // trapping at the `fatalError` below.
                 return Storage()
             }
-            guard let storage = self.application.storage[Key.self] else {
-                fatalError("ConnectionManager not initialized. Configure with app.connectionManager.initialize()")
-            }
-            return storage
+            fatalError("ConnectionManager not initialized. Configure with app.connectionManager.initialize()")
         }
 
         public func generateConnection(

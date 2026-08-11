@@ -29,11 +29,11 @@ let package = Package(
     dependencies: [
         // Dependencies declare other packages that this package depends on.
         // LibP2P Core
-        .package(url: "https://github.com/swift-libp2p/swift-libp2p-core.git", .upToNextMinor(from: "0.4.0")),
+        .package(url: "https://github.com/swift-libp2p/swift-libp2p-core.git", .upToNextMinor(from: "0.5.0")),
         // LibP2P Multiaddr
         .package(url: "https://github.com/swift-libp2p/swift-multiaddr.git", .upToNextMinor(from: "0.2.0")),
         // LibP2P Peer Identities
-        .package(url: "https://github.com/swift-libp2p/swift-peer-id.git", .upToNextMinor(from: "0.2.1")),
+        .package(url: "https://github.com/swift-libp2p/swift-peer-id.git", .upToNextMinor(from: "0.2.2")),
         // Swift NIO for all things networking
         .package(url: "https://github.com/apple/swift-nio.git", .upToNextMajor(from: "2.87.0")),
         .package(url: "https://github.com/apple/swift-nio-extras.git", .upToNextMajor(from: "1.25.0")),
@@ -49,8 +49,6 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-protobuf.git", .upToNextMajor(from: "1.19.0")),
         // Swift metrics API
         .package(url: "https://github.com/apple/swift-metrics.git", .upToNextMajor(from: "2.5.0")),
-        // Swift Event Bus
-        .package(url: "https://github.com/cesarferreira/SwiftEventBus.git", .upToNextMajor(from: "5.0.0")),
         // SwiftState for state machines
         .package(url: "https://github.com/ReactKit/SwiftState.git", .upToNextMajor(from: "6.0.0")),
     ],
@@ -75,7 +73,6 @@ let package = Package(
                 .product(name: "AsyncKit", package: "async-kit"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 .product(name: "Metrics", package: "swift-metrics"),
-                .product(name: "SwiftEventBus", package: "SwiftEventBus"),
                 .product(name: "SwiftState", package: "SwiftState"),
                 .product(name: "_NIOFileSystem", package: "swift-nio"),
                 .target(name: "COperatingSystem"),

@@ -59,8 +59,14 @@ extension Logging.Logger.Level {
             init() {}
         }
 
-        // Determine log level from environment.
-        return try LogSignature(from: &environment.commandInput).level
+        // Determine log level from environment, consuming the `--log` option from the stored
+        // arguments so it isn't later mistaken for command input during dispatch. (The
+        // `commandInput` getter returns a fresh copy, so we parse into a local and write it back.)
+        var commandInput = environment.commandInput
+        let level = try LogSignature(from: &commandInput).level
+        environment.commandInput = commandInput
+
+        return level
             ?? Environment.process.LOG_LEVEL
             ?? (environment == .production ? .notice : .info)
     }

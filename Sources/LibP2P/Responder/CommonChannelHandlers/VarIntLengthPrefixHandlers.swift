@@ -27,6 +27,14 @@
 import NIO
 import SwiftProtobuf
 
+/// Errors thrown while decoding a VarInt length prefix from an inbound (potentially malicious) byte stream.
+public enum VarIntDecodingError: Error, Equatable {
+    /// The inbound bytes did not form a valid varint — it either overflowed 64 bits
+    /// or encoded a length larger than `Int.max`. The frame is malformed; the channel
+    /// should be errored/closed rather than crashing the process.
+    case invalidVarInt
+}
+
 extension Application.ChildChannelHandlers.Provider {
 
     /// `varIntLengthPrefixed` installs two channelHandlers that help decode and encode frames who are denoted by a VarInt length prefix
@@ -73,7 +81,7 @@ public class VarintFrameDecoder: ByteToMessageDecoder {
     public func decode(context: ChannelHandlerContext, buffer: inout ByteBuffer) throws -> DecodingState {
         // If we don't have a length, we need to read one
         if self.messageLength == nil {
-            self.messageLength = buffer.readVarint()
+            self.messageLength = try buffer.readVarint()
         }
         guard let length = self.messageLength else {
             // Not enough bytes to read the message length. Ask for more.
@@ -124,7 +132,7 @@ public class VarintLengthFieldPrepender: MessageToByteEncoder {
 }
 
 extension ByteBuffer {
-    fileprivate mutating func readVarint() -> Int? {
+    fileprivate mutating func readVarint() throws -> Int? {
         var value: UInt64 = 0
         var shift: UInt64 = 0
         let initialReadIndex = self.readerIndex
@@ -138,11 +146,18 @@ extension ByteBuffer {
 
             value |= UInt64(c & 0x7F) << shift
             if c & 0x80 == 0 {
+                // A length larger than `Int.max` cannot be represented and is treated as malformed
+                // rather than trapping on the `Int(value)` conversion.
+                guard value <= UInt64(Int.max) else {
+                    throw VarIntDecodingError.invalidVarInt
+                }
                 return Int(value)
             }
             shift += 7
             if shift > 63 {
-                fatalError("Invalid varint, requires shift (\(shift)) > 64")
+                // A valid 64-bit varint is at most 10 bytes; a continuation past bit 63 is
+                // malformed input from the remote peer. Error the frame instead of crashing.
+                throw VarIntDecodingError.invalidVarInt
             }
         }
     }
