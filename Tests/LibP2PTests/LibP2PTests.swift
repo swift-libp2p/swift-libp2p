@@ -144,113 +144,145 @@ struct LibP2PTests {
         #expect(ref.didShutdown == true)
     }
 
-    @Test(.disabled(), .bug("https://github.com/swift-libp2p/swift-libp2p/issues/45"))
-    func testAutomaticPortPickingWorks() async throws {
+    @Test func testAutomaticPortPickingWorks() async throws {
         func configure(_ app: Application) async throws {
             app.listen(.tcp(host: "127.0.0.1", port: 0))
 
-            app.on("hello") { req in
-                "Hello, world!"
-            }
-
             #expect(app.servers.server(for: TCPServer.self)?.localAddress == nil)
-
-            app.environment.arguments = ["serve"]
         }
 
         try await withApp(configure: configure) { app in
+            // Actually run the app so the TCP server binds its
+            // socket; only then does port 0 get resolved to an OS-assigned port.
+            try await app.startup()
+
+            // Fetch the address from the TCP server directly
             let localAddress = try #require(app.servers.server(for: TCPServer.self)?.listeningAddress)
             guard let tcp = localAddress.tcpAddress else {
                 Issue.record("couldn't get ip/port from `\(localAddress)`")
                 return
             }
-
             #expect(tcp.address == "127.0.0.1")
             #expect(tcp.port > 0)
+
+            // Fetch the address from the app's listenAddresses param
+            let listenAddress = try #require(app.listenAddresses.first?.tcpAddress)
+            #expect(listenAddress.address == "127.0.0.1")
+            #expect(listenAddress.port > 0)
         }
     }
 
-    @Test(.disabled(), .bug("https://github.com/swift-libp2p/swift-libp2p/issues/45"))
-    func testConfigurationAddressDetailsReflectedAfterBeingSet() async throws {
+    @Test func testConfigurationAddressDetailsReflectedAfterBeingSet() async throws {
+        struct AddressConfig: Codable {
+            let hostname: String
+            let port: Int
+        }
+
+        let port = 3234
+
+        func configure(_ app: Application) async throws {
+            app.servers.use(.tcp(host: "127.0.0.1", port: 0))
+
+            app.on("hello") { req -> Response<ByteBuffer> in
+                switch req.event {
+                case .ready:
+                    return .stayOpen
+                case .data:
+                    let serverConf = try #require(
+                        req.application.servers.server(for: TCPServer.self)?.listeningAddress.tcpAddress
+                    )
+                    let config = AddressConfig(hostname: serverConf.address, port: serverConf.port)
+                    let buffer = try ByteBuffer(bytes: JSONEncoder().encode(config))
+                    return .respondThenClose(buffer)
+                case .closed, .error:
+                    return .close
+                }
+            }
+
+            app.environment.arguments = ["serve", "--port", "\(port)"]
+        }
+
+        try await withApp(configure: configure) { app in
+            // Actually run the `serve` command so the TCP server binds its socket.
+            try await app.startup()
+
+            // Fetch the address from the app's listenAddresses param
+            let listenAddress = try #require(app.listenAddresses.first?.tcpAddress)
+            #expect(listenAddress.address == "127.0.0.1")
+            #expect(listenAddress.port == port)
+
+            // Exercise our performTest(request:) and hello protocol route just cause
+            let response = try await app.testing().performTest(
+                request: .init(ma: app.listenAddresses.first!, protocol: "hello", payload: .init())
+            )
+            let returnedConfig = try JSONDecoder().decode(
+                AddressConfig.self,
+                from: Data(response.payload.readableBytesView)
+            )
+            #expect(returnedConfig.hostname == "127.0.0.1")
+            #expect(returnedConfig.port == port)
+        }
+    }
+
+    @Test func testConfigurationAddressDetailsReflectedWhenProvidedThroughServeCommand() async throws {
         struct AddressConfig: Codable {
             let hostname: String
             let port: Int
         }
 
         func configure(_ app: Application) async throws {
-            app.servers.use(.tcp(host: "0.0.0.0", port: 0))
+            app.servers.use(.tcp(host: "127.0.0.1", port: 3021))
 
             app.on("hello") { req -> Response<ByteBuffer> in
-                let serverConf = try #require(
-                    req.application.servers.server(for: TCPServer.self)?.listeningAddress.tcpAddress
-                )
-                let config = AddressConfig(hostname: serverConf.address, port: serverConf.port)
-                let buffer = try ByteBuffer(bytes: JSONEncoder().encode(config))
-                return .respondThenClose(buffer)
+                switch req.event {
+                case .ready:
+                    return .stayOpen
+                case .data:
+                    let serverConf = try #require(
+                        req.application.listenAddresses.first?.tcpAddress
+                    )
+                    let config = AddressConfig(hostname: serverConf.address, port: serverConf.port)
+                    let buffer = try ByteBuffer(bytes: JSONEncoder().encode(config))
+                    return .respondThenClose(buffer)
+                case .closed, .error:
+                    return .close
+                }
             }
 
-            app.environment.arguments = ["serve"]
+            app.environment.arguments = ["serve", "--hostname", "0.0.0.0", "--port", "3022"]
         }
 
         try await withApp(configure: configure) { app in
-            let localAddress = try #require(app.servers.server(for: TCPServer.self)?.listeningAddress)
-            //#expect("0.0.0.0" == app.servers.server(forKey: TCPServer.key).configuration.hostname)
-            //#expect(app.http.server.shared.localAddress?.port == app.http.server.configuration.port)
+            // Actually run the `serve` command so the TCP server binds its socket.
+            try await app.startup()
 
+            // The address fetched from the TCPServer is the literal address we define (0.0.0.0:3022)
+            let localAddress = try #require(app.servers.server(for: TCPServer.self)?.listeningAddress)
             guard let tcp = localAddress.tcpAddress else {
                 Issue.record("couldn't get ip/port from `\(localAddress)`")
                 return
             }
-
-            print(tcp)
-
-            //let response = try await app.testing().test("http://localhost:\(port)/hello")
-            //let returnedConfig = try response.content.decode(AddressConfig.self)
-            //#expect(returnedConfig.hostname == "0.0.0.0")
-            //#expect(returnedConfig.port == port)
-        }
-    }
-
-    @Test(.disabled(), .bug("https://github.com/swift-libp2p/swift-libp2p/issues/45"))
-    func testConfigurationAddressDetailsReflectedWhenProvidedThroughServeCommand() async throws {
-        struct AddressConfig: Codable {
-            let hostname: String
-            let port: Int
-        }
-
-        func configure(_ app: Application) async throws {
-            app.servers.use(.tcp(host: "0.0.0.0", port: 3000))
-
-            app.on("hello") { req -> Response<ByteBuffer> in
-                let serverConf = try #require(
-                    req.application.servers.server(for: TCPServer.self)?.listeningAddress.tcpAddress
-                )
-                let config = AddressConfig(hostname: serverConf.address, port: serverConf.port)
-                let buffer = try ByteBuffer(bytes: JSONEncoder().encode(config))
-                return .respondThenClose(buffer)
-            }
-
-            app.environment.arguments = ["serve", "--hostname", "0.0.0.0", "--port", "3000"]
-        }
-
-        try await withApp(configure: configure) { app in
-            //XCTAssertNotNil(app.http.server.shared.localAddress)
-            //XCTAssertEqual("0.0.0.0", app.http.server.configuration.hostname)
-            //XCTAssertEqual(3000, app.http.server.configuration.port)
-            let localAddress = try #require(app.servers.server(for: TCPServer.self)?.listeningAddress)
-            print(app.listenAddresses)
-            guard let tcp = localAddress.tcpAddress else {
-                Issue.record("couldn't get ip/port from `\(localAddress)`")
-                return
-            }
-
             #expect(tcp.address == "0.0.0.0")
-            #expect(tcp.port == 3000)
+            #expect(tcp.port == 3022)
 
-            //let response = try app.client.get("http://localhost:\(port)/hello").wait()
-            //let returnedConfig = try response.content.decode(AddressConfig.self)
-            //#expect(returnedConfig.hostname, "0.0.0.0")
-            //#expect(returnedConfig.port, 3000)
+            // The address from app.listenAddress is the ip we we're assigned
+            let listenAddress = try #require(app.listenAddresses.first?.tcpAddress)
+            #expect(listenAddress.address != "0.0.0.0")
+            #expect(listenAddress.address != "127.0.0.1")
+            #expect(listenAddress.port == 3022)
+
+            // Exercise our performTest(request:) and hello protocol route just cause
+            let response = try await app.testing().performTest(
+                request: .init(ma: app.listenAddresses.first!, protocol: "hello", payload: .init())
+            )
+            let returnedConfig = try JSONDecoder().decode(
+                AddressConfig.self,
+                from: Data(response.payload.readableBytesView)
+            )
+            #expect(returnedConfig.hostname != "0.0.0.0")
+            #expect(returnedConfig.hostname != "127.0.0.1")
+            #expect(returnedConfig.hostname == listenAddress.address)
+            #expect(returnedConfig.port == 3022)
         }
     }
 }
