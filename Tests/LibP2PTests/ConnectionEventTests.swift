@@ -655,9 +655,10 @@ extension LibP2PTests {
         @Test("`.default(bufferSize:)` bounds each subscriber's delivery buffer")
         func testConfigurableBufferSize() async throws {
             let bufferSize = 4
-            try await withApp(configure: { app in
+            let configuration:((Application) async throws -> Void) = { app in
                 app.eventbus.use(.default(bufferSize: bufferSize))
-            }) { app in
+            }
+            try await withApp(configure: configuration) { app in
                 try await app.startup()
 
                 // Register the subscriber, then post far more than the buffer WITHOUT draining, so the stream
