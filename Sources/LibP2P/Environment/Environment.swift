@@ -117,6 +117,17 @@ public struct Environment: Sendable, Equatable {
         if let commandIndex = input.arguments.firstIndex(where: { registeredCommands.contains($0) }) {
             let preservedFlags = input.arguments[..<commandIndex].filter { globalFlags.contains($0) }
             input.arguments = preservedFlags + Array(input.arguments[commandIndex...])
+        } else if let command = input.executablePath.last, registeredCommands.contains(command) {
+            // The command name was consumed as the executable path rather than
+            // appearing in `arguments`. This happens when `environment.arguments`
+            // is set programmatically without a leading executable path — e.g.
+            // `app.environment.arguments = ["serve", "--port", "3000"]` — because
+            // `CommandInput(arguments:)` always treats the first token as the
+            // executable path. Fold the command name back into `arguments` so the
+            // command group dispatches to it explicitly, carrying its options.
+            // Those options must survive so they take precedence over any
+            // programmatic configuration (e.g. `app.servers.use(.tcp(...))`).
+            input.arguments = [command] + input.arguments
         } else {
             input.arguments = input.arguments.filter { globalFlags.contains($0) }
         }
