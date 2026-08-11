@@ -73,8 +73,7 @@ extension LibP2PTests {
         @Test("Closing the underlying channel drives connection teardown")
         func testConnectionTeardownOnChannelClose() async throws {
             try await withApp { app in
-                let loop = EmbeddedEventLoop()
-                let channel = EmbeddedChannel(loop: loop)
+                let channel = NIOAsyncTestingChannel()
                 let remote = try Multiaddr("/ip4/127.0.0.1/tcp/1234")
 
                 let connection = BasicConnectionLight(
@@ -85,10 +84,12 @@ extension LibP2PTests {
                     expectedRemotePeer: nil
                 )
 
-                // Closing the channel schedules its close-future callback on the embedded loop; run the
-                // loop to let the connection's teardown handler fire.
-                try await channel.close().get()
-                loop.run()
+                // Close the channel so the connection's teardown handler fires. `NIOAsyncTestingChannel` is
+                // backed by a thread-safe `NIOAsyncTestingEventLoop`, so the connection's event-loop-bound
+                // promises can be safely failed from its `deinit` on whatever thread releases it — unlike an
+                // `EmbeddedEventLoop`, which asserts when touched off its creating thread. `finish()` closes
+                // the channel and drives the loop to completion.
+                _ = try await channel.finish()
 
                 #expect(connection.status == .closed)
                 #expect(connection.muxer == nil)

@@ -301,7 +301,13 @@ private final class TCPServerConnection: Sendable {
 
                 // Add the new inbound connection to our ConnectionManager
                 return application.connections.addConnection(conn, on: nil).flatMap {
-                    channel.pipeline.addHandler(BackPressureHandler(), position: .first).flatMap {
+                    // `QuiesceOnShutdownHandler` sits at the head so that when the
+                    // server begins quiescing it closes this accepted channel — see
+                    // its doc comment. `BackPressureHandler` follows it.
+                    channel.pipeline.addHandlers(
+                        [QuiesceOnShutdownHandler(), BackPressureHandler()],
+                        position: .first
+                    ).flatMap {
                         // Initialize the new inbound channel
                         conn.initializeChannel()
                     }
@@ -374,5 +380,26 @@ final class TCPServerErrorHandler: ChannelInboundHandler {
     func errorCaught(context: ChannelHandlerContext, error: Error) {
         self.logger.error("Unhandled TCP server error: \(error)")
         context.close(mode: .output, promise: nil)
+    }
+}
+
+/// Closes an accepted connection channel when the server begins to quiesce.
+///
+/// `ServerQuiescingHelper` (used by ``TCPServer`` to shut down gracefully) stops accepting new
+/// connections and then waits for every already-accepted child channel to close before it completes.
+/// The libp2p connection pipeline (security → muxer → …) doesn't react to `ChannelShouldQuiesceEvent`
+/// on the parent channel on its own, so without this handler an open connection would keep the
+/// quiesce blocked until the server's `shutdownTimeout` elapses (surfacing as `serverStopTookTooLong`).
+/// Installing this at the head of each accepted channel makes graceful server shutdown prompt,
+/// independent of whether the connection manager also closed the connection.
+final class QuiesceOnShutdownHandler: ChannelInboundHandler, @unchecked Sendable {
+    typealias InboundIn = ByteBuffer
+    typealias InboundOut = ByteBuffer
+
+    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        if event is ChannelShouldQuiesceEvent {
+            context.close(mode: .all, promise: nil)
+        }
+        context.fireUserInboundEventTriggered(event)
     }
 }
