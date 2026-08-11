@@ -17,10 +17,21 @@ import LibP2PCore
 import NIOConcurrencyHelpers
 
 extension Application.Events.Provider {
+    /// The default `EventBus`, using ``EventBus/defaultBufferSize`` for each subscriber's delivery buffer.
     public static var `default`: Self {
+        .default()
+    }
+
+    /// The default `EventBus` with a configurable per-subscriber delivery buffer.
+    ///
+    /// - Parameter bufferSize: The maximum number of events buffered per subscriber (callback or
+    ///   `AsyncStream`). A slow/abandoned subscriber drops its own oldest events past this bound rather
+    ///   than growing memory or applying backpressure to the poster. Defaults to
+    ///   ``EventBus/defaultBufferSize``.
+    public static func `default`(bufferSize: Int = EventBus.defaultBufferSize) -> Self {
         .init { app in
             app.eventbus.use {
-                EventBus(application: $0)
+                EventBus(application: $0, bufferSize: bufferSize)
             }
         }
     }
@@ -81,7 +92,10 @@ public final class EventBus: Sendable {
     /// Maximum number of buffered events per subscriber (both callback and `AsyncStream`). A slow or
     /// abandoned consumer drops its own oldest events rather than growing memory without bound or
     /// applying backpressure to the poster.
-    private static let streamBufferSize = 64
+    ///
+    /// The default used when none is supplied to ``init(application:bufferSize:)`` or the
+    /// ``Application/Events/Provider/default(bufferSize:)`` provider.
+    public static let defaultBufferSize = 64
 
     /// Bookkeeping for one ``on(_:event:)`` callback subscription, so ``unregister(_:)`` can tear it
     /// down: cancelling `task` ends its drain loop, whose stream `onTermination` removes the
@@ -105,8 +119,12 @@ public final class EventBus: Sendable {
     private let logger: Logger
     private let registry: NIOLockedValueBox<Registry>
 
-    init(application: Application) {
+    /// The maximum number of events buffered per subscriber before the oldest are dropped.
+    private let bufferSize: Int
+
+    init(application: Application, bufferSize: Int = EventBus.defaultBufferSize) {
         self.application = application
+        self.bufferSize = bufferSize
         self.registry = .init(Registry())
 
         var logger = application.logger
@@ -297,7 +315,7 @@ public final class EventBus: Sendable {
     /// its `CallbackToken`; ``subscribe(to:)`` discards it).
     private func openStream(kinds: Set<Kind>) -> (id: UUID, stream: AsyncStream<EventEmitter>) {
         let id = UUID()
-        let stream = AsyncStream(EventEmitter.self, bufferingPolicy: .bufferingNewest(Self.streamBufferSize)) {
+        let stream = AsyncStream(EventEmitter.self, bufferingPolicy: .bufferingNewest(self.bufferSize)) {
             continuation in
             self.registry.withLockedValue { registry in
                 for kind in kinds {
