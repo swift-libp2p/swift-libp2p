@@ -49,8 +49,6 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-protobuf.git", .upToNextMajor(from: "1.19.0")),
         // Swift metrics API
         .package(url: "https://github.com/apple/swift-metrics.git", .upToNextMajor(from: "2.5.0")),
-        // Swift Event Bus
-        .package(url: "https://github.com/cesarferreira/SwiftEventBus.git", .upToNextMajor(from: "5.0.0")),
         // SwiftState for state machines
         .package(url: "https://github.com/ReactKit/SwiftState.git", .upToNextMajor(from: "6.0.0")),
     ],
@@ -75,7 +73,6 @@ let package = Package(
                 .product(name: "AsyncKit", package: "async-kit"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 .product(name: "Metrics", package: "swift-metrics"),
-                .product(name: "SwiftEventBus", package: "SwiftEventBus"),
                 .product(name: "SwiftState", package: "SwiftState"),
                 .product(name: "_NIOFileSystem", package: "swift-nio"),
                 .target(name: "COperatingSystem"),
