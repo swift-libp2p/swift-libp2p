@@ -156,6 +156,17 @@ extension LibP2PTests {
             #expect(filtered.executablePath == ["/usr/bin/libp2p"])
             #expect(filtered.arguments == ["serve"])
         }
+
+        @Test("A command name set without a leading executable path keeps its options")
+        func recoversCommandConsumedAsExecutablePath() {
+            // `environment.arguments = ["serve", "--port", "3000"]` (no leading program
+            // path) makes `CommandInput` swallow `serve` as the executable path, leaving
+            // its options orphaned in `arguments`. The filter must fold the command name
+            // back in so its options survive and take precedence over programmatic config.
+            let input = CommandInput(arguments: ["serve", "--hostname", "0.0.0.0", "--port", "3000"])
+            let filtered = Environment.filterCommandInput(input, registeredCommands: Self.registered)
+            #expect(filtered.arguments == ["serve", "--hostname", "0.0.0.0", "--port", "3000"])
+        }
     }
 }
 
