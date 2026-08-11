@@ -655,7 +655,7 @@ extension LibP2PTests {
         @Test("`.default(bufferSize:)` bounds each subscriber's delivery buffer")
         func testConfigurableBufferSize() async throws {
             let bufferSize = 4
-            let configuration:((Application) async throws -> Void) = { app in
+            let configuration: ((Application) async throws -> Void) = { app in
                 app.eventbus.use(.default(bufferSize: bufferSize))
             }
             try await withApp(configure: configuration) { app in
