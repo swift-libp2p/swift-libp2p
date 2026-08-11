@@ -583,16 +583,11 @@ extension Application {
         /// On Verified Remote Peer Subscription
         ///
         /// This is responsible for adding a Verified Remote Peer to our PeerStore
-        self.events.on(self, event: .remotePeer(onRemotePeer))
-
-        /// On Verified Remote Peer Subscription
-        ///
-        /// This is responsible for adding a Verified Remote Peer to our PeerStore
-        func onRemotePeer(_ peer: PeerInfo) {
+        let onRemotePeer: @Sendable (PeerInfo) -> Void = { peer in
             guard peer.peer != self.peerID else { return }
-            logger.debug("Verified Remote Peer")
-            logger.debug("Peer: \(peer.peer.b58String)")
-            logger.debug("Address: \(peer.addresses)")
+            self.logger.debug("Verified Remote Peer")
+            self.logger.debug("Peer: \(peer.peer.b58String)")
+            self.logger.debug("Address: \(peer.addresses)")
 
             let _ = self.peers.add(key: peer.peer, on: nil).flatMap { _ -> EventLoopFuture<Void> in
                 self.logger.debug("Attempting to add known multiaddr to peerstore")
@@ -606,6 +601,7 @@ extension Application {
                 }
             }
         }
+        self.events.on(self, event: .remotePeer(onRemotePeer))
 
         //self.events.on(self, event: .identifiedPeer( onPeerIdentified ))
         //        func onPeerIdentified(_ identifiedPeer:IdentifiedPeer) -> Void {
