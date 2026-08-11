@@ -12,79 +12,123 @@
 //
 //===----------------------------------------------------------------------===//
 
+import Foundation
 import LibP2PCore
-import SwiftEventBus
-
-/// https://github.com/libp2p/specs/blob/master/connections/README.md#connection-lifecycle-events
-extension SwiftEventBus {
-    /// Internal Events
-    internal struct _Event {
-        /// Called by our IdentifyManager when a Remote Peer has been successfully identified
-        static let IdentifiedPeer = "libp2p.identifiedPeer"
-    }
-
-    /// Public Events
-    public struct Event {
-        /// A new connection has been opened
-        static let Connected = "libp2p.connected"
-
-        /// A connection has closed
-        static let Disconnected = "libp2p.disconnected"
-
-        /// A new stream has opened over a connection
-        static let OpenedStream = "libp2p.streamOpened"
-
-        /// A stream has closed
-        static let ClosedStream = "libp2p.streamClosed"
-
-        /// We've started listening on a new address
-        static let Listen = "libp2p.listenOpened"
-
-        /// We've stopped listening on an address
-        static let ListenClose = "libp2p.listenClosed"
-
-        /// We've verified a connection to a remote peer
-        static let RemotePeer = "libp2p.remotePeerAdded"
-
-        /// Connection has been upgraded (both secured and has muxing capabilities)
-        static let Upgraded = "libp2p.connectionUpgraded"
-
-        /// Called by our IdentifyManager when a Remote Peer has been successfully identified
-        static let IdentifiedPeer = "libp2p.identifiedPeer"
-
-        /// Called by libp2p when a fully upgraded remote peers handled protocols change (usually after receiving an identify, identify/delta, message)
-        static let RemotePeerProtocolChange = "libp2p.remotePeerProtocolChange"
-
-        /// Called by libp2p when our locally handled protocols change
-        static let LocalProtocolChange = "libp2p.localProtocolChange"
-
-        /// Called by libp2p when a discovery service found a potential peer
-        static let PeerDiscovered = "libp2p.peerDiscovered"
-    }
-}
+import NIOConcurrencyHelpers
 
 extension Application.Events.Provider {
+    /// The default `EventBus`, using ``EventBus/defaultBufferSize`` for each subscriber's delivery buffer.
     public static var `default`: Self {
+        .default()
+    }
+
+    /// The default `EventBus` with a configurable per-subscriber delivery buffer.
+    ///
+    /// - Parameter bufferSize: The maximum number of events buffered per subscriber (callback or
+    ///   `AsyncStream`). A slow/abandoned subscriber drops its own oldest events past this bound rather
+    ///   than growing memory or applying backpressure to the poster. Defaults to
+    ///   ``EventBus/defaultBufferSize``.
+    public static func `default`(bufferSize: Int = EventBus.defaultBufferSize) -> Self {
         .init { app in
             app.eventbus.use {
-                EventBus(application: $0)
+                EventBus(application: $0, bufferSize: bufferSize)
             }
         }
     }
 }
 
+/// A lightweight, strict-concurrency event bus.
+///
+/// See https://github.com/libp2p/specs/blob/master/connections/README.md#connection-lifecycle-events
+///
+/// This is a native replacement for the previous `SwiftEventBus`/`NotificationCenter` backed
+/// implementation. It stores its subscribers in a single `NIOLockedValueBox`, mirroring the
+/// `Application` storage pattern, so the bus itself is a plain `Sendable` class with no actor
+/// isolation.
+///
+/// **Delivery is isolated per subscriber.** Both subscription styles are backed by the same
+/// mechanism: each subscriber owns a bounded `AsyncStream` continuation, and `post(_:)` merely
+/// `yield`s onto every interested continuation. Yielding is non-blocking, so a slow — or entirely
+/// unresponsive — subscriber can neither stall `post(_:)` nor starve any other subscriber; at worst
+/// it drops its own oldest buffered events. Events for a single subscriber are delivered in order.
+///
+/// Two ways to subscribe:
+///   * ``on(_:event:)`` — a classic callback keyed off an owning object's identity (removed with
+///     ``unregister(_:)``). The callback runs on a private drain `Task`, **not** synchronously on the
+///     posting thread; existing handlers already hop to their own event loops, so this is transparent.
+///   * ``subscribe(to:)`` / ``subscribe()`` — an `AsyncStream` of ``EventEmitter`` values for modern
+///     `for await` consumers. The stream cleans up its registration on termination.
 public final class EventBus: Sendable {
 
-    private let application: Application
-    private let instanceID: String
-    private let logger: Logger
+    /// The distinct event categories. Used purely as a subscription/dispatch key; both
+    /// ``EventEmitter`` (posts) and ``EventHandler`` (callback subscriptions) map onto it.
+    public enum Kind: Sendable, Hashable, CaseIterable {
+        /// A new connection has been opened.
+        case connected
+        /// A connection has closed.
+        case disconnected
+        /// A new stream has opened over a connection.
+        case openedStream
+        /// A stream has closed.
+        case closedStream
+        /// We've started listening on a new address.
+        case listen
+        /// We've stopped listening on an address.
+        case listenClosed
+        /// We've verified a connection to a remote peer.
+        case remotePeer
+        /// A connection has been upgraded (both secured and muxing-capable).
+        case upgraded
+        /// A remote peer has been successfully identified (via the Identify protocol).
+        case identifiedPeer
+        /// A fully upgraded remote peer's set of handled protocols changed (via Identify / Identify-Delta).
+        case remotePeerProtocolChange
+        /// Our own set of locally handled protocols changed.
+        case localProtocolChange
+        /// A discovery service found a potential peer.
+        case peerDiscovered
+    }
 
-    init(application: Application, instanceID: String? = nil) {
+    /// Maximum number of buffered events per subscriber (both callback and `AsyncStream`). A slow or
+    /// abandoned consumer drops its own oldest events rather than growing memory without bound or
+    /// applying backpressure to the poster.
+    ///
+    /// The default used when none is supplied to ``init(application:bufferSize:)`` or the
+    /// ``Application/Events/Provider/default(bufferSize:)`` provider.
+    public static let defaultBufferSize = 64
+
+    /// Bookkeeping for one ``on(_:event:)`` callback subscription, so ``unregister(_:)`` can tear it
+    /// down: cancelling `task` ends its drain loop, whose stream `onTermination` removes the
+    /// continuation from the registry.
+    private struct CallbackToken {
+        let id: UUID
+        let kinds: Set<Kind>
+        let task: Task<Void, Never>
+    }
+
+    /// Everything mutable lives here, guarded by a single lock.
+    private struct Registry {
+        /// Every subscriber's continuation (callback drains and public `AsyncStream`s alike), keyed by
+        /// event kind then by a per-subscription token. `post(_:)` yields onto these.
+        var continuations: [Kind: [UUID: AsyncStream<EventEmitter>.Continuation]] = [:]
+        /// Callback subscriptions, grouped by the owning object's identity for ``unregister(_:)``.
+        var callbackTokens: [ObjectIdentifier: [CallbackToken]] = [:]
+    }
+
+    private let application: Application
+    private let logger: Logger
+    private let registry: NIOLockedValueBox<Registry>
+
+    /// The maximum number of events buffered per subscriber before the oldest are dropped.
+    private let bufferSize: Int
+
+    init(application: Application, bufferSize: Int = EventBus.defaultBufferSize) {
         self.application = application
-        self.instanceID = "." + (instanceID ?? UUID().uuidString)
+        self.bufferSize = bufferSize
+        self.registry = .init(Registry())
 
         var logger = application.logger
-        logger[metadataKey: "EventBus"] = .string("\(self.instanceID.dropFirst().prefix(5))")
+        logger[metadataKey: "EventBus"] = .string("\(UUID().uuidString.prefix(5))")
         self.logger = logger
 
         if !application.isShuttingDown {
@@ -92,7 +136,25 @@ public final class EventBus: Sendable {
         }
     }
 
-    public enum EventEmitter {
+    deinit {
+        // Tear down any subscriptions that outlived the bus: cancel the callback drain tasks and finish
+        // every continuation so awaiting consumers terminate cleanly. `onTermination` captures `self`
+        // weakly, so the `finish()` calls here don't re-enter the (now-deinitializing) bus.
+        let (tasks, continuations): ([Task<Void, Never>], [AsyncStream<EventEmitter>.Continuation]) =
+            self.registry.withLockedValue { registry in
+                (
+                    registry.callbackTokens.values.flatMap { $0 }.map { $0.task },
+                    registry.continuations.values.flatMap { $0.values }
+                )
+            }
+        for task in tasks { task.cancel() }
+        for continuation in continuations { continuation.finish() }
+    }
+
+    // MARK: - Event values
+
+    /// The events that can be posted onto the bus, carrying their (already `Sendable`) payload.
+    public enum EventEmitter: Sendable {
         case connected(Connection)
         case disconnected(Connection, PeerID?)
         case openedStream(LibP2PCore.Stream)
@@ -106,100 +168,58 @@ public final class EventBus: Sendable {
         case localProtocolChange
         case peerDiscovered(PeerInfo)
 
-        var eventName: String {
+        public var kind: Kind {
             switch self {
-            case .connected:
-                return SwiftEventBus.Event.Connected
-            case .disconnected:
-                return SwiftEventBus.Event.Disconnected
-            case .openedStream:
-                return SwiftEventBus.Event.OpenedStream
-            case .closedStream:
-                return SwiftEventBus.Event.ClosedStream
-            case .listen:
-                return SwiftEventBus.Event.Listen
-            case .listenClosed:
-                return SwiftEventBus.Event.ListenClose
-            case .remotePeer:
-                return SwiftEventBus.Event.RemotePeer
-            case .upgraded:
-                return SwiftEventBus.Event.Upgraded
-            case .identifiedPeer:
-                return SwiftEventBus.Event.IdentifiedPeer
-            case .remotePeerProtocolChange:
-                return SwiftEventBus.Event.RemotePeerProtocolChange
-            case .localProtocolChange:
-                return SwiftEventBus.Event.LocalProtocolChange
-            case .peerDiscovered:
-                return SwiftEventBus.Event.PeerDiscovered
+            case .connected: return .connected
+            case .disconnected: return .disconnected
+            case .openedStream: return .openedStream
+            case .closedStream: return .closedStream
+            case .listen: return .listen
+            case .listenClosed: return .listenClosed
+            case .remotePeer: return .remotePeer
+            case .upgraded: return .upgraded
+            case .identifiedPeer: return .identifiedPeer
+            case .remotePeerProtocolChange: return .remotePeerProtocolChange
+            case .localProtocolChange: return .localProtocolChange
+            case .peerDiscovered: return .peerDiscovered
             }
         }
-
-        var payload: Any? {
-            switch self {
-            case .connected(let connection):
-                return connection
-            case .disconnected(let connection, let pid):
-                return (connection, pid)
-            case .openedStream(let stream):
-                return stream
-            case .closedStream(let stream):
-                return stream
-            case .listen(let pid, let ma):
-                return (pid, ma)
-            case .listenClosed(let pid, let ma):
-                return (pid, ma)
-            case .remotePeer(let peer):
-                return peer
-            case .upgraded(let connection):
-                return connection
-            case .identifiedPeer(let peer):
-                return peer
-            case .remotePeerProtocolChange(let change):
-                return change
-            //            case .localProtocolChange:
-            //                return SwiftEventBus.Event.LocalProtocolChange
-            case .peerDiscovered(let pInfo):
-                return pInfo
-            default:
-                return nil
-            }
-        }
-
-        //        var expectedPayloadType:Any.Type {
-        //            switch self {
-        //            case .connected:
-        //                return Connection.self
-        //            default:
-        //                return Void.self
-        //            }
-        //        }
     }
 
-    /// Public Events Available For Subscription
-    public enum EventHandler {
-        case connected(_ cb: (Connection) -> Void)
-        case disconnected(_ cb: (Connection, PeerID?) -> Void)
-        case openedStream(_ cb: (LibP2PCore.Stream) -> Void)
-        case closedStream(_ cb: (LibP2PCore.Stream) -> Void)
-        case remotePeer(_ cb: (PeerInfo) -> Void)
-        case upgraded(_ cb: (Connection) -> Void)
-        case identifiedPeer(_ cb: (IdentifiedPeer) -> Void)
-        case peerDiscovered(_ cb: (PeerInfo) -> Void)
+    /// Public Events Available For Subscription via the callback API.
+    public enum EventHandler: Sendable {
+        case connected(_ cb: @Sendable (Connection) -> Void)
+        case disconnected(_ cb: @Sendable (Connection, PeerID?) -> Void)
+        case openedStream(_ cb: @Sendable (LibP2PCore.Stream) -> Void)
+        case closedStream(_ cb: @Sendable (LibP2PCore.Stream) -> Void)
+        case remotePeer(_ cb: @Sendable (PeerInfo) -> Void)
+        case upgraded(_ cb: @Sendable (Connection) -> Void)
+        case identifiedPeer(_ cb: @Sendable (IdentifiedPeer) -> Void)
+        case peerDiscovered(_ cb: @Sendable (PeerInfo) -> Void)
 
         /// What used to be internal subscriptions
-        case listen(_ cb: (String, Multiaddr) -> Void)
-        case listenClosed(_ cb: (String, Multiaddr) -> Void)
-        case remotePeerProtocolChange(_ cb: (LibP2P.RemotePeerProtocolChange) -> Void)
+        case listen(_ cb: @Sendable (String, Multiaddr) -> Void)
+        case listenClosed(_ cb: @Sendable (String, Multiaddr) -> Void)
+        case remotePeerProtocolChange(_ cb: @Sendable (LibP2P.RemotePeerProtocolChange) -> Void)
+
+        var kind: Kind {
+            switch self {
+            case .connected: return .connected
+            case .disconnected: return .disconnected
+            case .openedStream: return .openedStream
+            case .closedStream: return .closedStream
+            case .remotePeer: return .remotePeer
+            case .upgraded: return .upgraded
+            case .identifiedPeer: return .identifiedPeer
+            case .peerDiscovered: return .peerDiscovered
+            case .listen: return .listen
+            case .listenClosed: return .listenClosed
+            case .remotePeerProtocolChange: return .remotePeerProtocolChange
+            }
+        }
     }
 
-    /// Internal Events Available For Subscription
-    //    internal enum _EventHandler {
-    //        case listen(_ cb:(String, Multiaddr) -> Void)
-    //        case listenClosed(_ cb:(String, Multiaddr) -> Void)
-    //        //case identifiedPeer(_ cb:(IdentifiedPeer) -> Void)
-    //        case remotePeerProtocolChange(_ cb:(LibP2P.RemotePeerProtocolChange) -> Void)
-    //    }
+    // MARK: - Posting
 
     public func post(_ event: EventEmitter) {
         guard application.isRunning else {
@@ -207,161 +227,134 @@ public final class EventBus: Sendable {
             self.logger.error("\(event)")
             return
         }
-        SwiftEventBus.post(event.eventName + instanceID, sender: event.payload)
-    }
 
-    /// Can we extend this method to include a PeerID that will help silo events within instances of LibP2P?
-    public func on(_ register: AnyObject, event: EventHandler) {
-        switch event {
-        case .connected(let handler):
-            self.subscribe(register, name: SwiftEventBus.Event.Connected) {
-                notification in
-                guard let not = notification, let connection = not.object as? Connection else {
-                    return
-                }
-                return handler(connection)
-            }
-        case .disconnected(let handler):
-            self.subscribe(register, name: SwiftEventBus.Event.Disconnected) {
-                notification in
-                guard let not = notification, let (connection, peerID) = not.object as? (Connection, PeerID?) else {
-                    return
-                }
-                return handler(connection, peerID)
-            }
-        case .openedStream(let handler):
-            self.subscribe(register, name: SwiftEventBus.Event.OpenedStream) {
-                notification in
-                guard let not = notification, let stream = not.object as? LibP2PCore.Stream else {
-                    //guard let not = notification, let proto = not.object as? String else {
-                    return
-                }
-                return handler(stream)
-            }
-        case .closedStream(let handler):
-            self.subscribe(register, name: SwiftEventBus.Event.ClosedStream) {
-                notification in
-                guard let not = notification, let stream = not.object as? LibP2PCore.Stream else {
-                    //guard let not = notification, let proto = not.object as? String else {
-                    return
-                }
-                return handler(stream)
-            }
-        case .remotePeer(let handler):
-            self.subscribe(register, name: SwiftEventBus.Event.RemotePeer) {
-                notification in
-                guard let not = notification, let remotePeer = not.object as? PeerInfo else {
-                    return
-                }
-                return handler(remotePeer)
-            }
-        case .upgraded(let handler):
-            self.subscribe(register, name: SwiftEventBus.Event.Upgraded) {
-                notification in
-                guard let not = notification, let connection = not.object as? Connection else {
-                    return
-                }
-                return handler(connection)
-            }
-        case .identifiedPeer(let handler):
-            self.subscribe(register, name: SwiftEventBus.Event.IdentifiedPeer) {
-                notification in
-                guard let not = notification, let identifiedPeer = not.object as? IdentifiedPeer else {
-                    return
-                }
-                return handler(identifiedPeer)
-            }
-        case .peerDiscovered(let handler):
-            self.subscribe(register, name: SwiftEventBus.Event.PeerDiscovered) {
-                notification in
-                guard let not = notification, let peerInfo = not.object as? PeerInfo else {
-                    return
-                }
-                return handler(peerInfo)
-            }
+        let kind = event.kind
 
-        /// What used to be internal
-        case .listen(let handler):
-            self.subscribe(register, name: SwiftEventBus.Event.Listen) { notification in
-                guard let not = notification, let obj = not.object as? (String, Multiaddr) else {
-                    return
-                }
-                return handler(obj.0, obj.1)
-            }
-        case .listenClosed(let handler):
-            self.subscribe(register, name: SwiftEventBus.Event.ListenClose) {
-                notification in
-                guard let not = notification, let obj = not.object as? (String, Multiaddr) else {
-                    return
-                }
-                return handler(obj.0, obj.1)
-            }
+        // Snapshot the interested continuations under the lock, then release it before yielding.
+        // Yielding is non-blocking (bounded buffer per subscriber), so no subscriber — however slow —
+        // can stall the poster or another subscriber.
+        let continuations = self.registry.withLockedValue { registry in
+            registry.continuations[kind].map { Array($0.values) } ?? []
+        }
 
-        case .remotePeerProtocolChange(let handler):
-            self.subscribe(register, name: SwiftEventBus.Event.RemotePeerProtocolChange) { notification in
-                guard let not = notification, let protocolChange = not.object as? LibP2P.RemotePeerProtocolChange else {
-                    return
-                }
-                return handler(protocolChange)
-            }
+        for continuation in continuations {
+            continuation.yield(event)
         }
     }
 
-    /// Registers a `NotificationCenter` observer for `name`, siloed by this bus's `instanceID`.
+    // MARK: - Callback subscriptions
+
+    /// Registers a callback for `event`, keyed off `register`'s identity. Remove it later with
+    /// ``unregister(_:)`` (passing the same `register` object).
     ///
-    /// - Important: We register with `queue: nil`, so the observer block runs **synchronously on the
-    ///   posting thread**. We deliberately avoid `SwiftEventBus.onBackgroundThread`: its background
-    ///   `OperationQueue`-based delivery does not fire on Swift 6.3 / swift-corelibs-foundation (the
-    ///   observer block is never scheduled), which silently disabled the entire `EventBus` on Linux 6.3.
-    ///   Synchronous, `queue: nil` delivery works on every platform; existing handlers already hop to their
-    ///   own event loops, so being invoked synchronously on the poster's thread is safe.
-    private func subscribe(
-        _ register: AnyObject,
-        name: String,
-        _ handler: @escaping (Notification?) -> Void
-    ) {
-        SwiftEventBus.on(register, name: name + instanceID, sender: nil, queue: nil, handler: handler)
+    /// The callback is delivered on a private drain `Task` — one per subscription — so it runs in order
+    /// but never on the posting thread, and a slow callback only backs up its own bounded buffer.
+    public func on(_ register: AnyObject, event: EventHandler) {
+        let owner = ObjectIdentifier(register)
+        let kinds: Set<Kind> = [event.kind]
+        let (id, stream) = self.openStream(kinds: kinds)
+
+        let task = Task {
+            for await emitter in stream {
+                EventBus.invoke(event, with: emitter)
+            }
+        }
+
+        self.registry.withLockedValue { registry in
+            registry.callbackTokens[owner, default: []].append(CallbackToken(id: id, kinds: kinds, task: task))
+        }
     }
 
-    //    internal func on(_ register:AnyObject, event:_EventHandler) {
-    //        switch event {
-    //        case .listen(let handler):
-    //            self.subscribe(register, name: SwiftEventBus.Event.Listen) { notification in
-    //                guard let not = notification, let obj = not.object as? (String, Multiaddr) else {
-    //                    return
-    //                }
-    //                return handler(obj.0, obj.1)
-    //            }
-    //        case .listenClosed(let handler):
-    //            self.subscribe(register, name: SwiftEventBus.Event.ListenClose) { notification in
-    //                guard let not = notification, let obj = not.object as? (String, Multiaddr) else {
-    //                    return
-    //                }
-    //                return handler(obj.0, obj.1)
-    //            }
-    ////        case .identifiedPeer(let handler):
-    ////            self.subscribe(register, name: SwiftEventBus.Event.IdentifiedPeer) { notification in
-    ////                guard let not = notification, let identifiedPeer = not.object as? IdentifiedPeer else {
-    ////                    return
-    ////                }
-    ////                return handler(identifiedPeer)
-    ////            }
-    //        case .remotePeerProtocolChange(let handler):
-    //            self.subscribe(register, name: SwiftEventBus.Event.RemotePeerProtocolChange) { notification in
-    //                guard let not = notification, let protocolChange = not.object as? LibP2P.RemotePeerProtocolChange else {
-    //                    return
-    //                }
-    //                return handler(protocolChange)
-    //            }
-    //        }
-    //    }
+    /// Dispatches a delivered event to the matching typed callback. The subscription only ever receives
+    /// events of its registered kind, so the non-matching cases are unreachable.
+    private static func invoke(_ handler: EventHandler, with emitter: EventEmitter) {
+        switch handler {
+        case .connected(let cb): if case .connected(let c) = emitter { cb(c) }
+        case .disconnected(let cb): if case .disconnected(let c, let p) = emitter { cb(c, p) }
+        case .openedStream(let cb): if case .openedStream(let s) = emitter { cb(s) }
+        case .closedStream(let cb): if case .closedStream(let s) = emitter { cb(s) }
+        case .remotePeer(let cb): if case .remotePeer(let p) = emitter { cb(p) }
+        case .upgraded(let cb): if case .upgraded(let c) = emitter { cb(c) }
+        case .identifiedPeer(let cb): if case .identifiedPeer(let p) = emitter { cb(p) }
+        case .peerDiscovered(let cb): if case .peerDiscovered(let p) = emitter { cb(p) }
+        case .listen(let cb): if case .listen(let s, let ma) = emitter { cb(s, ma) }
+        case .listenClosed(let cb): if case .listenClosed(let s, let ma) = emitter { cb(s, ma) }
+        case .remotePeerProtocolChange(let cb): if case .remotePeerProtocolChange(let change) = emitter { cb(change) }
+        }
+    }
 
+    /// Removes every callback registered under `object`'s identity across all event kinds.
     public func unregister(_ object: AnyObject) {
-        SwiftEventBus.unregister(object)
+        let owner = ObjectIdentifier(object)
+        let tokens = self.registry.withLockedValue { registry in
+            registry.callbackTokens.removeValue(forKey: owner) ?? []
+        }
+        // Cancelling each drain task ends its `for await`, whose stream `onTermination` removes the
+        // continuation from `continuations`.
+        for token in tokens {
+            token.task.cancel()
+        }
+    }
+
+    // MARK: - AsyncStream subscriptions
+
+    /// An `AsyncStream` delivering every event whose ``EventEmitter/kind`` is in `kinds`. The stream
+    /// deregisters itself when the consumer stops iterating or the task is cancelled.
+    public func subscribe(to kinds: Set<Kind>) -> AsyncStream<EventEmitter> {
+        self.openStream(kinds: kinds).stream
+    }
+
+    /// An `AsyncStream` delivering every event, regardless of kind.
+    public func subscribe() -> AsyncStream<EventEmitter> {
+        self.subscribe(to: Set(Kind.allCases))
+    }
+
+    /// Creates a bounded `AsyncStream`, registers its continuation for every kind in `kinds`, and wires
+    /// `onTermination` to remove it. Shared by both the callback and public-stream subscription paths.
+    /// Returns the subscription's token id alongside the stream (the callback path needs the id to key
+    /// its `CallbackToken`; ``subscribe(to:)`` discards it).
+    private func openStream(kinds: Set<Kind>) -> (id: UUID, stream: AsyncStream<EventEmitter>) {
+        let id = UUID()
+        let stream = AsyncStream(EventEmitter.self, bufferingPolicy: .bufferingNewest(self.bufferSize)) {
+            continuation in
+            self.registry.withLockedValue { registry in
+                for kind in kinds {
+                    registry.continuations[kind, default: [:]][id] = continuation
+                }
+            }
+            // Capture `self` weakly: the continuation is retained by the registry (and, for callbacks, by
+            // the drain task), so a strong capture here would form a retain cycle that keeps the bus alive.
+            continuation.onTermination = { [weak self] _ in
+                self?.registry.withLockedValue { registry in
+                    for kind in kinds {
+                        registry.continuations[kind]?[id] = nil
+                        if registry.continuations[kind]?.isEmpty == true {
+                            registry.continuations[kind] = nil
+                        }
+                    }
+                }
+            }
+        }
+        return (id, stream)
     }
 }
 
-public struct IdentifiedPeer {
+extension EventBus {
+    /// Test-only introspection into the live subscription registry: the total number of registered
+    /// continuations (summed across every kind) and the number of distinct callback owners. Used by the
+    /// stress test to assert the registry neither grows with post volume nor leaks subscriptions after
+    /// teardown. `internal`, so it is only reachable via `@testable import`.
+    internal var subscriptionSnapshot: (continuations: Int, callbackOwners: Int) {
+        self.registry.withLockedValue { registry in
+            (
+                registry.continuations.values.reduce(into: 0) { $0 += $1.count },
+                registry.callbackTokens.count
+            )
+        }
+    }
+}
+
+public struct IdentifiedPeer: Sendable {
     public let peer: PeerID
     public let identity: [UInt8]
 
@@ -371,7 +364,7 @@ public struct IdentifiedPeer {
     }
 }
 
-public struct RemotePeerProtocolChange {
+public struct RemotePeerProtocolChange: Sendable {
     public let peer: PeerID
     public let protocols: [SemVerProtocol]
     public let connection: Connection

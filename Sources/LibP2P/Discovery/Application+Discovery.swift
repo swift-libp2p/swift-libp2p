@@ -145,7 +145,7 @@ extension Application.DiscoveryServices {
         return discoveryService.advertise(service: proto, options: nil)
     }
 
-    public func onPeerDiscovered(_ register: AnyObject, closure: @escaping (PeerInfo) -> Void) {
+    public func onPeerDiscovered(_ register: AnyObject, closure: @escaping @Sendable (PeerInfo) -> Void) {
         application.events.on(register, event: .peerDiscovered(closure))
     }
 

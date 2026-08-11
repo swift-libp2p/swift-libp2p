@@ -40,6 +40,15 @@ extension LibP2PTests {
         /// each test keeps its own instance alive for the duration of the test.
         final class Subscriber {}
 
+        /// A subscription owner that reports its own deallocation. The stress test uses this to prove the bus
+        /// holds no strong reference to registrants (it stores only their `ObjectIdentifier`), so dropping the
+        /// owners deinitializes them promptly.
+        final class TrackedSubscriber {
+            private let onDeinit: @Sendable () -> Void
+            init(onDeinit: @escaping @Sendable () -> Void) { self.onDeinit = onDeinit }
+            deinit { onDeinit() }
+        }
+
         /// Polls `predicate` until it returns `true` or the attempts are exhausted. Returns the final value
         /// of the predicate (so a caller can assert both "eventually true" and "never true").
         static func waitUntil(
@@ -259,6 +268,417 @@ extension LibP2PTests {
                     await ConnectionEventTests.waitUntil { received.withLockedValue { $0.contains(connection.id) } }
                 )
                 _ = (subscriber, connection)
+            }
+        }
+
+        // MARK: - Unregister
+
+        @Test("`unregister` stops further callback delivery to that owner")
+        func testUnregisterStopsDelivery() async throws {
+            try await withApp { app in
+                try await app.startup()
+
+                let subscriber = Subscriber()
+                let count = NIOLockedValueBox<Int>(0)
+                app.events.on(
+                    subscriber,
+                    event: .connected { _ in
+                        count.withLockedValue { $0 += 1 }
+                    }
+                )
+
+                // First post is delivered.
+                app.events.post(.connected(DummyConnection(direction: .outbound)))
+                #expect(await ConnectionEventTests.waitUntil { count.withLockedValue { $0 == 1 } })
+
+                // After unregistering, subsequent posts must not reach the handler.
+                app.events.unregister(subscriber)
+                app.events.post(.connected(DummyConnection(direction: .outbound)))
+
+                let deliveredAgain = await ConnectionEventTests.waitUntil(
+                    { count.withLockedValue { $0 > 1 } },
+                    attempts: 20
+                )
+                #expect(deliveredAgain == false)
+                #expect(count.withLockedValue { $0 } == 1)
+                _ = subscriber
+            }
+        }
+
+        // MARK: - AsyncStream subscriptions
+
+        @Test("`subscribe(to:)` delivers matching events and terminates on cancellation")
+        func testAsyncStreamDeliversAndTerminates() async throws {
+            try await withApp { app in
+                try await app.startup()
+
+                let received = NIOLockedValueBox<[UUID]>([])
+                let terminated = NIOLockedValueBox<Bool>(false)
+                let stream = app.events.subscribe(to: [.connected])
+
+                let task = Task {
+                    for await event in stream {
+                        if case .connected(let connection) = event {
+                            received.withLockedValue { $0.append(connection.id) }
+                        }
+                    }
+                    // The loop only exits once the stream finishes (here, via task cancellation),
+                    // which is what fires the continuation's `onTermination` cleanup.
+                    terminated.withLockedValue { $0 = true }
+                }
+
+                let connection = DummyConnection(direction: .outbound)
+                app.events.post(.connected(connection))
+
+                #expect(await ConnectionEventTests.waitUntil { received.withLockedValue { !$0.isEmpty } })
+                #expect(received.withLockedValue { $0.first } == connection.id)
+
+                task.cancel()
+                await task.value
+                #expect(terminated.withLockedValue { $0 } == true)
+            }
+        }
+
+        @Test("A terminated `subscribe(to:)` stream stops receiving events (the AsyncStream analogue of `unregister`)")
+        func testAsyncStreamStopsDeliveryAfterTermination() async throws {
+            try await withApp { app in
+                try await app.startup()
+
+                let received = NIOLockedValueBox<[UUID]>([])
+                let stream = app.events.subscribe(to: [.connected])
+
+                let task = Task {
+                    for await event in stream {
+                        if case .connected(let connection) = event {
+                            received.withLockedValue { $0.append(connection.id) }
+                        }
+                    }
+                }
+
+                // First post is delivered to the live stream.
+                let first = DummyConnection(direction: .outbound)
+                app.events.post(.connected(first))
+                #expect(await ConnectionEventTests.waitUntil { received.withLockedValue { $0.count == 1 } })
+
+                // Tearing down the consumer fires the continuation's `onTermination`, which removes it from
+                // the bus. Awaiting the task guarantees that cleanup has run before we post again.
+                task.cancel()
+                await task.value
+
+                app.events.post(.connected(DummyConnection(direction: .outbound)))
+
+                let deliveredAgain = await ConnectionEventTests.waitUntil(
+                    { received.withLockedValue { $0.count > 1 } },
+                    attempts: 20
+                )
+                #expect(deliveredAgain == false)
+                #expect(received.withLockedValue { $0 } == [first.id])
+            }
+        }
+
+        // MARK: - Per-instance isolation
+
+        /// A `NotificationCenter`-backed bus keys subscriptions off a process-global registry, so two nodes
+        /// listening for the same event name would cross-receive each other's posts unless carefully siloed.
+        /// The native `EventBus` gives each `Application` its own registry, so this is structurally impossible —
+        /// this regression test locks that guarantee in.
+        @Test("Two Applications subscribed to the same event do not receive each other's posts")
+        func testEventsAreIsolatedPerApplication() async throws {
+            try await withApp { appA in
+                try await withApp { appB in
+                    try await appA.startup()
+                    try await appB.startup()
+
+                    let subscriberA = Subscriber()
+                    let subscriberB = Subscriber()
+                    let receivedA = NIOLockedValueBox<[UUID]>([])
+                    let receivedB = NIOLockedValueBox<[UUID]>([])
+
+                    appA.events.on(
+                        subscriberA,
+                        event: .connected { connection in
+                            receivedA.withLockedValue { $0.append(connection.id) }
+                        }
+                    )
+                    appB.events.on(
+                        subscriberB,
+                        event: .connected { connection in
+                            receivedB.withLockedValue { $0.append(connection.id) }
+                        }
+                    )
+
+                    // Post on A only.
+                    let connectionA = DummyConnection(direction: .outbound)
+                    appA.events.post(.connected(connectionA))
+
+                    #expect(await ConnectionEventTests.waitUntil { receivedA.withLockedValue { !$0.isEmpty } })
+                    #expect(receivedA.withLockedValue { $0 } == [connectionA.id])
+                    // B must not have seen A's event.
+                    let leakedToB = await ConnectionEventTests.waitUntil(
+                        { receivedB.withLockedValue { !$0.isEmpty } },
+                        attempts: 20
+                    )
+                    #expect(leakedToB == false)
+
+                    // Now post on B only and assert the mirror image.
+                    let connectionB = DummyConnection(direction: .inbound)
+                    appB.events.post(.connected(connectionB))
+
+                    #expect(await ConnectionEventTests.waitUntil { receivedB.withLockedValue { !$0.isEmpty } })
+                    #expect(receivedB.withLockedValue { $0 } == [connectionB.id])
+                    // A must still only have its own single event.
+                    #expect(receivedA.withLockedValue { $0 } == [connectionA.id])
+
+                    _ = (subscriberA, subscriberB)
+                }
+            }
+        }
+
+        // MARK: - Slow / non-responsive consumer isolation
+
+        /// Every subscriber — callback or `AsyncStream` — is delivered through its own bounded, non-blocking
+        /// buffer, and `post` only ever `yield`s onto them. So a subscriber that is wedged (a callback blocked
+        /// on its drain task) or entirely non-responsive (a stream that is never drained) can neither stall
+        /// `post` nor delay any other subscriber. This drives a callback subscriber that stays blocked on its
+        /// very first event and asserts the responsive callback- and stream-subscribers still receive every
+        /// event meanwhile — then releases the slow one and confirms its events were buffered, not dropped.
+        @Test("A slow / non-responsive consumer does not block other subscribers")
+        func testSlowConsumerDoesNotBlockOthers() async throws {
+            try await withApp { app in
+                try await app.startup()
+
+                // A non-responsive AsyncStream consumer: subscribed but never iterated. Its bounded buffer just
+                // fills and drops its own oldest events; yielding to it never blocks `post`.
+                let stalledStream = app.events.subscribe(to: [.connected])
+
+                // A deliberately slow callback subscriber: its drain task blocks on the very first event until
+                // the test explicitly releases it, modelling a wedged/unresponsive handler.
+                let releaseSlow = NIOLockedValueBox<Bool>(false)
+                let slowCount = NIOLockedValueBox<Int>(0)
+                let slowSubscriber = Subscriber()
+                app.events.on(
+                    slowSubscriber,
+                    event: .connected { _ in
+                        while releaseSlow.withLockedValue({ $0 }) == false {
+                            usleep(1_000)
+                        }
+                        slowCount.withLockedValue { $0 += 1 }
+                    }
+                )
+
+                // A responsive callback subscriber.
+                let subscriber = Subscriber()
+                let callbackCount = NIOLockedValueBox<Int>(0)
+                app.events.on(
+                    subscriber,
+                    event: .connected { _ in
+                        callbackCount.withLockedValue { $0 += 1 }
+                    }
+                )
+
+                // A responsive stream subscriber that drains promptly.
+                let streamCount = NIOLockedValueBox<Int>(0)
+                let liveStream = app.events.subscribe(to: [.connected])
+                let drain = Task {
+                    for await _ in liveStream {
+                        streamCount.withLockedValue { $0 += 1 }
+                    }
+                }
+
+                // Post fewer events than the per-subscriber buffer (64) so no responsive subscriber can drop.
+                let count = 50
+                for _ in 0..<count {
+                    app.events.post(.connected(DummyConnection(direction: .outbound)))
+                }
+
+                // The responsive subscribers receive every event even though the slow subscriber is still wedged
+                // on its first event — delivery is isolated per subscriber, so neither `post` nor the fast drains
+                // ever wait on the slow one.
+                #expect(await ConnectionEventTests.waitUntil { callbackCount.withLockedValue { $0 == count } })
+                #expect(await ConnectionEventTests.waitUntil { streamCount.withLockedValue { $0 == count } })
+                // ...and the slow subscriber genuinely made no progress while blocked.
+                #expect(slowCount.withLockedValue { $0 } == 0)
+
+                // Release it and confirm it drains all buffered events — proving they were queued for it, not
+                // dropped (count < buffer), and that it never gated anyone else.
+                releaseSlow.withLockedValue { $0 = true }
+                #expect(await ConnectionEventTests.waitUntil { slowCount.withLockedValue { $0 == count } })
+
+                drain.cancel()
+                await drain.value
+                _ = (subscriber, slowSubscriber, stalledStream)
+            }
+        }
+
+        // MARK: - Stress / stability
+
+        /// Hammers the bus with many subscribers and a high, concurrent post volume for ~3 seconds, then tears
+        /// everything down. It asserts three stability properties:
+        ///   * **Bounded memory** — the bus keeps no per-event state: its live subscription count stays exactly
+        ///     equal to the number registered, no matter how many events are posted (delivery buffers are
+        ///     separately bounded by `.bufferingNewest(64)`, so a subscriber can't grow unbounded either).
+        ///   * **Fan-out correctness** — every responsive subscriber (callback and stream) receives events.
+        ///   * **Clean teardown** — after `unregister`/cancel the registry drains to zero continuations and zero
+        ///     callback owners, and dropping the owner objects deinitializes them (the bus holds no strong refs).
+        @Test(
+            "Stress: many subscribers + heavy post volume stays bounded and tears down cleanly",
+            .timeLimit(.minutes(1))
+        )
+        func testHighVolumeStaysBoundedAndDeinitializes() async throws {
+            try await withApp { app in
+                try await app.startup()
+
+                let callbackSubscribers = 100
+                let fastStreamSubscribers = 100
+                let slowStreamSubscribers = 10
+
+                // The running node's own subsystems (connection manager, topology, identify, root handlers)
+                // already hold subscriptions, so capture that baseline and assert our deltas against it.
+                let baseline = app.events.subscriptionSnapshot
+                let expectedContinuations =
+                    baseline.continuations + callbackSubscribers + fastStreamSubscribers + slowStreamSubscribers
+                let expectedCallbackOwners = baseline.callbackOwners + callbackSubscribers
+
+                // Track deinitialization of the callback owners.
+                let deinitCount = NIOLockedValueBox<Int>(0)
+                var owners: [TrackedSubscriber] = []
+                let callbackCounts = (0..<callbackSubscribers).map { _ in NIOLockedValueBox<Int>(0) }
+
+                for index in 0..<callbackSubscribers {
+                    let counter = callbackCounts[index]
+                    let owner = TrackedSubscriber { deinitCount.withLockedValue { $0 += 1 } }
+                    owners.append(owner)
+                    app.events.on(
+                        owner,
+                        event: .connected { _ in
+                            counter.withLockedValue { $0 += 1 }
+                        }
+                    )
+                }
+
+                // Fast stream subscribers drain promptly; slow ones sleep per event so their bounded buffers
+                // fill and drop under load — exercising the memory bound rather than blocking anyone.
+                let fastStreamCounts = (0..<fastStreamSubscribers).map { _ in NIOLockedValueBox<Int>(0) }
+                let slowStreamCounts = (0..<slowStreamSubscribers).map { _ in NIOLockedValueBox<Int>(0) }
+                var streamTasks: [Task<Void, Never>] = []
+
+                for index in 0..<fastStreamSubscribers {
+                    let counter = fastStreamCounts[index]
+                    let stream = app.events.subscribe(to: [.connected])
+                    streamTasks.append(
+                        Task {
+                            for await _ in stream { counter.withLockedValue { $0 += 1 } }
+                        }
+                    )
+                }
+                for index in 0..<slowStreamSubscribers {
+                    let counter = slowStreamCounts[index]
+                    let stream = app.events.subscribe(to: [.connected])
+                    streamTasks.append(
+                        Task {
+                            for await _ in stream {
+                                counter.withLockedValue { $0 += 1 }
+                                try? await Task.sleep(for: .milliseconds(5))
+                            }
+                        }
+                    )
+                }
+
+                // Registry reflects exactly what we registered.
+                #expect(app.events.subscriptionSnapshot.continuations == expectedContinuations)
+                #expect(app.events.subscriptionSnapshot.callbackOwners == expectedCallbackOwners)
+
+                // Fire a high, concurrent post volume for ~3 seconds.
+                let posted = NIOLockedValueBox<Int>(0)
+                await withTaskGroup(of: Int.self) { group in
+                    for _ in 0..<4 {
+                        group.addTask {
+                            let connection = DummyConnection(direction: .outbound)
+                            let deadline = Date().addingTimeInterval(3.0)
+                            var local = 0
+                            while Date() < deadline {
+                                app.events.post(.connected(connection))
+                                local += 1
+                                // Yield periodically so the drain tasks get scheduled alongside the posters.
+                                if local % 256 == 0 { await Task.yield() }
+                            }
+                            return local
+                        }
+                    }
+                    for await local in group { posted.withLockedValue { $0 += local } }
+                }
+
+                let totalPosted = posted.withLockedValue { $0 }
+                #expect(totalPosted > 1_000)
+
+                // Bounded memory: even after tens of thousands of posts, the bus holds no extra state — the
+                // subscription count is unchanged.
+                #expect(app.events.subscriptionSnapshot.continuations == expectedContinuations)
+                #expect(app.events.subscriptionSnapshot.callbackOwners == expectedCallbackOwners)
+
+                // Let any buffered events drain, then assert fan-out reached every responsive subscriber.
+                let allCallbacksGotSomething = await ConnectionEventTests.waitUntil {
+                    callbackCounts.allSatisfy { $0.withLockedValue { $0 > 0 } }
+                }
+                #expect(allCallbacksGotSomething)
+                let allFastStreamsGotSomething = await ConnectionEventTests.waitUntil {
+                    fastStreamCounts.allSatisfy { $0.withLockedValue { $0 > 0 } }
+                }
+                #expect(allFastStreamsGotSomething)
+                #expect(slowStreamCounts.allSatisfy { $0.withLockedValue { $0 > 0 } })
+
+                // Tear everything down.
+                for owner in owners { app.events.unregister(owner) }
+                for task in streamTasks { task.cancel() }
+
+                // `unregister` removes callback owners synchronously; continuation removal happens as each
+                // cancelled drain task ends, so poll until the registry is fully empty.
+                let drained = await ConnectionEventTests.waitUntil {
+                    app.events.subscriptionSnapshot.continuations == baseline.continuations
+                }
+                #expect(drained)
+                #expect(app.events.subscriptionSnapshot.callbackOwners == baseline.callbackOwners)
+
+                // The bus never retained the owners (only their `ObjectIdentifier`), so dropping our references
+                // deinitializes all of them.
+                owners.removeAll()
+                #expect(deinitCount.withLockedValue { $0 } == callbackSubscribers)
+
+                for task in streamTasks { await task.value }
+            }
+        }
+
+        // MARK: - Configurable buffer size
+
+        /// The `.default(bufferSize:)` provider wires a custom per-subscriber buffer bound into the bus. A
+        /// subscriber that doesn't drain while events pile up should retain only the newest `bufferSize`.
+        @Test("`.default(bufferSize:)` bounds each subscriber's delivery buffer")
+        func testConfigurableBufferSize() async throws {
+            let bufferSize = 4
+            let configuration: ((Application) async throws -> Void) = { app in
+                app.eventbus.use(.default(bufferSize: bufferSize))
+            }
+            try await withApp(configure: configuration) { app in
+                try await app.startup()
+
+                // Register the subscriber, then post far more than the buffer WITHOUT draining, so the stream
+                // buffers as it goes and keeps only the newest `bufferSize` events.
+                let stream = app.events.subscribe(to: [.connected])
+                for _ in 0..<50 {
+                    app.events.post(.connected(DummyConnection(direction: .outbound)))
+                }
+
+                // Now drain: only the retained (newest `bufferSize`) events should arrive.
+                let received = NIOLockedValueBox<Int>(0)
+                let task = Task {
+                    for await _ in stream { received.withLockedValue { $0 += 1 } }
+                }
+                // Give the drain a moment to consume everything buffered, then stop it.
+                try await Task.sleep(for: .milliseconds(200))
+                task.cancel()
+                await task.value
+
+                #expect(received.withLockedValue { $0 } == bufferSize)
             }
         }
     }
