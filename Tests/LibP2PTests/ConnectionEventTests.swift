@@ -520,7 +520,10 @@ extension LibP2PTests {
         ///   * **Fan-out correctness** — every responsive subscriber (callback and stream) receives events.
         ///   * **Clean teardown** — after `unregister`/cancel the registry drains to zero continuations and zero
         ///     callback owners, and dropping the owner objects deinitializes them (the bus holds no strong refs).
-        @Test("Stress: many subscribers + heavy post volume stays bounded and tears down cleanly", .timeLimit(.minutes(1)))
+        @Test(
+            "Stress: many subscribers + heavy post volume stays bounded and tears down cleanly",
+            .timeLimit(.minutes(1))
+        )
         func testHighVolumeStaysBoundedAndDeinitializes() async throws {
             try await withApp { app in
                 try await app.startup()
