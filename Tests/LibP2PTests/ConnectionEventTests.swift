@@ -260,8 +260,9 @@ extension LibP2PTests {
                     expectedRemotePeer: nil
                 )
 
-                // Close the channel and run the loop so the connection's close-future handler fires and posts.
-                try await channel.close().get()
+                // Close the channel and run the loop so the connection's close-future handler fires and posts
+                // `disconnected`.
+                channel.close(promise: nil)
                 loop.run()
 
                 #expect(
