@@ -644,5 +644,38 @@ extension LibP2PTests {
                 for task in streamTasks { await task.value }
             }
         }
+
+        // MARK: - Configurable buffer size
+
+        /// The `.default(bufferSize:)` provider wires a custom per-subscriber buffer bound into the bus. A
+        /// subscriber that doesn't drain while events pile up should retain only the newest `bufferSize`.
+        @Test("`.default(bufferSize:)` bounds each subscriber's delivery buffer")
+        func testConfigurableBufferSize() async throws {
+            let bufferSize = 4
+            try await withApp(configure: { app in
+                app.eventbus.use(.default(bufferSize: bufferSize))
+            }) { app in
+                try await app.startup()
+
+                // Register the subscriber, then post far more than the buffer WITHOUT draining, so the stream
+                // buffers as it goes and keeps only the newest `bufferSize` events.
+                let stream = app.events.subscribe(to: [.connected])
+                for _ in 0..<50 {
+                    app.events.post(.connected(DummyConnection(direction: .outbound)))
+                }
+
+                // Now drain: only the retained (newest `bufferSize`) events should arrive.
+                let received = NIOLockedValueBox<Int>(0)
+                let task = Task {
+                    for await _ in stream { received.withLockedValue { $0 += 1 } }
+                }
+                // Give the drain a moment to consume everything buffered, then stop it.
+                try await Task.sleep(for: .milliseconds(200))
+                task.cancel()
+                await task.value
+
+                #expect(received.withLockedValue { $0 } == bufferSize)
+            }
+        }
     }
 }
