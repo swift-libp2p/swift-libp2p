@@ -24,7 +24,7 @@ import VarInt
 /// The framing constants and `Errors` live here so framing, decoding and encoding all share a single
 /// definition and can't drift apart
 internal enum MSSFrame: Equatable {
-    
+
     /// The `/multistream/1.0.0` codec bytes that open every negotiation.
     case mss
     /// The `na` ("not available") response.
@@ -38,24 +38,24 @@ internal enum MSSFrame: Equatable {
     /// Only produced when *encoding* a multi-protocol response; the decoder always emits one frame
     /// per message and so never yields this case.
     case protoList([SemVerProtocol])
-    
+
     // MARK: - Framing limits
-    
+
     /// The `/multistream/1.0.0` codec identifier, as a string.
     internal static let codecID = MSS.key
-    
+
     /// The largest frame we will accept, matching go-multistream's `lpReadBuf` limit.
     /// Anything larger is rejected rather than buffered, which bounds memory on a hostile peer.
     internal static let maxFrameLength = 1024
-    
+
     /// A length prefix for a frame of at most `maxFrameLength` bytes fits in two uvarint bytes
     /// (two bytes encode up to 16383). A third continuation byte means the peer isn't speaking MSS,
     /// so we can reject it immediately instead of buffering indefinitely.
     internal static let maxLengthPrefixBytes = 2
-    
+
     /// The most bytes we will hold while still waiting for a single complete frame.
     internal static let maxBufferedBytes = maxFrameLength + maxLengthPrefixBytes
-    
+
     internal enum Errors: Error, Equatable {
         /// The uvarint length prefix ran longer than a valid MSS frame length could ever require.
         case invalidLengthPrefix
@@ -68,9 +68,9 @@ internal enum MSSFrame: Equatable {
         /// The stream ended part way through a frame.
         case truncatedFrame(bytesRemaining: Int)
     }
-    
+
     // MARK: - Interpreting a framed payload
-    
+
     /// Interprets an already-framed payload (length prefix and trailing newline stripped) as a
     /// multistream-select message.
     ///
@@ -81,7 +81,7 @@ internal enum MSSFrame: Equatable {
         guard let string = payload.getString(at: payload.readerIndex, length: payload.readableBytes) else {
             return nil
         }
-        
+
         switch string {
         case MSSFrame.codecID:
             self = .mss
@@ -122,7 +122,7 @@ extension MSSFrame {
         let payload = Array(message.utf8)
         return try MSSFrame.frame(payload)
     }
-    
+
     private static func frame(_ bytes: [UInt8]) throws -> [UInt8] {
         guard bytes.count < Self.maxFrameLength - 2 else {
             throw Errors.frameTooLarge(bytes.count)
@@ -133,7 +133,7 @@ extension MSSFrame {
 
 // MARK: - Decoding
 extension MSSFrame {
-    
+
     /// Splits a single frame off the front of `buffer`, returning its payload with the uvarint
     /// length prefix and trailing newline stripped.
     ///
@@ -205,5 +205,5 @@ extension MSSFrame {
 
         return (Int(value), bytesRead)
     }
-    
+
 }

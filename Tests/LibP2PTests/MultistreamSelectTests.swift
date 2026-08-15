@@ -124,7 +124,7 @@ extension LibP2PTests {
             }
             #expect(channel.isActive == false)
         }
-        
+
         @Test("An initiator rejects a first message that isn't the codec header")
         func testInitiatorRejectsMissingHeader() throws {
             let proto = SemVerProtocol("/echo/1.0.0")!
@@ -135,20 +135,23 @@ extension LibP2PTests {
 
             // Jumping straight to a protocol without the header is a protocol violation.
             try Self.writeInbound(Self.frame(proto), to: channel)
-            
+
             #expect(throws: MultistreamSelectHandler.Errors.self) {
                 try promise.futureResult.wait()
             }
             #expect(channel.isActive == false)
         }
-        
-        @Test("A listener rejects a first message that isn't a valid mss frame", arguments: [
-            [0x00, 0x21, 0xFF, 0xFE], // 0 length frame
-            [0x01, 0x21, 0xFF, 0xFE], // missing new line
-            [0x03, 0x21, 0xFF, 0x0A], // unexpected message
-            [0x80, 0x80, 0x01], // invalid length prefix
-            [0x80, 0x80, 0x80, 0x01], // invalid length prefix
-        ])
+
+        @Test(
+            "A listener rejects a first message that isn't a valid mss frame",
+            arguments: [
+                [0x00, 0x21, 0xFF, 0xFE],  // 0 length frame
+                [0x01, 0x21, 0xFF, 0xFE],  // missing new line
+                [0x03, 0x21, 0xFF, 0x0A],  // unexpected message
+                [0x80, 0x80, 0x01],  // invalid length prefix
+                [0x80, 0x80, 0x80, 0x01],  // invalid length prefix
+            ]
+        )
         func testListenerRejectsInvalidData(_ invalidPayload: [UInt8]) throws {
             let proto = SemVerProtocol("/echo/1.0.0")!
             let (channel, _, promise) = try Self.makeChannel(mode: .listener, protocols: [proto])
@@ -283,28 +286,30 @@ extension LibP2PTests {
             #expect(try Self.drainOutbound(channel) == Self.frame(p1))
             #expect(try promise.futureResult.wait().protocol == p1)
         }
-        
+
         /// A protocol long enough to need a two-byte uvarint prefix,
         @Test("A 2 byte long protocol varint prefix negotiates")
         func testSplitInside2ByteVarintPrefix() throws {
             let long = "/" + String(repeating: "a", count: 300)
             let proto = SemVerProtocol(long)!
-            
+
             let (channel, _, promise) = try Self.makeChannel(mode: .initiator, protocols: [proto])
             defer { _ = try? channel.finish() }
 
-            #expect(try Self.drainOutbound(channel) == MSSFrame.mss.encodedBytes() + MSSFrame.proto(proto).encodedBytes())
+            #expect(
+                try Self.drainOutbound(channel) == MSSFrame.mss.encodedBytes() + MSSFrame.proto(proto).encodedBytes()
+            )
 
             try Self.writeInbound(MSSFrame.mss.encodedBytes() + MSSFrame.proto(proto).encodedBytes(), to: channel)
 
             #expect(try promise.futureResult.wait().protocol == proto)
         }
-        
+
         @Test("Ensure our encoder throws on frames longer than MSSFrame.maxFrameLength")
         func testMSSMaxMessageBufferExceededInitiator() throws {
             let long = "/" + String(repeating: "a", count: MSSFrame.maxFrameLength)
             let proto = SemVerProtocol(long)!
-            
+
             let (channel, _, promise) = try Self.makeChannel(mode: .initiator, protocols: [proto])
             defer { _ = try? channel.finish() }
 
@@ -312,28 +317,29 @@ extension LibP2PTests {
                 let _ = try? Self.drainOutbound(channel)
                 let _ = try promise.futureResult.wait()
             }
-            
+
             #expect(channel.isActive == false)
         }
-        
+
         @Test("Ensure our decoder throws on frames longer than MSSFrame.maxFrameLength")
         func testMSSMaxMessageBufferExceededListener() throws {
             let supportedProto = SemVerProtocol("/echo/1.0.0")!
             let long = "/" + String(repeating: "a", count: MSSFrame.maxFrameLength)
             let longProto = SemVerProtocol(long)!
-            
+
             let (channel, _, promise) = try Self.makeChannel(mode: .listener, protocols: [supportedProto])
             defer { _ = try? channel.finish() }
 
             // Manually encode our payload to bypass our encoding length check
             let longProtoBytes = Array(longProto.stringValue.utf8)
-            let payload = try MSSFrame.mss.encodedBytes() + putUVarInt(UInt64(longProtoBytes.count + 1)) + longProtoBytes + [0x0A]
+            let payload =
+                try MSSFrame.mss.encodedBytes() + putUVarInt(UInt64(longProtoBytes.count + 1)) + longProtoBytes + [0x0A]
             try Self.writeInbound(payload, to: channel)
-            
+
             #expect(throws: MSSFrame.Errors.frameTooLarge(1026)) {
                 try promise.futureResult.wait().protocol == longProto
             }
-            
+
             #expect(channel.isActive == false)
         }
     }
@@ -388,7 +394,7 @@ extension LibP2PTests.MultistreamSelectTests {
         }
         return out
     }
-    
+
     /// Drip feed the inbound bytes to make sure we parse partial messages correctly
     static func writeInbound(_ bytes: [UInt8], to channel: EmbeddedChannel) throws {
         for byte in bytes {

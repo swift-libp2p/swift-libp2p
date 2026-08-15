@@ -43,7 +43,7 @@ internal final class MultistreamSelectHandler: ChannelInboundHandler, RemovableC
 
     /// Whether we're dialing (initiator) or listening. Dialers open the negotiation; listeners reply.
     private let mode: LibP2P.Mode
-    
+
     private var logger: Logger
 
     private let negotiatedPromise: EventLoopPromise<Connection.NegotiationResult>
@@ -91,7 +91,7 @@ internal final class MultistreamSelectHandler: ChannelInboundHandler, RemovableC
 
         // Compact mode is enabled after we know the peer speeks mss (aka after a successful sec upgrade)
         self.compactNegotiationEnabled = !protocols.contains(any: ["/noise", "/plaintext/2.0.0"])
-        
+
         self.logger[metadataKey: "MSS"] = .string(String(self.uuid.prefix(5)))
         self.logger.trace("Initialized with protocol support: \(protocols.joined(separator: ", "))")
     }
@@ -257,7 +257,7 @@ internal final class MultistreamSelectHandler: ChannelInboundHandler, RemovableC
                 }
             case .ls:
                 send([.na], context: context)  // unsupported — let the dialer fall back
-                //send([.protoList(supportedProtocols)], context: context)
+            //send([.protoList(supportedProtocols)], context: context)
             default:
                 fail(Errors.unexpectedMessage, context: context)
             }
