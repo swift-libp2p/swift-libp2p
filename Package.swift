@@ -49,8 +49,6 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-protobuf.git", .upToNextMajor(from: "1.19.0")),
         // Swift metrics API
         .package(url: "https://github.com/apple/swift-metrics.git", .upToNextMajor(from: "2.5.0")),
-        // SwiftState for state machines
-        .package(url: "https://github.com/ReactKit/SwiftState.git", .upToNextMajor(from: "6.0.0")),
     ],
     targets: [
         // C
@@ -73,7 +71,6 @@ let package = Package(
                 .product(name: "AsyncKit", package: "async-kit"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 .product(name: "Metrics", package: "swift-metrics"),
-                .product(name: "SwiftState", package: "SwiftState"),
                 .product(name: "_NIOFileSystem", package: "swift-nio"),
                 .target(name: "COperatingSystem"),
             ],
@@ -103,6 +100,7 @@ let package = Package(
             dependencies: [
                 .target(name: "LibP2P"),
                 .target(name: "LibP2PTesting"),
+                .product(name: "NIOTestUtils", package: "swift-nio"),
             ],
             swiftSettings: swiftSettings
         ),
