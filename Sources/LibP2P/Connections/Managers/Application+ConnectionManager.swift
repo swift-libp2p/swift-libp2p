@@ -49,6 +49,10 @@ extension Application {
             /// Thrown when a synchronous, blocking API (e.g. `newStreamSync`) is invoked from the
             /// connection's own event loop, which would deadlock. Use the async/future API instead.
             case cannotBlockEventLoop
+            /// Delivered to a queued stream request when the connection is torn down (e.g. a failed
+            /// security/muxer handshake or a transport drop) before the stream was ever opened. Lets
+            /// callers fail fast instead of waiting for their own request timeout.
+            case connectionClosedBeforeStreamOpened
         }
 
         public struct Provider {
