@@ -104,12 +104,15 @@ internal final class MockMuxStream: _Stream {
     }
 
     /// Immediately resets the stream. Once reset, no further reads / writes are possible.
+    ///
+    /// We mark the stream reset locally and close the child channel. Closing routes a teardown frame to
+    /// the peer through the multiplexer's outbound path (`childChannelWrite` → parent channel), so the
+    /// remote observes the stream closing. We deliberately do NOT inject a raw frame down the child
+    /// pipeline here: the child's route handlers only understand `RawResponse`, so a raw frame would trip
+    /// an outbound type assertion.
     public func reset() -> EventLoopFuture<Void> {
-        let promise = self.channel.eventLoop.makePromise(of: Void.self)
-        if self.channel.isActive && self.channel.isWritable {
-            self.channel.writeAndFlush(MockMuxFrame(streamID: streamID, payload: .reset), promise: nil)
-        }
         self._streamState.withLockedValue { $0 = .reset }
+        let promise = self.channel.eventLoop.makePromise(of: Void.self)
         self.channel.close(mode: .all, promise: promise)
         return promise.futureResult
     }

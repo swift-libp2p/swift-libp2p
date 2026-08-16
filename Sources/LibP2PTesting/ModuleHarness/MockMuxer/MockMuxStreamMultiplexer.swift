@@ -91,7 +91,13 @@ internal final class MockMuxStreamMultiplexer: ChannelInboundHandler, ChannelOut
                     return
                 } else {
                     channel.receiveStreamClosed(nil)
-                    stream._streamState.withLockedValue { $0 = .receiveClosed }
+                    // Only record the half-close if we haven't already reached a terminal state locally
+                    // (a late inbound close must not downgrade a stream we've already reset/closed).
+                    stream._streamState.withLockedValue { state in
+                        if state != .reset && state != .closed {
+                            state = .receiveClosed
+                        }
+                    }
                     self.onStreamEnd?(stream)
                     return
                 }
