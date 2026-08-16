@@ -267,6 +267,48 @@ public func runSecurityConformance(
             report.warn("Stream-reset checks were skipped (testReset: false)")
         }
 
+        // MARK: Authenticated dial — a peer-ID mismatch must be rejected
+        // Dial the host's real transport address but encapsulated with the WRONG expected peer ID (the
+        // client's own). A conforming security module must detect that the handshake yields a different peer
+        // than expected and fail the connection: it must NOT reach `.upgraded`, and the connection must close.
+        //
+        // NOTE: we deliberately dial via the transport directly rather than `newRequest`. `newRequest`'s
+        // `SingleBufferingRequest` only holds itself alive via the stream-event closure it caches on the
+        // connection; when a dial fails *during the security handshake*, that cache is cleared on teardown,
+        // the request is deallocated, and its `[weak self]` timeout task no-ops — so the request promise is
+        // never fulfilled and `.get()` hangs forever. Dialing the transport directly lets us hold a strong
+        // reference to the connection and observe its fate with bounded polling.
+        if let base = host.listenAddresses.first,
+            let bogusAddr = try? base.encapsulate(proto: .p2p, address: client.peerID.b58String)
+        {
+            do {
+                let transport = try client.transports.findBest(forMultiaddr: bogusAddr)
+                let conn = try await transport.dial(address: bogusAddr).get()
+                // Wait until the connection resolves one way or the other: either it (wrongly) upgrades, or
+                // it closes because the handshake peer didn't match.
+                _ = await harnessWaitUntil {
+                    (conn.isMuxed && conn.stats.status == .upgraded)
+                        || conn.stats.status == .closed
+                        || !conn.channel.isActive
+                }
+                let wronglyUpgraded = conn.isMuxed && conn.stats.status == .upgraded
+                let closed = conn.stats.status == .closed || !conn.channel.isActive
+                report.check(
+                    "Dial is rejected when the handshake peer ID does not match the expected peer ID",
+                    closed && !wronglyUpgraded,
+                    wronglyUpgraded
+                        ? "connection upgraded despite a peer-ID mismatch (handshake not authenticated)"
+                        : (closed ? nil : "connection neither upgraded nor closed after a peer-ID mismatch")
+                )
+                _ = try? await conn.close().get()
+            } catch {
+                // A dial that throws (transport/handshake rejected it outright) also satisfies the contract.
+                report.pass("Dial is rejected when the handshake peer ID does not match the expected peer ID")
+            }
+        } else {
+            report.warn("Could not construct a peer-ID-mismatch address to verify authenticated dialing")
+        }
+
         // MARK: Advisory (phase-2 probes)
         report.warn(
             "Handler good-citizen probes (write-promise timing, channelReadComplete counts) are deferred to phase 2"
