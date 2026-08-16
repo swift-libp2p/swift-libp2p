@@ -41,12 +41,14 @@ public func runMuxerConformance(
     payloadSizes: [Int] = [1, 1024, 65_536, 1_048_576],
     concurrentStreams: Int = 5,
     testReset: Bool = true,
+    strictWritePromise: Bool = true,
     logLevel: Logger.Level = .critical
 ) async throws -> ConformanceReport {
     var report = ConformanceReport(subject: "Muxer \(expectedCodec)")
 
     let echoProto = "/mux-harness-echo/1.0.0"
     let holdProto = "/mux-harness-hold/1.0.0"
+    let probeProto = "/mux-harness-probe/1.0.0"
     let requestTimeout: TimeAmount = .seconds(15)
 
     let host = try await makeHarnessNode(security: security, muxer: muxer, logLevel: logLevel)
@@ -54,6 +56,10 @@ public func runMuxerConformance(
 
     installEchoRoute(on: host, proto: echoProto)
     installHoldRoute(on: host, proto: holdProto)
+    // A `StreamEventProbe` sits head-most on this route's stream pipeline so we can verify the muxer child
+    // channel fires channelRead(s) followed by channelReadComplete on the receiving side.
+    let (streamProbeProvider, streamProbes) = makeStreamProbeProvider()
+    installProbeEchoRoute(on: host, proto: probeProto, probeProvider: streamProbeProvider)
 
     let clientEvents = HarnessEventRecorder()
     let hostEvents = HarnessEventRecorder()
@@ -192,6 +198,41 @@ public func runMuxerConformance(
             report.warn("Could not capture a closed client stream to verify write-after-close rejection")
         }
 
+        // MARK: Good-citizen probe — write-promise completion timing
+        // A well-behaved muxer completes a stream write's future only AFTER the bytes reach the socket. The
+        // probe calls `Stream.write(_:)` (which returns a real promise) and checks it isn't fulfilled
+        // synchronously (see runWritePromiseProbe). Severity is governed by `strictWritePromise`.
+        await runWritePromiseProbe(
+            client: client,
+            addr: addr,
+            holdProto: holdProto,
+            clientEvents: clientEvents,
+            strict: strictWritePromise,
+            report: &report
+        )
+
+        // MARK: Good-citizen probe — channelRead / channelReadComplete
+        // Round-trip once over the probe route; the head-most StreamEventProbe on the host stream pipeline
+        // must observe channelRead(s) followed by channelReadComplete from the muxer child channel.
+        _ = try? await client.newRequest(
+            to: addr,
+            forProtocol: probeProto,
+            withRequest: Data("probe".utf8),
+            withHandlers: .handlers([.varIntLengthPrefixed]),
+            withTimeout: requestTimeout
+        ).get()
+        _ = await harnessWaitUntil { streamProbes.withLockedValue { $0.contains { $0.readCompletes > 0 } } }
+        let probes = streamProbes.withLockedValue { $0 }
+        let totalReads = probes.reduce(0) { $0 + $1.reads }
+        let sawReadComplete = probes.contains { $0.sawReadCompleteAfterRead }
+        report.check(
+            "Stream fires channelRead then channelReadComplete",
+            totalReads > 0 && sawReadComplete,
+            totalReads > 0
+                ? (sawReadComplete ? nil : "channelReadComplete never fired after channelRead(s)")
+                : "no channelRead observed on the receiving stream"
+        )
+
         // MARK: Stream reset
         // NOTE: `stream.reset()` implementations that write a control frame *down the child-channel
         // pipeline* will trip an outbound type assertion in `ResponseDecoderChannelHandler` (which only
@@ -234,9 +275,9 @@ public func runMuxerConformance(
             report.warn("Stream-reset checks were skipped (testReset: false)")
         }
 
-        // MARK: Advisory (phase-2 probes)
+        // MARK: Advisory (phase-2b probes)
         report.warn(
-            "Back-pressure and head-of-line-blocking are not yet measured (deferred to phase 2 handler instrumentation)"
+            "Back-pressure and head-of-line-blocking are not yet measured (deferred to phase 2b)"
         )
 
         try await client.asyncShutdown()
