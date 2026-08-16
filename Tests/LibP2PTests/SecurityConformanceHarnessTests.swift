@@ -35,5 +35,7 @@ struct SecurityConformanceHarnessTests {
             report.warnings.contains { $0.contains("in the clear") },
             "expected a plaintext-on-the-wire warning; got: \(report.warnings)"
         )
+        #expect(!report.warnings.contains { $0.contains("premature") }, "\(report)")
+        #expect(!report.warnings.contains { $0.contains("never completed") }, "\(report)")
     }
 }

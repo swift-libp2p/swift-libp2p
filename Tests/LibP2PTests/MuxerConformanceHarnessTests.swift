@@ -32,5 +32,7 @@ struct MuxerConformanceHarnessTests {
             expectedCodec: "/mock-mux-wire/1.0.0"
         )
         #expect(report.passed, "\(report)")
+        #expect(!report.warnings.contains { $0.contains("premature") }, "\(report)")
+        #expect(!report.warnings.contains { $0.contains("never completed") }, "\(report)")
     }
 }
