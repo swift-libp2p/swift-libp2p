@@ -46,12 +46,14 @@ public func runSecurityConformance(
     payloadSizes: [Int] = [1, 1024, 65_536, 1_048_576],
     concurrentStreams: Int = 5,
     testReset: Bool = true,
+    strictWritePromise: Bool = true,
     logLevel: Logger.Level = .critical
 ) async throws -> ConformanceReport {
     var report = ConformanceReport(subject: "Security \(expectedCodec)")
 
     let echoProto = "/sec-harness-echo/1.0.0"
     let holdProto = "/sec-harness-hold/1.0.0"
+    let probeProto = "/sec-harness-probe/1.0.0"
     let requestTimeout: TimeAmount = .seconds(15)
 
     let host = try await makeHarnessNode(security: security, muxer: muxer, logLevel: logLevel)
@@ -59,6 +61,10 @@ public func runSecurityConformance(
 
     secInstallEchoRoute(on: host, proto: echoProto)
     secInstallHoldRoute(on: host, proto: holdProto)
+    // Head-most StreamEventProbe on this route's stream pipeline verifies the security decrypt handler
+    // forwards channelRead(s) + channelReadComplete up to the (known-good) muxer child channel.
+    let (streamProbeProvider, streamProbes) = makeStreamProbeProvider()
+    installProbeEchoRoute(on: host, proto: probeProto, probeProvider: streamProbeProvider)
 
     let clientEvents = HarnessEventRecorder()
     let hostEvents = HarnessEventRecorder()
@@ -233,6 +239,42 @@ public func runSecurityConformance(
             report.warn("Could not capture a closed client stream to verify write-after-close rejection")
         }
 
+        // MARK: Good-citizen probe — write-promise completion timing
+        // The write transits the security handler on the parent pipeline (the muxer is the known-good
+        // MockMux), so this verifies the security handler forwards the write promise to the socket flush
+        // rather than completing it prematurely. Severity is governed by `strictWritePromise`.
+        await runWritePromiseProbe(
+            client: client,
+            addr: addr,
+            holdProto: holdProto,
+            clientEvents: clientEvents,
+            strict: strictWritePromise,
+            report: &report
+        )
+
+        // MARK: Good-citizen probe — channelRead / channelReadComplete
+        // Round-trip once over the probe route; the head-most StreamEventProbe on the host stream pipeline
+        // must observe channelRead(s) followed by channelReadComplete — which requires the security decrypt
+        // handler to forward those events up to the (known-good) muxer child channel.
+        _ = try? await client.newRequest(
+            to: addr,
+            forProtocol: probeProto,
+            withRequest: Data("probe".utf8),
+            withHandlers: .handlers([.varIntLengthPrefixed]),
+            withTimeout: requestTimeout
+        ).get()
+        _ = await harnessWaitUntil { streamProbes.withLockedValue { $0.contains { $0.readCompletes > 0 } } }
+        let probes = streamProbes.withLockedValue { $0 }
+        let totalReads = probes.reduce(0) { $0 + $1.reads }
+        let sawReadComplete = probes.contains { $0.sawReadCompleteAfterRead }
+        report.check(
+            "Stream fires channelRead then channelReadComplete",
+            totalReads > 0 && sawReadComplete,
+            totalReads > 0
+                ? (sawReadComplete ? nil : "channelReadComplete never fired after channelRead(s)")
+                : "no channelRead observed on the receiving stream"
+        )
+
         // MARK: Stream reset (see runMuxerConformance for the testReset caveat)
         if testReset {
             try? client.newStream(
@@ -295,11 +337,6 @@ public func runSecurityConformance(
         } else {
             report.warn("Could not construct a peer-ID-mismatch address to verify authenticated dialing")
         }
-
-        // MARK: Advisory (phase-2 probes)
-        report.warn(
-            "Handler good-citizen probes (write-promise timing, channelReadComplete counts) are deferred to phase 2"
-        )
 
         try await client.asyncShutdown()
         try await host.asyncShutdown()
