@@ -391,13 +391,15 @@ extension Application {
             self.startTimeoutTask()
         }
 
+        /// Enforce a timeout on the request.
+        /// - Note: capture `self` STRONGLY. This scheduled task is the request's guaranteed
+        ///   settlement path. If a dial fails *before* a stream is established, the cached
+        ///   stream-event closure — the only other strong reference to this request — is released
+        ///   during connection teardown. A `[weak self]` here would then find `self` already
+        ///   deallocated and silently no-op, leaking the promise forever (callers of `.get()` wait forever).
+        ///   Holding `self` keeps the request alive until this fires or is cancelled on completion,
+        ///   breaking the temporary retain cycle either way.
         private func startTimeoutTask() {
-            // Capture `self` STRONGLY. This scheduled task is the request's guaranteed settlement path.
-            // If a dial fails *before* a stream is established, the cached stream-event closure — the only
-            // other strong reference to this request — is released during connection teardown. A
-            // `[weak self]` here would then find `self` already deallocated and silently no-op, leaking the
-            // promise forever (callers of `.get()` wait forever). Holding `self` keeps the request alive until this
-            // fires or is cancelled via `cancelTimeoutTask()`, breaking the temporary retain cycle either way.
             self.timeoutTask.withLockedValue { task in
                 task = self.eventloop.scheduleTask(in: self.timeout) {
                     guard self.hasBegun && !self.hasCompleted else { return }
