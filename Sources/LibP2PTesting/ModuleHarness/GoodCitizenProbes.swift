@@ -222,11 +222,12 @@ func runWritePromiseProbe(
     let completed = NIOLockedValueBox(false)
     // Close the gate, issue the marker write on the connection's event loop, and read back — synchronously,
     // still on-loop — whether the future was already fulfilled *while the flush is being held*.
-    let completedWhileGated = (try? await connChannel.eventLoop.submit { () -> Bool in
-        gate.closeGate()
-        stream.write(marker).whenComplete { _ in completed.withLockedValue { $0 = true } }
-        return completed.withLockedValue { $0 }
-    }.get()) ?? false
+    let completedWhileGated =
+        (try? await connChannel.eventLoop.submit { () -> Bool in
+            gate.closeGate()
+            stream.write(marker).whenComplete { _ in completed.withLockedValue { $0 = true } }
+            return completed.withLockedValue { $0 }
+        }.get()) ?? false
 
     // Release the flush (drives the socket write for a correctly-threaded promise), then wait — bounded —
     // for the future to complete. Combined with `completedWhileGated` this classifies the module.

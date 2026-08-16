@@ -374,9 +374,10 @@ internal final class MockMuxStreamChannel: Channel, ChannelCore, @unchecked Send
     private var unsatisfiedRead: Bool = false
 
     /// A buffer of pending outbound writes to deliver to the parent channel on flush.
-    private var pendingWrites: MarkedCircularBuffer<(MockMuxStreamData, EventLoopPromise<Void>?)> = MarkedCircularBuffer(
-        initialCapacity: 8
-    )
+    private var pendingWrites: MarkedCircularBuffer<(MockMuxStreamData, EventLoopPromise<Void>?)> =
+        MarkedCircularBuffer(
+            initialCapacity: 8
+        )
 
     /// A list node used to hold stream channels in the multiplexer's read-complete list.
     internal var streamChannelListNode: MockMuxStreamChannelListNode = MockMuxStreamChannelListNode()

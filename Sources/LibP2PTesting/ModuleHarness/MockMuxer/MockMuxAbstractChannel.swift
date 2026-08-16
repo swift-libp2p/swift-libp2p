@@ -98,7 +98,8 @@ extension MockMuxAbstractChannel {
         self.baseChannel.configure(initializer: initializer, userPromise: promise)
     }
 
-    func configure(initializer: ((Channel) -> EventLoopFuture<Void>)?, userPromise promise: EventLoopPromise<Channel>?) {
+    func configure(initializer: ((Channel) -> EventLoopFuture<Void>)?, userPromise promise: EventLoopPromise<Channel>?)
+    {
         self.baseChannel.configure(initializer: initializer, userPromise: promise)
     }
 

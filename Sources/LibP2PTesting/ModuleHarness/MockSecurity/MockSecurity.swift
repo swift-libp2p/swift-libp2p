@@ -63,4 +63,3 @@ extension MockSecurityUpgrader {
         case unexpectedRemotePeer
     }
 }
-
