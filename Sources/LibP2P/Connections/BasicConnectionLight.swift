@@ -133,6 +133,26 @@ public class BasicConnectionLight: AppConnection, @unchecked Sendable {
                 //self.application.events.unregister(self)
             }
 
+            /// Fail any stream requests that were queued before the connection finished upgrading. Entries
+            /// still in these caches at teardown were never wired to a child-channel responder (an entry
+            /// leaves `newStreamCache` only when its child channel is initialized), so delivering an
+            /// `.error` here is their only notification. 
+            let abandonedStreams = self.pendingStreamCache + self.newStreamCache
+            self.pendingStreamCache = []
+            self.newStreamCache = []
+            for abandoned in abandonedStreams {
+                let errorRequest = Request(
+                    application: self.application,
+                    event: .error(Application.Connections.Errors.connectionClosedBeforeStreamOpened),
+                    streamDirection: .outbound,
+                    connection: self,
+                    channel: self.channel,
+                    logger: self.logger,
+                    on: self.channel.eventLoop
+                )
+                let _ = abandoned.responder.respond(to: errorRequest)
+            }
+
             self.muxer?.onStream = nil
             self.muxer?.onStreamEnd = nil
             self.muxer?._connection = nil
