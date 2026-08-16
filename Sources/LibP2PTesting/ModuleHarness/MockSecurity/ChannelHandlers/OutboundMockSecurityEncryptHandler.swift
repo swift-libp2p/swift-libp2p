@@ -34,7 +34,7 @@ internal final class OutboundMockSecurityEncryptHandler: ChannelOutboundHandler,
         //logger.trace(String(data: Data(readable), encoding: .utf8) ?? "NIL")
         logger.trace("--- 🔒 Outbound Data Fauxcryption Complete 🔒 ---")
 
-        context.write(wrapOutboundOut(buffer), promise: nil)
+        context.write(wrapOutboundOut(buffer), promise: promise)
     }
 
     // Flush it out. This can make use of gathering writes if multiple buffers are pending
