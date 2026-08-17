@@ -127,6 +127,12 @@ public class BasicConnectionLight: AppConnection, @unchecked Sendable {
             self.logger.trace("BasicConnectionLight:CloseFuture")
             self.stats.status = .closed
 
+            /// Fail any streams that were queued while we were still upgrading. If the channel closed
+            /// before we finished muxing, those streams will never open — surface the failure to their
+            /// callers immediately (this is what fails coalesced cold dials when an upgrade fails)
+            /// rather than leaving each request to hit its own timeout.
+            self.failQueuedStreams(Application.Connections.Errors.connectionUpgradeFailed)
+
             /// Should ensure that we actually connected before posting a disconnect event
             if self.application.isRunning {
                 self.application.events.post(.disconnected(self, self.remotePeer))
@@ -539,10 +545,19 @@ public class BasicConnectionLight: AppConnection, @unchecked Sendable {
             responder: responder
         )
 
-        /// Append a stream event in our stream history array
-        self.streamHistory.append(StreamStateEntry(proto: proto, id: 0, state: .initialized, date: Date()))
-
         self.eventLoop.execute {
+            /// If the connection has already closed (e.g. a coalesced cold dial whose shared
+            /// connection failed to upgrade), fail fast instead of queueing a stream that will never
+            /// open and would otherwise only surface as a timeout.
+            guard self.stats.status != .closed && self.stats.status != .closing else {
+                self.logger.debug("Refusing new `\(proto)` stream — connection is \(self.stats.status)")
+                self.fail(pendingStream, with: Application.Connections.Errors.connectionUpgradeFailed)
+                return
+            }
+
+            /// Append a stream event in our stream history array
+            self.streamHistory.append(StreamStateEntry(proto: proto, id: 0, state: .initialized, date: Date()))
+
             /// Ask our muxer to open the stream...
             if self.isMuxed, let mux = self.muxer {
                 /// Store our responder
@@ -628,6 +643,34 @@ public class BasicConnectionLight: AppConnection, @unchecked Sendable {
             return self.muxer?.streams.first(where: { ($0.protocolCodec == proto) && ($0.direction == direction) })
         } else {
             return self.muxer?.streams.first(where: { ($0.protocolCodec == proto) })
+        }
+    }
+
+    /// Delivers an `.error` event to a queued stream's responder so its caller (e.g. a pending
+    /// `newRequest`) fails immediately instead of waiting for a timeout.
+    private func fail(_ stream: StreamCache, with error: Error) {
+        let errorRequest = Request(
+            application: self.application,
+            event: .error(error),
+            streamDirection: .outbound,
+            connection: self,
+            channel: self.channel,
+            logger: self.logger,
+            on: self.channel.eventLoop
+        )
+        let _ = stream.responder.respond(to: errorRequest)
+    }
+
+    /// Fails and clears every stream still waiting to be opened. Invoked when the connection closes
+    /// before it finished upgrading, so any queued (including coalesced cold-dial) requests fail fast.
+    private func failQueuedStreams(_ error: Error) {
+        let queued = self.pendingStreamCache + self.newStreamCache
+        self.pendingStreamCache = []
+        self.newStreamCache = []
+        guard !queued.isEmpty else { return }
+        self.logger.debug("Failing \(queued.count) queued stream(s) due to: \(error)")
+        for stream in queued {
+            self.fail(stream, with: error)
         }
     }
 

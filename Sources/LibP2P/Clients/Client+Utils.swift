@@ -93,10 +93,15 @@ extension Application {
                         return el.makeFailedFuture(Errors.noTransportForMultiaddr(ma))
                     }
                     self.logger.trace("Found Transport for dialing peer \(transport)")
-                    return transport.dial(address: ma).flatMap { connection -> EventLoopFuture<Void> in
-                        guard let conn = connection as? AppConnection else {
-                            return connection.channel.eventLoop.makeFailedFuture(Errors.noTransportForMultiaddr(ma))
+                    /// Coalesce concurrent cold dials to this address onto a single connection.
+                    return self.connectionManager.dial(to: ma) {
+                        transport.dial(address: ma).flatMapThrowing { connection -> AppConnection in
+                            guard let conn = connection as? AppConnection else {
+                                throw Errors.noTransportForMultiaddr(ma)
+                            }
+                            return conn
                         }
+                    }.flatMap { conn -> EventLoopFuture<Void> in
                         self.logger.trace("Asking Connection to open a new stream for `\(proto)`")
                         conn.newStream(
                             forProtocol: proto,
@@ -104,7 +109,7 @@ extension Application {
                             andMiddleware: middleware,
                             closure: closure
                         )
-                        return connection.channel.eventLoop.makeSucceededVoidFuture()
+                        return conn.channel.eventLoop.makeSucceededVoidFuture()
                     }
 
                 }
@@ -185,13 +190,18 @@ extension Application {
                         return self.eventLoopGroup.any().makeFailedFuture(Errors.noTransportForMultiaddr(ma))
                     }
                     self.logger.trace("Found Transport for dialing peer \(transport)")
-                    return transport.dial(address: ma).flatMap { connection -> EventLoopFuture<Void> in
-                        guard let conn = connection as? AppConnection else {
-                            return connection.channel.eventLoop.makeFailedFuture(Errors.noTransportForMultiaddr(ma))
+                    /// Coalesce concurrent cold dials to this address onto a single connection.
+                    return self.connectionManager.dial(to: ma) {
+                        transport.dial(address: ma).flatMapThrowing { connection -> AppConnection in
+                            guard let conn = connection as? AppConnection else {
+                                throw Errors.noTransportForMultiaddr(ma)
+                            }
+                            return conn
                         }
+                    }.flatMap { conn -> EventLoopFuture<Void> in
                         self.logger.trace("Asking Connection to open a new stream for `\(proto)`")
                         conn.newStream(forProtocol: proto)
-                        return connection.channel.eventLoop.makeSucceededVoidFuture()
+                        return conn.channel.eventLoop.makeSucceededVoidFuture()
                     }
 
                 }
