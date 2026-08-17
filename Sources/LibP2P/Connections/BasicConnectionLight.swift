@@ -703,7 +703,7 @@ public class BasicConnectionLight: AppConnection, @unchecked Sendable {
                 }
 
                 closePromise.completeWith(
-                    self.streams.map { $0.close(gracefully: false) }.flatten(on: self.eventLoop).flatMapAlways {
+                    self.streams.map { $0.close(gracefully: true) }.flatten(on: self.eventLoop).flatMapAlways {
                         result -> EventLoopFuture<Void> in
                         timeout.cancel()
                         switch result {
