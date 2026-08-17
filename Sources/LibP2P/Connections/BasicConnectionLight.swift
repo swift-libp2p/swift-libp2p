@@ -546,9 +546,6 @@ public class BasicConnectionLight: AppConnection, @unchecked Sendable {
         )
 
         self.eventLoop.execute {
-            /// Append a stream event in our stream history array
-            self.streamHistory.append(StreamStateEntry(proto: proto, id: 0, state: .initialized, date: Date()))
-
             /// If the connection has already closed (e.g. a coalesced cold dial whose shared
             /// connection failed to upgrade), fail fast instead of queueing a stream that will never
             /// open and would otherwise only surface as a timeout.
@@ -557,6 +554,9 @@ public class BasicConnectionLight: AppConnection, @unchecked Sendable {
                 self.fail(pendingStream, with: Application.Connections.Errors.connectionUpgradeFailed)
                 return
             }
+
+            /// Append a stream event in our stream history array
+            self.streamHistory.append(StreamStateEntry(proto: proto, id: 0, state: .initialized, date: Date()))
 
             /// Ask our muxer to open the stream...
             if self.isMuxed, let mux = self.muxer {
