@@ -64,7 +64,7 @@ public final class OutboundLoggerHandler: ChannelOutboundHandler {
         }
         //print("--- Outbound Logger Done ---")
 
-        context.write(wrapOutboundOut(buffer), promise: nil)
+        context.write(wrapOutboundOut(buffer), promise: promise)
     }
 
     // Flush it out. This can make use of gathering writes if multiple buffers are pending

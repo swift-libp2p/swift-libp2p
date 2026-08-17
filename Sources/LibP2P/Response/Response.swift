@@ -33,6 +33,11 @@ public struct RawResponse: CustomStringConvertible, Sendable {
     ///
     public var payload: ByteBuffer
 
+    /// When `true`, the responder closes the stream only *after* this response's write
+    /// has completed (i.e. actually reached the socket), rather than racing the close
+    /// against the in-flight write. Used to back `Response.respondThenClose` / `.close`.
+    public var closeAfterWrite: Bool
+
     /// See `CustomStringConvertible`
     public var description: String {
         var desc: [String] = []
@@ -44,9 +49,11 @@ public struct RawResponse: CustomStringConvertible, Sendable {
 
     /// Internal init that creates a new `RawResponse`
     public init(
-        payload: ByteBuffer
+        payload: ByteBuffer,
+        closeAfterWrite: Bool = false
     ) {
         self.payload = payload
+        self.closeAfterWrite = closeAfterWrite
     }
 }
 //public final class RawResponse: CustomStringConvertible, Sendable {
@@ -115,10 +122,15 @@ public enum Response<T: ResponseEncodable & Sendable>: ResponseEncodable, Sendab
         case .respond(let payload):
             return payload.encodeResponse(for: request)
         case .respondThenClose(let payload):
-            return payload.encodeResponse(for: request).always { _ in request.shouldClose() }
+            // Mark the response so the responder closes the stream only after this
+            // write reaches the socket (see `ResponderChannelHandler.serialize`), rather
+            // than closing as soon as the payload is encoded.
+            return payload.encodeResponse(for: request).map { raw in
+                RawResponse(payload: raw.payload, closeAfterWrite: true)
+            }
         case .close, .reset:
-            let res = RawResponse(payload: request.allocator.buffer(bytes: []))
-            return request.eventLoop.makeSucceededFuture(res).always { _ in request.shouldClose() }
+            let res = RawResponse(payload: request.allocator.buffer(bytes: []), closeAfterWrite: true)
+            return request.eventLoop.makeSucceededFuture(res)
         }
     }
 }

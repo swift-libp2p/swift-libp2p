@@ -47,10 +47,26 @@ final class ResponderChannelHandler: ChannelInboundHandler, RemovableChannelHand
 
     func serialize(_ response: RawResponse, for request: Request, context: ChannelHandlerContext) {
         guard response.payload.readableBytes > 0 else {
-            self.logger.trace("Dropping Empty Response")
+            // Nothing to write (e.g. `.stayOpen`, or `.close` / `.reset` with an empty payload).
+            // There's no write to wait on, so close immediately if requested.
+            if response.closeAfterWrite {
+                request.shouldClose()
+            } else {
+                self.logger.trace("Dropping Empty Response")
+            }
             return
         }
-        context.write(self.wrapOutboundOut(response), promise: nil)
+
+        guard response.closeAfterWrite else {
+            context.write(self.wrapOutboundOut(response), promise: nil)
+            return
+        }
+
+        // Gate the stream close on the write actually reaching the socket so the final
+        // payload can't be truncated by racing `channel.close()` against an in-flight write.
+        let promise = context.eventLoop.makePromise(of: Void.self)
+        context.write(self.wrapOutboundOut(response), promise: promise)
+        promise.futureResult.whenComplete { _ in request.shouldClose() }
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
