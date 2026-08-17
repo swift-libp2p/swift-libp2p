@@ -71,4 +71,13 @@ extension Array where Element == Multiaddr {
     public func stripInternalAddresses() -> [Multiaddr] {
         self.filter { !$0.isInternalAddress }
     }
+
+    /// Drops unspecified/wildcard addresses (IPv4 `0.0.0.0`, IPv6 `::`). Applied
+    /// at the address-advertisement boundary as a backstop: the wildcard should
+    /// already be expanded to concrete interface addresses by
+    /// `Application.listenAddresses`, but this guarantees a wildcard never
+    /// reaches a remote peer even on hosts where interface enumeration fails.
+    public func stripUnspecifiedAddresses() -> [Multiaddr] {
+        self.filter { !$0.isUnspecifiedAddress }
+    }
 }

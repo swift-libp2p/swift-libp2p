@@ -115,7 +115,7 @@ extension Application {
                 self.commands = .init(Commands())
                 var asyncCommands = AsyncCommands()
                 asyncCommands.use(BootCommand(), as: "boot")
-                self.asyncCommands = .init(AsyncCommands())
+                self.asyncCommands = .init(asyncCommands)
                 let threadPool = NIOSingletons.posixBlockingThreadPool
                 threadPool.start()
                 self.threadPool = .init(threadPool)

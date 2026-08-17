@@ -68,7 +68,11 @@ public final class Identify: IdentityManager, CustomStringConvertible {
         self.pingCache = .init([:])
 
         /// Register our protocol route handler on the application...
-        try! routes(application)
+        do {
+            try routes(application)
+        } catch {
+            self.logger.critical("Identify::Failed to register protocol routes: \(error)")
+        }
 
         /// Register our event listeners
         application.events.on(self, event: .upgraded(self.onNewConnection))
@@ -148,7 +152,7 @@ extension Identify {
             /// Publish the identifiedPeer event
             self.application?.events.post(
                 .identifiedPeer(
-                    IdentifiedPeer(peer: peerRecord.peerID, identity: try! remoteIdentify.serializedData().byteArray)
+                    IdentifiedPeer(peer: peerRecord.peerID, identity: try remoteIdentify.serializedData().byteArray)
                 )
             )
 
@@ -207,21 +211,13 @@ extension Identify {
     /// - This message is ready to be sent to a remote peer who's opened a new `/ipfs/id/1.0.0` stream on our connection
     internal func constructIdentifyMessage(req: Request) throws -> [UInt8] {
         //Construct our Local Nodes Identify Message
-        let listenAddrs: [Multiaddr]
-
-        if req.addr.isInternalAddress {
-            /// A computer on our network is reaching out to us, respond with internal addresses...
-            req.logger.trace(
-                "Identify::A computer on our network is reaching out to us, responding with internal addresses..."
-            )
-            listenAddrs = req.application.listenAddresses
-        } else {
-            /// A computer outside of our network is asking for our ID, respond with externally reachable addresses only...
-            req.logger.trace(
-                "Identify::A computer outside of our network is asking for our ID, responding with externally reachable addresses only..."
-            )
-            listenAddrs = req.application.listenAddresses.stripInternalAddresses()
-        }
+        //
+        // Advertise the announce override unioned with our (wildcard-expanded)
+        // listen addresses, scoped to the caller (internal callers may receive
+        // internal addresses) and with the unspecified/wildcard address stripped
+        // as a backstop. Previously this advertised raw `listenAddresses`, which
+        // could leak `/ip4/0.0.0.0/...` to peers and poison their peerstore.
+        let listenAddrs = req.application.advertisedAddresses(forRemote: req.addr.isInternalAddress)
 
         var id = IdentifyMessage()
         id.publicKey = try self.localPeerID.keyPair!.publicKey.marshal()
@@ -388,7 +384,12 @@ extension Identify {
                     startTime: DispatchTime.now().uptimeNanoseconds,
                     promise: promise
                 )
-                try! self.application!.newStream(to: peer, forProtocol: Identify.Multicodecs.PING)
+                do {
+                    try self.application!.newStream(to: peer, forProtocol: Identify.Multicodecs.PING)
+                } catch {
+                    pings.removeValue(forKey: peer.id)
+                    promise.fail(error)
+                }
                 return promise.futureResult
             }
         }
@@ -419,7 +420,12 @@ extension Identify {
                     startTime: DispatchTime.now().uptimeNanoseconds,
                     promise: promise
                 )
-                try! self.application!.newStream(to: addr, forProtocol: Identify.Multicodecs.PING)
+                do {
+                    try self.application!.newStream(to: addr, forProtocol: Identify.Multicodecs.PING)
+                } catch {
+                    pings.removeValue(forKey: peer.id)
+                    promise.fail(error)
+                }
                 return promise.futureResult
             }
         }
@@ -431,7 +437,11 @@ extension Identify {
             req.shouldClose()
             return nil
         }
-        let bytes: [UInt8] = try! LibP2PCrypto.randomBytes(length: 32)
+        guard let bytes: [UInt8] = try? LibP2PCrypto.randomBytes(length: 32) else {
+            req.logger.error("Identify::Outbound Ping failed to generate a random payload")
+            req.shouldClose()
+            return nil
+        }
         let startTime = DispatchTime.now().uptimeNanoseconds
         /// Check to see if this ping was initiated by our IndetifyManager...
         self.el.execute {
@@ -459,6 +469,11 @@ extension Identify {
                     return
                 }
 
+                guard let remotePeer = req.remotePeer else {
+                    req.logger.error("Identify::Cannot record ping latency for an unauthenticated stream")
+                    return
+                }
+
                 /// Determine to total round trip time in nanoseconds
                 let toc = DispatchTime.now().uptimeNanoseconds - pendingPing.startTime
 
@@ -471,7 +486,7 @@ extension Identify {
                 req.logger.trace("Identify::Ping updating \(isConnection ? "connection" : "stream") latency")
 
                 /// Update our peers metadata
-                req.application.peers.getMetadata(forPeer: req.remotePeer!).flatMap {
+                req.application.peers.getMetadata(forPeer: remotePeer).flatMap {
                     metadata -> EventLoopFuture<Void> in
                     let new: MetadataBook.LatencyMetadata
                     if let existingLatencyData = metadata[MetadataBook.Keys.Latency.rawValue],
@@ -506,13 +521,16 @@ extension Identify {
                     }
 
                     /// Encode New Latency Data and store it...
-                    let newData = try! JSONEncoder().encode(new)
+                    guard let newData = try? JSONEncoder().encode(new) else {
+                        req.logger.error("Identify::Failed to encode latency metadata")
+                        return req.eventLoop.makeSucceededVoidFuture()
+                    }
 
                     /// Store it!
                     return req.application.peers.add(
                         metaKey: MetadataBook.Keys.Latency,
                         data: newData.byteArray,
-                        toPeer: req.remotePeer!
+                        toPeer: remotePeer
                     )
                 }.whenComplete({ _ in
                     req.logger.trace("Identify::Ping Time to Peer<\(pendingPing.peer.prefix(7))> == \(toc)ns")

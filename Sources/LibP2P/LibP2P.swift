@@ -401,7 +401,13 @@ public final class Application: Sendable {
             enableAutocomplete: self.asyncCommands.enableAutocomplete || self.commands.enableAutocomplete
         ).group()
 
-        var context = CommandContext(console: self.console, input: self.environment.commandInput)
+        // Filter the raw process arguments down to just those relevant to a registered command,
+        // discarding any host-injected noise (Xcode/xctest/SwiftPM flags, UserDefaults overrides, etc.).
+        let input = Environment.filterCommandInput(
+            self.environment.commandInput,
+            registeredCommands: Set(combinedCommands.commands.keys)
+        )
+        var context = CommandContext(console: self.console, input: input)
         context.application = self
         try await self.console.run(combinedCommands, with: context)
     }
@@ -461,22 +467,26 @@ public final class Application: Sendable {
     )
     public func shutdown() {
         assert(!self.didShutdown, "Application has already shut down")
-        // Flip `isShuttingDown` *before* touching any storage so
-        // stranded event-loop callbacks fall through the defensive
-        // checks in the post-shutdown storage accessors instead of
-        // tripping `fatalError("X not initialized")`. Set early and
-        // never cleared — distinct from `didShutdown`, which only
-        // flips once shutdown has fully completed.
-        self._isShuttingDown.withLockedValue { $0 = true }
         self.logger.debug("Application shutting down")
+
+        // Signal shutdown up front, before draining anything, so no subsystem that
+        // consults these flags keeps operating while we tear down. Set early and
+        // never cleared — distinct from `didShutdown`, which only flips once
+        // shutdown has fully completed.
+        self._isShuttingDown.withLockedValue { $0 = true }
         self._isRunning.withLockedValue { $0 = false }
+
+        // Close all live connections BEFORE the lifecycle handlers (the servers)
+        // shut down: quiescing a TCP server waits for its accepted child channels to
+        // close, so leaving them open here would block server shutdown until its
+        // `shutdownTimeout` elapses. `closeAllConnections()` also flips the manager
+        // to its shutting-down state, so any racing dial/accept is rejected.
+        self.logger.debug("Attempting to close all connections")
+        try? self.connections.closeAllConnections().wait()
 
         self.logger.trace("Shutting down providers")
         for handler in self.lifecycle.handlers.reversed() { handler.shutdown(self) }
         self.lifecycle.handlers = []
-
-        self.logger.debug("Attempting to close all connections")
-        try? self.connections.closeAllConnections().wait()
 
         self.logger.trace("Shutting Down All Registered Services")
         self.storage.shutdown(last: Events.Key.self)
@@ -505,18 +515,21 @@ public final class Application: Sendable {
 
     public func asyncShutdown() async throws {
         assert(!self.didShutdown, "Application has already shut down")
-        // See the matching block in the sync `shutdown()` above.
-        self._isShuttingDown.withLockedValue { $0 = true }
         self.logger.debug("Application shutting down")
+
+        // Signal shutdown up front, then drain — see the matching block in the sync
+        // `shutdown()` above for the full rationale
+        self._isShuttingDown.withLockedValue { $0 = true }
+        self._isRunning.withLockedValue { $0 = false }
+
+        self.logger.debug("Attempting to close all connections")
+        try? await self.connections.closeAllConnections().get()
 
         self.logger.trace("Shutting down providers")
         for handler in self.lifecycle.handlers.reversed() {
             await handler.shutdownAsync(self)
         }
         self.lifecycle.handlers = []
-
-        self.logger.debug("Attempting to close all connections")
-        try? await self.connections.closeAllConnections().get()
 
         self.logger.trace("Shutting Down All Registered Services")
         await self.storage.asyncShutdown(last: Events.Key.self)
@@ -577,16 +590,11 @@ extension Application {
         /// On Verified Remote Peer Subscription
         ///
         /// This is responsible for adding a Verified Remote Peer to our PeerStore
-        self.events.on(self, event: .remotePeer(onRemotePeer))
-
-        /// On Verified Remote Peer Subscription
-        ///
-        /// This is responsible for adding a Verified Remote Peer to our PeerStore
-        func onRemotePeer(_ peer: PeerInfo) {
+        let onRemotePeer: @Sendable (PeerInfo) -> Void = { peer in
             guard peer.peer != self.peerID else { return }
-            logger.debug("Verified Remote Peer")
-            logger.debug("Peer: \(peer.peer.b58String)")
-            logger.debug("Address: \(peer.addresses)")
+            self.logger.debug("Verified Remote Peer")
+            self.logger.debug("Peer: \(peer.peer.b58String)")
+            self.logger.debug("Address: \(peer.addresses)")
 
             let _ = self.peers.add(key: peer.peer, on: nil).flatMap { _ -> EventLoopFuture<Void> in
                 self.logger.debug("Attempting to add known multiaddr to peerstore")
@@ -600,6 +608,7 @@ extension Application {
                 }
             }
         }
+        self.events.on(self, event: .remotePeer(onRemotePeer))
 
         //self.events.on(self, event: .identifiedPeer( onPeerIdentified ))
         //        func onPeerIdentified(_ identifiedPeer:IdentifiedPeer) -> Void {

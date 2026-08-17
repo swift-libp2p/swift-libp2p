@@ -46,6 +46,13 @@ extension Application {
             case failedToCloseAllStreams
             case noStreamForID(UInt64)
             case timedOut
+            /// Thrown when a synchronous, blocking API (e.g. `newStreamSync`) is invoked from the
+            /// connection's own event loop, which would deadlock. Use the async/future API instead.
+            case cannotBlockEventLoop
+            /// Surfaced to any stream that was queued on a connection which closed before it finished
+            /// upgrading (e.g. a security or muxer negotiation failure). Lets coalesced/queued requests
+            /// fail fast instead of waiting for their own timeouts.
+            case connectionUpgradeFailed
         }
 
         public struct Provider {
@@ -60,9 +67,15 @@ extension Application {
             let manager: NIOLockedValueBox<ConnectionManager?>
             // Allow the user to specify the Connection class to use (default to ARCConnection)
             let connType: NIOLockedValueBox<AppConnection.Type>
+            /// Tracks cold dials that are currently in flight, keyed by the resolved dial MultiAddress
+            /// (e.g. `/ip4/…/tcp/…/p2p/…`). Because the multiaddress encapsulates both the target
+            /// peer and the network stack, concurrent dials to the same ma coalesce onto a single pending
+            /// connection, while dials to a different ma each get their own independent dial.
+            let dialsInFlight: NIOLockedValueBox<[String: EventLoopFuture<AppConnection>]>
             init() {
                 self.manager = .init(nil)
                 self.connType = .init(ARCConnection.self)
+                self.dialsInFlight = .init([:])
             }
         }
 
@@ -92,17 +105,20 @@ extension Application {
         let application: Application
 
         var storage: Storage {
+            // Prefer the real storage whenever it still exists — even after
+            // `isShuttingDown` has been set. This lets teardown itself (notably
+            // `closeAllConnections()`) reach the *real* ConnectionManager to drain
+            // and reject connections, instead of a vacuous throwaway. We only fall
+            // back once `storage.clear()` has actually removed our key: at that
+            // point `isShuttingDown` lets stranded event-loop callbacks racing the
+            // teardown finish vacuously instead of tripping the `fatalError`.
+            if let storage = self.application.storage[Key.self] {
+                return storage
+            }
             if self.application.isShuttingDown {
-                // Race window: this Application has begun teardown.
-                // Returning a fresh empty `Storage` lets stranded
-                // event-loop callbacks finish vacuously instead of
-                // trapping at the `fatalError` below.
                 return Storage()
             }
-            guard let storage = self.application.storage[Key.self] else {
-                fatalError("ConnectionManager not initialized. Configure with app.connectionManager.initialize()")
-            }
-            return storage
+            fatalError("ConnectionManager not initialized. Configure with app.connectionManager.initialize()")
         }
 
         public func generateConnection(
@@ -124,6 +140,53 @@ extension Application {
 
         public func setIdleTimeout(_ timeout: TimeAmount) {
             self.storage.manager.withLockedValue { $0?.setIdleTimeout(timeout) }
+        }
+
+        /// Coalesces concurrent cold dials to the same address into a single connection.
+        ///
+        /// If a dial to `ma` is already in flight, the shared, pending dial future is returned so the
+        /// caller can ride the connection currently being established instead of opening a redundant
+        /// one. Once that connection upgrades, every coalesced caller opens its own multiplexed stream
+        /// over it. If no dial is in flight yet, a new one is started via `startDial`, registered, and
+        /// cleared from the registry once it settles. Should the dial fail, every coalesced caller
+        /// observes the same failure.
+        ///
+        /// The registry is keyed by `ma.description`, which encapsulates both the target peer and the
+        /// full network stack, so only dials to the same peer over the same stack coalesce — dials
+        /// to a different stack (a different address) remain independent.
+        func dial(
+            to ma: Multiaddr,
+            startDial: () -> EventLoopFuture<AppConnection>
+        ) -> EventLoopFuture<AppConnection> {
+            let key = ma.description
+            let storage = self.storage
+
+            // Atomically decide whether we're the caller that starts the dial or a caller coalescing
+            // onto an existing one. We reserve our slot with a placeholder promise before releasing
+            // the lock so simultaneous callers can never both start a dial for the same address.
+            let (future, promise): (EventLoopFuture<AppConnection>, EventLoopPromise<AppConnection>?) =
+                storage.dialsInFlight.withLockedValue { dials in
+                    if let existing = dials[key] {
+                        return (existing, nil)
+                    }
+                    let promise = self.application.eventLoopGroup.any().makePromise(of: AppConnection.self)
+                    dials[key] = promise.futureResult
+                    return (promise.futureResult, promise)
+                }
+
+            // Only the reserving caller starts the real dial (outside the lock so `startDial`, which
+            // kicks off async I/O, never runs while the registry is locked).
+            if let promise {
+                startDial().whenComplete { result in
+                    // Drop the entry as soon as the dial settles. By this point a successful connection
+                    // is already registered with the manager, so later cold dials find it via
+                    // `getConnectionsTo` — there's no coverage gap between the two mechanisms.
+                    storage.dialsInFlight.withLockedValue { $0.removeValue(forKey: key) }
+                    promise.completeWith(result)
+                }
+            }
+
+            return future
         }
 
         public func getTotalConnectionCount() -> EventLoopFuture<UInt64> {
