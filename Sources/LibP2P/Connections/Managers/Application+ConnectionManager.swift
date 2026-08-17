@@ -49,6 +49,10 @@ extension Application {
             /// Thrown when a synchronous, blocking API (e.g. `newStreamSync`) is invoked from the
             /// connection's own event loop, which would deadlock. Use the async/future API instead.
             case cannotBlockEventLoop
+            /// Surfaced to any stream that was queued on a connection which closed before it finished
+            /// upgrading (e.g. a security or muxer negotiation failure). Lets coalesced/queued requests
+            /// fail fast instead of waiting for their own timeouts.
+            case connectionUpgradeFailed
         }
 
         public struct Provider {
