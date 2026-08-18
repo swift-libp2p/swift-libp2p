@@ -41,6 +41,7 @@ public func runMuxerConformance(
     payloadSizes: [Int] = [1, 1024, 65_536, 1_048_576],
     concurrentStreams: Int = 5,
     testReset: Bool = true,
+    testMalformedInput: Bool = true,
     strictWritePromise: Bool = true,
     logLevel: Logger.Level = .critical
 ) async throws -> ConformanceReport {
@@ -49,6 +50,7 @@ public func runMuxerConformance(
     let echoProto = "/mux-harness-echo/1.0.0"
     let holdProto = "/mux-harness-hold/1.0.0"
     let probeProto = "/mux-harness-probe/1.0.0"
+    let eventsProto = "/mux-harness-events/1.0.0"
     let requestTimeout: TimeAmount = .seconds(15)
 
     let host = try await makeHarnessNode(security: security, muxer: muxer, logLevel: logLevel)
@@ -56,6 +58,9 @@ public func runMuxerConformance(
 
     installEchoRoute(on: host, proto: echoProto)
     installHoldRoute(on: host, proto: holdProto)
+    // Records which `RequestEvent`s the responder observes, so we can assert lifecycle events reach the app.
+    let observedHostEvents = NIOLockedValueBox<[String]>([])
+    installEventRecordingRoute(on: host, proto: eventsProto, sink: observedHostEvents)
     // A `StreamEventProbe` sits head-most on this route's stream pipeline so we can verify the muxer child
     // channel fires channelRead(s) followed by channelReadComplete on the receiving side.
     let (streamProbeProvider, streamProbes) = makeStreamProbeProvider()
@@ -268,6 +273,10 @@ public func runMuxerConformance(
                 report.check("Write on a reset stream is rejected", writeRejected)
                 let propagated = await harnessWaitUntil { hostEvents.closedStream(forProtocol: holdProto) }
                 report.check("Reset propagates to the peer (host observes stream close)", propagated)
+                // Idempotency: a second reset() on an already-reset stream must settle without crashing or
+                // leaking a promise (guards the class of bugs fixed when reset was first enabled).
+                _ = try? await holdStream.reset().get()
+                report.check("reset() is idempotent (a second reset does not crash)", true)
             } else {
                 report.warn("Could not open a hold stream to verify reset semantics")
             }
@@ -275,9 +284,105 @@ public func runMuxerConformance(
             report.warn("Stream-reset checks were skipped (testReset: false)")
         }
 
-        // MARK: Advisory (phase-2b probes)
+        // MARK: Idempotency — double graceful close must not crash or leak a promise
+        try? client.newStream(
+            to: addr,
+            forProtocol: holdProto,
+            withHandlers: .handlers([.varIntLengthPrefixed])
+        ) { req in
+            req.eventLoop.makeSucceededFuture(RawResponse(payload: ByteBuffer()))
+        }
+        let closeOpened = await harnessWaitUntil {
+            clientEvents.openedStreams(forProtocol: holdProto).contains { $0.streamState == .open }
+        }
+        if closeOpened,
+            let closeStream = clientEvents.openedStreams(forProtocol: holdProto).first(where: {
+                $0.streamState == .open
+            })
+        {
+            // Fire both closes WITHOUT awaiting completion: a graceful close's future legitimately stays
+            // pending until the peer also closes (the hold route never does), so awaiting would hang. We only
+            // need to prove a second close() doesn't crash or leak a promise. Reaching the check = survived.
+            _ = closeStream.close(gracefully: true)
+            _ = closeStream.close(gracefully: true)
+            try? await Task.sleep(nanoseconds: 150 * 1_000_000)
+            report.check("close(gracefully:) is idempotent (a second close does not crash)", true)
+        } else {
+            report.warn("Could not open a hold stream to verify close idempotency")
+        }
+
+        // MARK: Good-citizen probe — lifecycle events propagate to the responder
+        // The route handler must observe `.ready` on open and, on a peer reset, a terminal event. Note there
+        // is no inbound `.reset` RequestEvent: a reset surfaces as `.error` and/or `.closed`, and WHICH is
+        // muxer-dependent (some fire errorCaught+inactive, some only inactive) — so the hard contract is
+        // "responder is notified of the teardown", with a `.error`-specific advisory. We reuse a reset to
+        // generate the terminal event, so that half of the check requires `testReset`.
+        try? client.newStream(
+            to: addr,
+            forProtocol: eventsProto,
+            withHandlers: .handlers([.varIntLengthPrefixed])
+        ) { req in
+            req.eventLoop.makeSucceededFuture(RawResponse(payload: ByteBuffer()))
+        }
+        let eventsOpened = await harnessWaitUntil {
+            clientEvents.openedStreams(forProtocol: eventsProto).contains { $0.streamState == .open }
+        }
+        let sawReady = await harnessWaitUntil { observedHostEvents.withLockedValue { $0.contains("ready") } }
+        if testReset,
+            eventsOpened,
+            let eventsStream = clientEvents.openedStreams(forProtocol: eventsProto).first(where: {
+                $0.streamState == .open
+            })
+        {
+            _ = try? await eventsStream.reset().get()
+            let sawTerminal = await harnessWaitUntil {
+                observedHostEvents.withLockedValue { $0.contains("closed") || $0.contains("error") }
+            }
+            let observed = observedHostEvents.withLockedValue { $0 }
+            report.check(
+                "Lifecycle events reach the responder (.ready on open, terminal event on peer reset)",
+                sawReady && sawTerminal,
+                sawReady && sawTerminal ? nil : "observed events: \(observed)"
+            )
+            if sawTerminal && !observed.contains("error") {
+                report.warn(
+                    "Peer reset surfaced to the responder as `.closed` only (no `.error`) — acceptable, but "
+                        + "handlers relying on `.error` to distinguish reset from graceful close won't see it"
+                )
+            }
+        } else if eventsOpened {
+            report.check(
+                "Lifecycle events reach the responder (.ready on open)",
+                sawReady,
+                sawReady ? nil : "responder never observed .ready"
+            )
+        } else {
+            report.warn("Could not open a stream to verify responder event propagation")
+        }
+
+        // MARK: Good-citizen probe — malformed inbound bytes must not crash the peer
+        // Inject raw garbage below the muxer/security handlers and confirm the node stays serviceable. Under
+        // the default passthrough `.mockSecurity` this exercises the muxer's frame decoder under test; with an
+        // encrypting security partner it exercises that module's decrypt handler instead — still valid.
+        if testMalformedInput {
+            await runMalformedInputProbe(
+                client: client,
+                host: host,
+                addr: addr,
+                echoProto: echoProto,
+                report: &report
+            )
+        } else {
+            report.warn("Malformed-input crash-safety check was skipped (testMalformedInput: false)")
+        }
+
+        // MARK: Advisory (deferred checks)
         report.warn(
             "Back-pressure and head-of-line-blocking are not yet measured (deferred to phase 2b)"
+        )
+        report.warn(
+            "Half-close (read/write) is not exercised — libp2p does not surface inputClosed to route handlers "
+                + "and Stream.write rejects non-open writes; deferred"
         )
 
         try await client.asyncShutdown()
@@ -319,6 +424,31 @@ private func installHoldRoute(on app: Application, proto: String) {
             case .data: return .stayOpen
             case .closed: return .close
             case .error: return .close
+            }
+        }
+    }
+}
+
+/// Installs a hold-style route that records the name of each `RequestEvent` the responder observes into
+/// `sink`, so the harness can assert lifecycle events (`.ready`/`.data`/`.closed`/`.error`) actually reach
+/// the application layer. Stays open on ready/data (client drives teardown); records + closes on closed/error.
+private func installEventRecordingRoute(on app: Application, proto: String, sink: NIOLockedValueBox<[String]>) {
+    let (name, version) = splitProto(proto)
+    app.routes.group([PathComponent(stringLiteral: name)], handlers: [.varIntLengthPrefixed]) { group in
+        group.on([PathComponent(stringLiteral: version)]) { req -> Response<ByteBuffer> in
+            switch req.event {
+            case .ready:
+                sink.withLockedValue { $0.append("ready") }
+                return .stayOpen
+            case .data:
+                sink.withLockedValue { $0.append("data") }
+                return .stayOpen
+            case .closed:
+                sink.withLockedValue { $0.append("closed") }
+                return .close
+            case .error:
+                sink.withLockedValue { $0.append("error") }
+                return .close
             }
         }
     }
