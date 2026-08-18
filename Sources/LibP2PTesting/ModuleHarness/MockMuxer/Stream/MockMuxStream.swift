@@ -111,6 +111,14 @@ internal final class MockMuxStream: _Stream {
     /// pipeline here: the child's route handlers only understand `RawResponse`, so a raw frame would trip
     /// an outbound type assertion.
     public func reset() -> EventLoopFuture<Void> {
+        // Idempotent: once terminal, a second reset() is a no-op. Closing an already-torn-down child channel
+        // would touch its released pipeline and crash, so guard here (mirrors mplex/yamux reset()).
+        switch self._streamState.withLockedValue({ $0 }) {
+        case .reset, .closed:
+            return self.channel.eventLoop.makeSucceededVoidFuture()
+        default:
+            break
+        }
         self._streamState.withLockedValue { $0 = .reset }
         let promise = self.channel.eventLoop.makePromise(of: Void.self)
         self.channel.close(mode: .all, promise: promise)

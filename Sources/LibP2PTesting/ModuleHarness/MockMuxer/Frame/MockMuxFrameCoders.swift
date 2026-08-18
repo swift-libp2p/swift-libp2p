@@ -41,14 +41,14 @@ internal final class MockMuxFrameDecoder: ByteToMessageDecoder {
 
     func decode(context: ChannelHandlerContext, buffer: inout ByteBuffer) throws -> DecodingState {
         if self.headerValue == nil {
-            self.headerValue = buffer.readMockMuxVarint()
+            self.headerValue = try buffer.readMockMuxVarint()
         }
         guard let headerValue = self.headerValue else {
             return .needMoreData
         }
 
         if self.msgLength == nil {
-            self.msgLength = buffer.readMockMuxVarint()
+            self.msgLength = try buffer.readMockMuxVarint()
         }
         guard let msgLength = self.msgLength else {
             return .needMoreData
@@ -85,13 +85,14 @@ internal final class MockMuxFrameDecoder: ByteToMessageDecoder {
 
     enum Errors: Error {
         case invalidFlag
+        case invalidVarInt
     }
 }
 
 extension ByteBuffer {
     /// Reads an unsigned LEB128 varint, restoring the reader index and returning nil if there aren't
     /// yet enough bytes to decode a full value.
-    fileprivate mutating func readMockMuxVarint() -> UInt64? {
+    fileprivate mutating func readMockMuxVarint() throws -> UInt64? {
         var value: UInt64 = 0
         var shift: UInt64 = 0
         let initialReadIndex = self.readerIndex
@@ -107,7 +108,10 @@ extension ByteBuffer {
             }
             shift += 7
             if shift > 63 {
-                fatalError("Invalid varint, requires shift (\(shift)) > 64")
+                // A varint that never terminates within 64 bits is malformed input. Throw (which the
+                // ByteToMessageHandler turns into errorCaught → connection teardown) rather than crashing
+                // the whole process with `fatalError` on hostile/garbage bytes.
+                throw MockMuxFrameDecoder.Errors.invalidVarInt
             }
         }
     }
