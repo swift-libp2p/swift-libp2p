@@ -17,8 +17,10 @@ import Testing
 @testable import LibP2PTesting
 
 /// Top level ConformanceHarnessTests suite to serialize all (transport, security, muxer) harness tests
-@Suite("ConformanceHarness", .serialized)
-struct ConformanceHarnessTests {}
+extension LibP2PTests {
+    @Suite("ConformanceHarness", .serialized)
+    struct ConformanceHarnessTests {}
+}
 
 /// Self-tests the `MuxerConformanceHarness` end-to-end against the in-package wire muxer (`MockMux`).
 ///
@@ -27,17 +29,24 @@ struct ConformanceHarnessTests {}
 /// events, and reset/close contracts — using only in-package code (no yamux/mplex/noise). Self-tests of
 /// the harness against the production muxers live in the integration-tests package where those modules
 /// are available.
-extension ConformanceHarnessTests {
-    @Test("Wire MockMux passes muxer conformance end-to-end")
-    func mockMuxWirePassesConformance() async throws {
-        let report = try await runMuxerConformance(
-            muxer: .harnessSingleStream,
-            expectedCodec: "/mock-mux-wire/1.0.0"
-        )
-        #expect(report.passed, "\(report)")
-        #expect(!report.warnings.contains { $0.contains("premature") }, "\(report)")
-        #expect(!report.warnings.contains { $0.contains("never completed") }, "\(report)")
-        // The known-good muxer must stay serviceable after malformed input — no best-effort fallback.
-        #expect(!report.warnings.contains { $0.contains("follow-up echo") }, "\(report)")
+extension LibP2PTests.ConformanceHarnessTests {
+
+    @Suite("MuxerConformanceHarness")
+    struct MuxerConformanceHarnessTests {
+
+        @Test("Wire MockMux passes muxer conformance end-to-end")
+        func mockMuxWirePassesConformance() async throws {
+            let report = try await runMuxerConformance(
+                muxer: .harnessSingleStream,
+                expectedCodec: "/mock-mux-wire/1.0.0"
+            )
+            #expect(report.passed, "\(report)")
+            #expect(!report.warnings.contains { $0.contains("premature") }, "\(report)")
+            #expect(!report.warnings.contains { $0.contains("never completed") }, "\(report)")
+            // The known-good muxer must stay serviceable after malformed input — no best-effort fallback.
+            #expect(!report.warnings.contains { $0.contains("follow-up echo") }, "\(report)")
+        }
+
     }
+
 }

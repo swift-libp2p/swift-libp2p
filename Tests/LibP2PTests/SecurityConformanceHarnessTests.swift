@@ -21,22 +21,29 @@ import Testing
 /// the harness's plaintext-on-the-wire probe is expected to emit a *warning* — but the run must still
 /// pass (warnings are non-fatal). Self-tests against noise / plaintext-v2 live in the integration-tests
 /// package where those modules are available.
-extension ConformanceHarnessTests {
-    @Test("MockSecurity (plaintext) passes security conformance end-to-end")
-    func mockSecurityPassesConformance() async throws {
-        let report = try await runSecurityConformance(
-            security: .mockSecurity,
-            expectedCodec: "/plaintext/2.0.0"
-        )
-        #expect(report.passed, "\(report)")
-        // Plaintext must trip the plaintext-on-the-wire advisory.
-        #expect(
-            report.warnings.contains { $0.contains("in the clear") },
-            "expected a plaintext-on-the-wire warning; got: \(report.warnings)"
-        )
-        #expect(!report.warnings.contains { $0.contains("premature") }, "\(report)")
-        #expect(!report.warnings.contains { $0.contains("never completed") }, "\(report)")
-        // The known-good stack must stay serviceable after malformed input — no best-effort fallback.
-        #expect(!report.warnings.contains { $0.contains("follow-up echo") }, "\(report)")
+extension LibP2PTests.ConformanceHarnessTests {
+
+    @Suite("SecurityConformanceHarness")
+    struct SecurityConformanceHarnessTests {
+
+        @Test("MockSecurity (plaintext) passes security conformance end-to-end")
+        func mockSecurityPassesConformance() async throws {
+            let report = try await runSecurityConformance(
+                security: .mockSecurity,
+                expectedCodec: "/plaintext/2.0.0"
+            )
+            #expect(report.passed, "\(report)")
+            // Plaintext must trip the plaintext-on-the-wire advisory.
+            #expect(
+                report.warnings.contains { $0.contains("in the clear") },
+                "expected a plaintext-on-the-wire warning; got: \(report.warnings)"
+            )
+            #expect(!report.warnings.contains { $0.contains("premature") }, "\(report)")
+            #expect(!report.warnings.contains { $0.contains("never completed") }, "\(report)")
+            // The known-good stack must stay serviceable after malformed input — no best-effort fallback.
+            #expect(!report.warnings.contains { $0.contains("follow-up echo") }, "\(report)")
+        }
+
     }
+
 }
