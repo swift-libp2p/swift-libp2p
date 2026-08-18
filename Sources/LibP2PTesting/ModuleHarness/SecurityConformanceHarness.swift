@@ -46,6 +46,7 @@ public func runSecurityConformance(
     payloadSizes: [Int] = [1, 1024, 65_536, 1_048_576],
     concurrentStreams: Int = 5,
     testReset: Bool = true,
+    testMalformedInput: Bool = true,
     strictWritePromise: Bool = true,
     logLevel: Logger.Level = .critical
 ) async throws -> ConformanceReport {
@@ -336,6 +337,23 @@ public func runSecurityConformance(
             )
         } else {
             report.warn("Could not construct a peer-ID-mismatch address to verify authenticated dialing")
+        }
+
+        // MARK: Good-citizen probe — malformed inbound bytes must not crash the peer
+        // Inject raw garbage below the security handlers, at the socket boundary. It reaches the receiver's
+        // security *decrypt* handler first (an encrypting module should fail its MAC and tear the connection
+        // down gracefully; a plaintext module forwards to the known-good muxer), so this primarily exercises
+        // the security module under test. A conforming module must not crash the node.
+        if testMalformedInput {
+            await runMalformedInputProbe(
+                client: client,
+                host: host,
+                addr: addr,
+                echoProto: echoProto,
+                report: &report
+            )
+        } else {
+            report.warn("Malformed-input crash-safety check was skipped (testMalformedInput: false)")
         }
 
         try await client.asyncShutdown()
