@@ -16,16 +16,16 @@ import Testing
 
 @testable import LibP2PTesting
 
-/// Self-tests the `SecurityConformanceHarness` end-to-end against the in-package plaintext stand-in
-/// (`.mockSecurity`), paired with the in-package wire muxer. Because plaintext performs no encryption,
-/// the harness's plaintext-on-the-wire probe is expected to emit a *warning* — but the run must still
-/// pass (warnings are non-fatal). Self-tests against noise / plaintext-v2 live in the integration-tests
-/// package where those modules are available.
 extension LibP2PTests.ConformanceHarnessTests {
 
     @Suite("SecurityConformanceHarness")
     struct SecurityConformanceHarnessTests {
 
+        /// Self-tests the `SecurityConformanceHarness` end-to-end against the in-package plaintext stand-in
+        /// (`.mockSecurity`), paired with the in-package wire muxer. Because plaintext performs no encryption,
+        /// the harness's plaintext-on-the-wire probe is expected to emit a *warning* — but the run must still
+        /// pass (warnings are non-fatal). Self-tests against noise / plaintext-v2 live in the integration-tests
+        /// package where those modules are available.
         @Test("MockSecurity (plaintext) passes security conformance end-to-end")
         func mockSecurityPassesConformance() async throws {
             let report = try await runSecurityConformance(
