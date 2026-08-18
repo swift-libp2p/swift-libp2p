@@ -29,7 +29,7 @@ import RoutingKit
 /// ConnectionManager update, lifecycle events fire, and teardown emits `.disconnected`.
 ///
 /// - Parameters:
-///   - transportKey: the transport's `static key` (e.g. `"tcp"`), used for a registration sanity check.
+///   - transportKey: the transport's `static key` (e.g. `"tcp"`), used for a registration check.
 ///   - configure: registers the transport (listener + dial) on each node. For the built-in TCP this is
 ///     just `{ $0.servers.use(.tcp(host: "127.0.0.1", port: 0)) }` (TCP's dial side is auto-registered).
 ///   - security: the security partner. Defaults to ``mockSecurity``.

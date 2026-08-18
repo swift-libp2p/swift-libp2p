@@ -301,8 +301,8 @@ public func runMuxerConformance(
             })
         {
             // Fire both closes WITHOUT awaiting completion: a graceful close's future legitimately stays
-            // pending until the peer also closes (the hold route never does), so awaiting would hang. We only
-            // need to prove a second close() doesn't crash or leak a promise. Reaching the check = survived.
+            // pending until the peer also closes (the hold route never does), so awaiting would spin indefinitely.
+            // We only need to prove a second close() doesn't crash or leak a promise. Reaching the check = survived.
             _ = closeStream.close(gracefully: true)
             _ = closeStream.close(gracefully: true)
             try? await Task.sleep(nanoseconds: 150 * 1_000_000)

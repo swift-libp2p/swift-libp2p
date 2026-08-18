@@ -64,7 +64,7 @@ final class RawByteInjector: ChannelOutboundHandler, RemovableChannelHandler, @u
 /// caught, so it would take down the whole test process — reaching the assertion *after* the peer has had
 /// time to decode the garbage is the proof of survival (mirrors the stream-reset phase). Whether the node
 /// stays serviceable afterwards is checked best-effort and only downgraded to a warning (re-dialing a
-/// just-poisoned connection is inherently racy and not a muxer contract). The measurement cannot hang.
+/// just-poisoned connection is inherently racy and not a muxer contract). The measurement must complete.
 func runMalformedInputProbe(
     client: Application,
     host: Application,

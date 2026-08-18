@@ -95,7 +95,7 @@ final class FlushGateHandler: ChannelOutboundHandler, RemovableChannelHandler, @
 ///
 /// In the muxer harness this exercises the muxer's `Stream.write`; in the security harness the write transits
 /// the security handler on the parent pipeline (the muxer is the known-good MockMux), so it exercises the
-/// security handler's promise forwarding. The measurement is bounded and cannot hang.
+/// security handler's promise forwarding. The measurement is bounded and must complete.
 func runWritePromiseProbe(
     client: Application,
     addr: Multiaddr,
