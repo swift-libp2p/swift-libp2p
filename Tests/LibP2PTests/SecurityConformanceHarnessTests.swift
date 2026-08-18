@@ -37,5 +37,7 @@ struct SecurityConformanceHarnessTests {
         )
         #expect(!report.warnings.contains { $0.contains("premature") }, "\(report)")
         #expect(!report.warnings.contains { $0.contains("never completed") }, "\(report)")
+        // The known-good stack must stay serviceable after malformed input — no best-effort fallback.
+        #expect(!report.warnings.contains { $0.contains("follow-up echo") }, "\(report)")
     }
 }

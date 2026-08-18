@@ -34,5 +34,7 @@ struct MuxerConformanceHarnessTests {
         #expect(report.passed, "\(report)")
         #expect(!report.warnings.contains { $0.contains("premature") }, "\(report)")
         #expect(!report.warnings.contains { $0.contains("never completed") }, "\(report)")
+        // The known-good muxer must stay serviceable after malformed input — no best-effort fallback.
+        #expect(!report.warnings.contains { $0.contains("follow-up echo") }, "\(report)")
     }
 }
