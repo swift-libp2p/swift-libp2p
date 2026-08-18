@@ -16,6 +16,10 @@ import Testing
 
 @testable import LibP2PTesting
 
+/// Top level ConformanceHarnessTests suite to serialize all (transport, security, muxer) harness tests
+@Suite("ConformanceHarness", .serialized)
+struct ConformanceHarnessTests {}
+
 /// Self-tests the `MuxerConformanceHarness` end-to-end against the in-package wire muxer (`MockMux`).
 ///
 /// This exercises the full harness plumbing — two real `Application`s over loopback TCP, the mock
@@ -23,8 +27,7 @@ import Testing
 /// events, and reset/close contracts — using only in-package code (no yamux/mplex/noise). Self-tests of
 /// the harness against the production muxers live in the integration-tests package where those modules
 /// are available.
-@Suite("MuxerConformanceHarness", .serialized)
-struct MuxerConformanceHarnessTests {
+extension ConformanceHarnessTests {
     @Test("Wire MockMux passes muxer conformance end-to-end")
     func mockMuxWirePassesConformance() async throws {
         let report = try await runMuxerConformance(

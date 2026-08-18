@@ -19,8 +19,7 @@ import Testing
 /// Self-tests the `TransportConformanceHarness` end-to-end against the built-in TCP transport, paired with
 /// the in-package plaintext security + wire muxer. Exercises the whole harness (dial, byte movement, upgrade,
 /// PeerID exchange, events, teardown) using only in-package code.
-@Suite("TransportConformanceHarness", .serialized)
-struct TransportConformanceHarnessTests {
+extension ConformanceHarnessTests {
     @Test("Built-in TCP transport passes transport conformance end-to-end")
     func tcpPassesConformance() async throws {
         // TCP's dial side is auto-registered on the Application; we only need to add its listener.

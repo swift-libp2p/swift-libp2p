@@ -21,8 +21,7 @@ import Testing
 /// the harness's plaintext-on-the-wire probe is expected to emit a *warning* — but the run must still
 /// pass (warnings are non-fatal). Self-tests against noise / plaintext-v2 live in the integration-tests
 /// package where those modules are available.
-@Suite("SecurityConformanceHarness", .serialized)
-struct SecurityConformanceHarnessTests {
+extension ConformanceHarnessTests {
     @Test("MockSecurity (plaintext) passes security conformance end-to-end")
     func mockSecurityPassesConformance() async throws {
         let report = try await runSecurityConformance(
