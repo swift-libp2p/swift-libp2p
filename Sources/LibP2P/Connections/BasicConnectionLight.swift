@@ -139,6 +139,9 @@ public class BasicConnectionLight: AppConnection, @unchecked Sendable {
                 //self.application.events.unregister(self)
             }
 
+            /// Fail any stream requests that were queued before the connection finished upgrading.
+            failQueuedStreams(Application.Connections.Errors.connectionUpgradeFailed)
+
             self.muxer?.onStream = nil
             self.muxer?.onStreamEnd = nil
             self.muxer?._connection = nil
@@ -700,7 +703,7 @@ public class BasicConnectionLight: AppConnection, @unchecked Sendable {
                 }
 
                 closePromise.completeWith(
-                    self.streams.map { $0.close(gracefully: false) }.flatten(on: self.eventLoop).flatMapAlways {
+                    self.streams.map { $0.close(gracefully: true) }.flatten(on: self.eventLoop).flatMapAlways {
                         result -> EventLoopFuture<Void> in
                         timeout.cancel()
                         switch result {

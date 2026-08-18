@@ -20,15 +20,11 @@ import Testing
 
 extension LibP2PTests {
 
-    @Suite("Libp2p KeyFile Tests")
+    @Suite("Libp2p KeyFile Tests", .serialized, .timeLimit(.minutes(5)))
     struct LibP2PKeyFileTests {
 
         /// Tests that when operating in `ephemeral` mode, a new `PeerID` is created on each instantiation of `Application`
-        @Test(
-            .serialized,
-            .timeLimit(.minutes(5)),
-            arguments: [LibP2PCrypto.Keys.KeyPairType.Ed25519, .RSA(bits: .B1024), .Secp256k1]
-        )
+        @Test(arguments: [LibP2PCrypto.Keys.KeyPairType.Ed25519, .RSA(bits: .B1024), .Secp256k1])
         func testLibP2P_KeyFile_Ephemeral(_ keyType: LibP2PCrypto.Keys.KeyPairType) async throws {
             // PeerID Ephemeral Mode
             let keyPair: KeyPairFile = .ephemeral(type: keyType)
@@ -66,11 +62,7 @@ extension LibP2PTests {
 
         /// Test that a libp2p keyfile `PeerID` is generated on the first run
         /// and that the same value is persisted and subsequently re‑loaded using an inline password.
-        @Test(
-            .serialized,
-            .timeLimit(.minutes(5)),
-            arguments: [LibP2PCrypto.Keys.KeyPairType.Ed25519, .RSA(bits: .B1024), .Secp256k1]
-        )
+        @Test(arguments: [LibP2PCrypto.Keys.KeyPairType.Ed25519, .RSA(bits: .B1024), .Secp256k1])
         func testLibP2P_KeyFilePersistence_Password(_ keyType: LibP2PCrypto.Keys.KeyPairType) async throws {
             await withKnownIssue("CI Tests fail to save / load keypair files sometimes", isIntermittent: true) {
                 let keyFilePath = KeyPairFile.Location.projectRoot.path(for: .testing, type: keyType)
@@ -140,11 +132,7 @@ extension LibP2PTests {
 
         /// Test that a libp2p keyfile `PeerID` is generated on the first run
         /// and that the same value is persisted and subsequently re‑loaded using an environment file.
-        @Test(
-            .serialized,
-            .timeLimit(.minutes(5)),
-            arguments: [LibP2PCrypto.Keys.KeyPairType.Ed25519, .RSA(bits: .B1024), .Secp256k1]
-        )
+        @Test(arguments: [LibP2PCrypto.Keys.KeyPairType.Ed25519, .RSA(bits: .B1024), .Secp256k1])
         func testLibP2P_KeyFilePersistence_Environment(_ keyType: LibP2PCrypto.Keys.KeyPairType) async throws {
             await withKnownIssue("CI Tests fail to save / load keypair files sometimes", isIntermittent: true) {
                 let keyFilePath = KeyPairFile.Location.projectRoot.path(for: .testing, type: keyType)
