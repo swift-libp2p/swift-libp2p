@@ -88,6 +88,16 @@ extension AppConnection {
 
                 // - TODO: we might want to be more specific here with the position we're adding our handlers...
                 secUpgrader.upgradeConnection(self, position: .last, securedPromise: promise).flatMap {
+                    // Install a buffering gate at the tail BEFORE removing the security "upgrader".
+                    // Removing "upgrader" can replay buffered bytes before we have our mss-muxer upgrader
+                    // in place to receive them, resulting in dropped bytes. The gate holds them until we
+                    // remove it (in `muxConnection`) once the mss-muxer handler is in place.
+                    self.channel.pipeline.addHandler(
+                        SecurityUpgradeGate(logger: self.logger),
+                        name: "security.gate",
+                        position: .last
+                    )
+                }.flatMap {
                     self.channel.pipeline.removeHandler(name: "upgrader")
                 }.whenComplete { res in
                     switch res {
@@ -151,7 +161,13 @@ extension AppConnection {
             mode: self.mode,
             logger: logger,
             promise: negotiationPromise
-        )
+        ).flatMap {
+            // The muxer negotiation handler is now installed behind the gate. Removing
+            // the gate replays any bytes it buffered during the security→muxer transition.
+            self.channel.pipeline.removeHandler(name: "security.gate").flatMapError { _ in
+                self.channel.eventLoop.makeSucceededVoidFuture()
+            }
+        }
     }
 }
 
