@@ -36,6 +36,13 @@ public class PartialIdentifyMessageDecoder: ByteToMessageDecoder {
         // Make sure there's data to be read
         guard buffer.readableBytes > 0 else { return .needMoreData }
 
+        // Backstop against unbounded buffering from a misbehaving / malicious peer.
+        guard buffer.readableBytes <= Identify.maxMessageSize else {
+            context.fireErrorCaught(Errors.invalidIdentifyMessage)
+            buffer.moveReaderIndex(forwardBy: buffer.readableBytes)
+            return .continue
+        }
+
         //Try and decode the Identity Reponse
         guard var remoteIdentify = try? IdentifyMessage(serializedBytes: Data(buffer.readableBytesView)) else {
             return .needMoreData

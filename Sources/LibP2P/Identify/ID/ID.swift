@@ -22,6 +22,9 @@ import NIOConcurrencyHelpers
 public final class Identify: IdentityManager, CustomStringConvertible {
     static let protocolVersion: String = "ipfs/0.1.0"
 
+    /// Maximum size (in bytes) we're willing to buffer/accept for a single Identify message.
+    static let maxMessageSize: Int = 8 * 1024
+
     let application: Application?
     let localPeerID: PeerID
     private let logger: Logger
