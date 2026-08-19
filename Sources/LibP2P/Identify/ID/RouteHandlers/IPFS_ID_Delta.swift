@@ -51,7 +51,8 @@ private func handleDeltaMessage(_ req: Request) {
 
     let delta = message.delta
 
-    guard !delta.addedProtocols.isEmpty && !delta.rmProtocols.isEmpty else {
+    // A delta may carry additions only, removals only, or both
+    guard !delta.addedProtocols.isEmpty || !delta.rmProtocols.isEmpty else {
         req.logger.error("Identify::Delta::Empty Delta message, nothing to do...")
         return
     }
