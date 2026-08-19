@@ -182,6 +182,50 @@ extension Identify {
             return
         }
     }
+
+    /// Verifies the optional signed peer record carried in an Identify message.
+    ///
+    /// Returns the verified `PeerRecord` only when:
+    /// - both `publicKey` and `signedPeerRecord` are present,
+    /// - the envelope signature validates against the advertised public key, and
+    /// - the record's peer ID matches the peer we authenticated on this connection.
+    ///
+    /// Otherwise returns `nil` (the caller still stores the message's unsigned fields).
+    private func verifiedPeerRecord(
+        from remoteIdentify: IdentifyMessage,
+        expectedPeer: PeerID,
+        connection: Connection
+    ) -> PeerRecord? {
+        guard !remoteIdentify.signedPeerRecord.isEmpty, !remoteIdentify.publicKey.isEmpty else {
+            connection.logger.trace("Identify::No signed peer record present, storing unsigned fields only")
+            return nil
+        }
+        do {
+            let signedEnvelope = try SealedEnvelope(
+                marshaledEnvelope: remoteIdentify.signedPeerRecord.byteArray,
+                verifiedWithPublicKey: remoteIdentify.publicKey.byteArray
+            )
+            let peerRecord = try PeerRecord(
+                marshaledData: Data(signedEnvelope.rawPayload),
+                withPublicKey: remoteIdentify.publicKey
+            )
+            /// The record must belong to the same peer that opened this stream
+            guard peerRecord.peerID == expectedPeer else {
+                connection.logger.warning(
+                    "Identify::Signed peer record identity (\(peerRecord.peerID.b58String)) does not match the authenticated peer (\(expectedPeer.b58String)); ignoring record"
+                )
+                return nil
+            }
+            connection.logger.debug("Identify::\n\(signedEnvelope)")
+            connection.logger.debug("Identify::\n\(peerRecord)")
+            return peerRecord
+        } catch {
+            connection.logger.warning(
+                "Identify::Failed to verify signed peer record -> \(error); storing unsigned fields only"
+            )
+            return nil
+        }
+    }
 }
 
 extension Identify {
