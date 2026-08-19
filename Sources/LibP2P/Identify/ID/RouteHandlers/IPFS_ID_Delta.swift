@@ -43,6 +43,12 @@ private func handleDeltaMessage(_ req: Request) {
         return
     }
 
+    // Ensure we have a remote peer available
+    guard let remotePeer = req.remotePeer else {
+        req.logger.error("Identify::Delta::Cannot apply delta on an unauthenticated stream")
+        return
+    }
+
     let delta = message.delta
 
     guard !delta.addedProtocols.isEmpty && !delta.rmProtocols.isEmpty else {
@@ -59,7 +65,7 @@ private func handleDeltaMessage(_ req: Request) {
                 protocols: delta.addedProtocols.compactMap {
                     SemVerProtocol($0)
                 },
-                fromPeer: req.remotePeer!,
+                fromPeer: remotePeer,
                 on: req.eventLoop
             )
         )
@@ -72,7 +78,7 @@ private func handleDeltaMessage(_ req: Request) {
                 protocols: delta.addedProtocols.compactMap {
                     SemVerProtocol($0)
                 },
-                toPeer: req.remotePeer!,
+                toPeer: remotePeer,
                 on: req.eventLoop
             )
         )
@@ -80,7 +86,7 @@ private func handleDeltaMessage(_ req: Request) {
 
     // Get new set of supported protocols
     tasks.flatten(on: req.eventLoop).flatMap { Void -> EventLoopFuture<[SemVerProtocol]> in
-        req.application.peers.getProtocols(forPeer: req.remotePeer!, on: req.eventLoop)
+        req.application.peers.getProtocols(forPeer: remotePeer, on: req.eventLoop)
     }.whenComplete { result in
         switch result {
         case .failure(let error):
@@ -91,7 +97,7 @@ private func handleDeltaMessage(_ req: Request) {
             req.application.events.post(
                 .remotePeerProtocolChange(
                     RemotePeerProtocolChange(
-                        peer: req.remotePeer!,
+                        peer: remotePeer,
                         protocols: protocols,
                         connection: req.connection
                     )
