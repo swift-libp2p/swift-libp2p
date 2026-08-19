@@ -84,6 +84,9 @@ public final class Identify: IdentityManager, CustomStringConvertible {
         /// Register our event listeners
         application.events.on(self, event: .upgraded(self.onNewConnection))
         application.events.on(self, event: .disconnected(self.onDisconnected))
+        /// When our own listen addresses change, proactively push the update to peers.
+        application.events.on(self, event: .listen(self.onLocalListenAddressesChanged))
+        application.events.on(self, event: .listenClosed(self.onLocalListenAddressesChanged))
 
         self.logger.trace("Initialized!")
     }
@@ -127,6 +130,13 @@ public final class Identify: IdentityManager, CustomStringConvertible {
         connection.logger.trace(
             "Identify::Connection to peer was closed, clean up / finalize any outstanding Identify data"
         )
+    }
+
+    /// Fired when one of our local listen addresses is added or removed. Per the identify
+    /// spec's push variant, we proactively inform connected peers of the change.
+    internal func onLocalListenAddressesChanged(_ proto: String, _ addr: Multiaddr) {
+        self.logger.trace("Identify::Local listen addresses changed (\(addr)); pushing update to peers")
+        self.push()
     }
 }
 
@@ -363,6 +373,32 @@ extension Identify {
                     RemotePeerProtocolChange(peer: identifiedPeer, protocols: protocols, connection: connection)
                 )
             )
+        }
+    }
+}
+
+/// Push Methods
+extension Identify {
+    /// Proactively pushes our current Identify state to every connected, authenticated
+    /// peer using the `/ipfs/id/push/1.0.0` protocol.
+    ///
+    /// Call this after our listen addresses or supported protocols change. Opening the
+    /// stream triggers the registered push route responder, which sends the message on
+    /// the outbound stream's `.ready` event (see `handlePushRequest`).
+    public func push() {
+        guard let application = application else { return }
+        application.connections.getConnections(on: nil).whenComplete { result in
+            switch result {
+            case .failure(let error):
+                self.logger.warning("Identify::Push::Failed to enumerate connections: \(error)")
+            case .success(let connections):
+                let targets = connections.filter { $0.remotePeer != nil && $0.status != .closed }
+                guard !targets.isEmpty else { return }
+                self.logger.trace("Identify::Push::Pushing updated Identify to \(targets.count) peer(s)")
+                for connection in targets {
+                    connection.newStream(forProtocol: Identify.Multicodecs.PUSH)
+                }
+            }
         }
     }
 }
