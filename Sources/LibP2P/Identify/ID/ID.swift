@@ -301,8 +301,10 @@ extension Identify {
 
         var id = IdentifyMessage()
         id.publicKey = try self.localPeerID.keyPair!.publicKey.marshal()
-        //let registeredProtos = self.libp2p?.registeredProtocols.compactMap { $0.protocolString() } ?? []
+        // TODO: We need a way to filter out protocols we don't want to advertise
+        // (like local only protocols, outbound only protocols, or protocols for certain peers only, deprecated protocols (like Delta)
         let registeredProtos = req.application.routes.all.compactMap { $0.description }
+            .filter { $0 != Identify.Multicodecs.DELTA }
         id.protocols = registeredProtos
         id.protocolVersion = Identify.protocolVersion
         id.agentVersion = req.application.agentVersion
