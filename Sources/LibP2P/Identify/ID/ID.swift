@@ -27,7 +27,7 @@ public final class Identify: IdentityManager, CustomStringConvertible {
 
     /// Outbound Ping Timeout
     static let pingTimeout: TimeAmount = .seconds(3)
-    
+
     let application: Application?
     let localPeerID: PeerID
     private let logger: Logger
@@ -487,7 +487,9 @@ extension Identify {
             self.pingCache.withLockedValue { pings in
                 if let outstandingPing = pings[peer.id] {
                     // If the outstanding ping has been in flight for more than 3 seconds, fail the promise
-                    if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime > Identify.pingTimeout.nanoseconds {
+                    if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime
+                        > Identify.pingTimeout.nanoseconds
+                    {
                         self.logger.trace("Identify::Ping::Outstanding ping older than our timeout, failing it")
                         outstandingPing.promise?.fail(Errors.timedOut)
                     } else if let promise = outstandingPing.promise {
@@ -523,7 +525,9 @@ extension Identify {
                 }
                 if let outstandingPing = pings[peer.id] {
                     // If the outstanding ping has been in flight for more than 3 seconds, fail the promise
-                    if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime > Identify.pingTimeout.nanoseconds {
+                    if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime
+                        > Identify.pingTimeout.nanoseconds
+                    {
                         self.logger.trace("Identify::Ping::Outstanding ping older than our timeout, failing it")
                         outstandingPing.promise?.fail(Errors.timedOut)
                     } else if let promise = outstandingPing.promise {
