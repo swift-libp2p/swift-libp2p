@@ -13,33 +13,50 @@
 //===----------------------------------------------------------------------===//
 
 internal func handlePushRequest(_ req: Request) -> Response<ByteBuffer> {
-    guard req.streamDirection == .inbound else {
-        req.logger.error("Identify::Push::Error - We dont support outbound /ipfs/id/push messages on this handler")
-        return .close
-    }
-
-    switch req.event {
-    case .ready:
-        return .stayOpen
-
-    case .data(let payload):
-        guard let manager = req.application.identify as? Identify else {
-            req.logger.error("Identify::Unknown IdentityManager. Unable to contruct identify message")
-            return .close
+    switch req.streamDirection {
+    case .outbound:
+        // We opened this stream to proactively push our current Identify state to the
+        // remote peer. Send it on `.ready` and close, mirroring the inbound id responder.
+        guard case .ready = req.event else { return .close }
+        do {
+            guard let manager = req.application.identify as? Identify else {
+                req.logger.error("Identify::Push::Unknown IdentityManager. Unable to construct push message")
+                throw Identify.Errors.unknownIdentityManager
+            }
+            let idMessage = try manager.constructIdentifyMessage(req: req)
+            req.logger.trace("Identify::Push::Sending push to \(String(describing: req.remotePeer))")
+            return .respondThenClose(req.allocator.buffer(bytes: idMessage))
+        } catch {
+            req.logger.error("Identify::Push::Failed to construct push message: \(error)")
+            return .reset(error)
         }
 
-        /// Update values that are present...
-        req.logger.warning("Identify::Push::We haven't tested this yet!")
-        manager.consumePushIdentifyMessage(
-            payload: Data(payload.readableBytesView),
-            id: req.remotePeer!.b58String,
-            connection: req.connection
-        )
-        return .close
+    case .inbound:
+        switch req.event {
+        case .ready:
+            return .stayOpen
 
-    default:
-        break
+        case .data(let payload):
+            guard let manager = req.application.identify as? Identify else {
+                req.logger.error("Identify::Unknown IdentityManager. Unable to contruct identify message")
+                return .close
+            }
+
+            guard let remotePeer = req.remotePeer else {
+                req.logger.error("Identify::Push::Refusing to process push on an unauthenticated stream")
+                return .close
+            }
+
+            /// Update values that are present...
+            manager.consumePushIdentifyMessage(
+                payload: Data(payload.readableBytesView),
+                id: remotePeer.b58String,
+                connection: req.connection
+            )
+            return .close
+
+        default:
+            return .close
+        }
     }
-
-    return .close
 }
