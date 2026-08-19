@@ -25,6 +25,9 @@ public final class Identify: IdentityManager, CustomStringConvertible {
     /// Maximum size (in bytes) we're willing to buffer/accept for a single Identify message.
     static let maxMessageSize: Int = 8 * 1024
 
+    /// Outbound Ping Timeout
+    static let pingTimeout: TimeAmount = .seconds(3)
+    
     let application: Application?
     let localPeerID: PeerID
     private let logger: Logger
@@ -371,8 +374,8 @@ extension Identify {
             self.pingCache.withLockedValue { pings in
                 if let outstandingPing = pings[peer.id] {
                     // If the outstanding ping has been in flight for more than 3 seconds, fail the promise
-                    if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime > 3_000_000_000 {
-                        print("We have an outstanding ping thats older than 3 seconds")
+                    if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime > Identify.pingTimeout.nanoseconds {
+                        self.logger.trace("Identify::Ping::Outstanding ping older than our timeout, failing it")
                         outstandingPing.promise?.fail(Errors.timedOut)
                     } else if let promise = outstandingPing.promise {
                         // If the outstanding ping hasn't timed out yet, just return the results of the existing promise
@@ -407,8 +410,8 @@ extension Identify {
                 }
                 if let outstandingPing = pings[peer.id] {
                     // If the outstanding ping has been in flight for more than 3 seconds, fail the promise
-                    if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime > 3_000_000_000 {
-                        print("We have an outstanding ping thats older than 3 seconds")
+                    if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime > Identify.pingTimeout.nanoseconds {
+                        self.logger.trace("Identify::Ping::Outstanding ping older than our timeout, failing it")
                         outstandingPing.promise?.fail(Errors.timedOut)
                     } else if let promise = outstandingPing.promise {
                         // If the outstanding ping hasn't timed out yet, just return the results of the existing promise
