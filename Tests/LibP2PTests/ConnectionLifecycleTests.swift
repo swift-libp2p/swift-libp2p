@@ -161,7 +161,7 @@ extension LibP2PTests {
                 #expect(stream.streamState == .open)
 
                 // Drive the production close path, running the loop so its submitted work resolves.
-                let closeFuture = connection.close()
+                let closeFuture: EventLoopFuture<Void> = connection.close()
                 loop.run()
                 try await closeFuture.get()
 
