@@ -59,11 +59,11 @@ private func handleDeltaMessage(_ req: Request) {
 
     var tasks: [EventLoopFuture<Void>] = []
 
-    // Remove old protocols
+    // Remove dropped protocols
     if !delta.rmProtocols.isEmpty {
         tasks.append(
             req.application.peers.remove(
-                protocols: delta.addedProtocols.compactMap {
+                protocols: delta.rmProtocols.compactMap {
                     SemVerProtocol($0)
                 },
                 fromPeer: remotePeer,
