@@ -309,15 +309,16 @@ extension Identify {
 /// PeerStore Update Methods
 extension Identify {
     private func updateIdentifiedPeerInPeerStore(
-        _ peerRecord: PeerRecord,
+        identifiedPeer: PeerID,
+        peerRecord: PeerRecord?,
         identifyMessage: IdentifyMessage,
-        connection: Connection
+        connection: Connection,
+        isPartialUpdate: Bool = false
     ) {
         guard let application = application else {
             connection.logger.error("Identify::Lost reference to our Application")
             return
         }
-        let identifiedPeer = peerRecord.peerID
         guard identifiedPeer != application.peerID else { return }
         connection.logger.trace("Identify::Identified Remote Peer")
 
@@ -326,35 +327,42 @@ extension Identify {
         // This call to add key will only update/upgrade the PeerID in the PeerStore, it wont 'downgrade' an existing PeerID
         tasks.append(application.peers.add(key: identifiedPeer, on: connection.channel.eventLoop))
 
-        // Update our peers listening addresses
-        let listeningAddresses = identifyMessage.listenAddrs.compactMap { multiaddrData -> Multiaddr? in
-            if let ma = try? Multiaddr(multiaddrData) {
-                if !ma.protocols().contains(.p2p) {
-                    return try? ma.encapsulate(proto: .p2p, address: identifiedPeer.b58String)
-                } else {
-                    return ma
+        // Update our peers listening addresses.
+        // For partial (push) updates an empty list means "no change", so we skip it
+        if !identifyMessage.listenAddrs.isEmpty {
+            let listeningAddresses = identifyMessage.listenAddrs.compactMap { multiaddrData -> Multiaddr? in
+                if let ma = try? Multiaddr(multiaddrData) {
+                    if !ma.protocols().contains(.p2p) {
+                        return try? ma.encapsulate(proto: .p2p, address: identifiedPeer.b58String)
+                    } else {
+                        return ma
+                    }
                 }
+                return nil
             }
-            return nil
-        }
-        tasks.append(
-            application.peers.add(
-                addresses: listeningAddresses,
-                toPeer: identifiedPeer,
-                on: connection.channel.eventLoop
+            tasks.append(
+                application.peers.add(
+                    addresses: listeningAddresses,
+                    toPeer: identifiedPeer,
+                    on: connection.channel.eventLoop
+                )
             )
-        )
+        }
 
-        // Update our peers known protocols
+        // Update our peers known protocols (skip empty lists on partial updates).
         let protocols = identifyMessage.protocols.compactMap { SemVerProtocol($0) }
-        connection.logger.trace("Identify::Adding known protocols to peer \(identifiedPeer.b58String)")
-        connection.logger.trace("Identify::\(protocols.map({ $0.stringValue }).joined(separator: ","))")
-        tasks.append(
-            application.peers.add(protocols: protocols, toPeer: identifiedPeer, on: connection.channel.eventLoop)
-        )
+        if !protocols.isEmpty {
+            connection.logger.trace("Identify::Adding known protocols to peer \(identifiedPeer.b58String)")
+            connection.logger.trace("Identify::\(protocols.map({ $0.stringValue }).joined(separator: ","))")
+            tasks.append(
+                application.peers.add(protocols: protocols, toPeer: identifiedPeer, on: connection.channel.eventLoop)
+            )
+        }
 
-        // Add the PeerRecord to our Records list
-        tasks.append(application.peers.add(record: peerRecord, on: connection.channel.eventLoop))
+        // Add the (verified) PeerRecord to our Records list when one is present.
+        if let peerRecord = peerRecord {
+            tasks.append(application.peers.add(record: peerRecord, on: connection.channel.eventLoop))
+        }
 
         // Update our peers metadata (agent version, protocol version, etc.. maybe include a verified attribute (the signed peer record))
         connection.logger.trace("Identify::Adding Metadata to peer \(identifiedPeer.b58String)")
@@ -397,7 +405,7 @@ extension Identify {
             )
         }
 
-        // -TODO: Our Connection should do this when we complete our security handshake, also we should remove this here...
+        // TODO: Our Connection should do this when we complete our security handshake, also we should remove this here...
         tasks.append(
             application.peers.add(
                 metaKey: .LastHandshake,
@@ -412,6 +420,9 @@ extension Identify {
             connection.logger.trace(
                 "Identify::Done Adding Metadata to PeerStore. Alerting Application to Remote Peer Protocol Change."
             )
+            // On a partial (push) update with no protocol change there's nothing to
+            // report, so avoid emitting a misleading empty protocol-change event.
+            guard !isPartialUpdate || !protocols.isEmpty else { return }
             application.events.post(
                 .remotePeerProtocolChange(
                     RemotePeerProtocolChange(peer: identifiedPeer, protocols: protocols, connection: connection)
