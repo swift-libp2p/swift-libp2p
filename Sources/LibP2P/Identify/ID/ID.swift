@@ -22,6 +22,12 @@ import NIOConcurrencyHelpers
 public final class Identify: IdentityManager, CustomStringConvertible {
     static let protocolVersion: String = "ipfs/0.1.0"
 
+    /// Maximum size (in bytes) we're willing to buffer/accept for a single Identify message.
+    static let maxMessageSize: Int = 8 * 1024
+
+    /// Outbound Ping Timeout
+    static let pingTimeout: TimeAmount = .seconds(3)
+
     let application: Application?
     let localPeerID: PeerID
     private let logger: Logger
@@ -30,6 +36,7 @@ public final class Identify: IdentityManager, CustomStringConvertible {
 
     public enum Errors: Error {
         case timedOut
+        case unknownIdentityManager
     }
 
     internal struct PendingPing {
@@ -77,6 +84,9 @@ public final class Identify: IdentityManager, CustomStringConvertible {
         /// Register our event listeners
         application.events.on(self, event: .upgraded(self.onNewConnection))
         application.events.on(self, event: .disconnected(self.onDisconnected))
+        /// When our own listen addresses change, proactively push the update to peers.
+        application.events.on(self, event: .listen(self.onLocalListenAddressesChanged))
+        application.events.on(self, event: .listenClosed(self.onLocalListenAddressesChanged))
 
         self.logger.trace("Initialized!")
     }
@@ -121,6 +131,13 @@ public final class Identify: IdentityManager, CustomStringConvertible {
             "Identify::Connection to peer was closed, clean up / finalize any outstanding Identify data"
         )
     }
+
+    /// Fired when one of our local listen addresses is added or removed. Per the identify
+    /// spec's push variant, we proactively inform connected peers of the change.
+    internal func onLocalListenAddressesChanged(_ proto: String, _ addr: Multiaddr) {
+        self.logger.trace("Identify::Local listen addresses changed (\(addr)); pushing update to peers")
+        self.push()
+    }
 }
 
 extension Identify {
@@ -133,26 +150,36 @@ extension Identify {
         do {
             /// Ensure the Payload is an IdentifyMessage
             let remoteIdentify = try IdentifyMessage(serializedBytes: payload)
-            /// and that is valid
-            let signedEnvelope = try SealedEnvelope(
-                marshaledEnvelope: remoteIdentify.signedPeerRecord.byteArray,
-                verifiedWithPublicKey: remoteIdentify.publicKey.byteArray
-            )
-            let peerRecord = try PeerRecord(
-                marshaledData: Data(signedEnvelope.rawPayload),
-                withPublicKey: remoteIdentify.publicKey
-            )
 
-            connection.logger.debug("Identify::\n\(signedEnvelope)")
-            connection.logger.debug("Identify::\n\(peerRecord)")
+            /// The identity of the peer is established by the security handshake, not
+            /// by the contents of the Identify message.
+            guard let identifiedPeer = connection.remotePeer else {
+                connection.logger.warning(
+                    "Identify::Refusing to consume IdentifyMessage on an unauthenticated connection"
+                )
+                return
+            }
+
+            /// The signed peer record is optional per the spec. When present, verify it
+            /// and confirm it belongs to the authenticated peer before trusting it.
+            let peerRecord = self.verifiedPeerRecord(
+                from: remoteIdentify,
+                expectedPeer: identifiedPeer,
+                connection: connection
+            )
 
             connection.logger.trace("Identify::Updating PeerStore with Identified Peer")
-            self.updateIdentifiedPeerInPeerStore(peerRecord, identifyMessage: remoteIdentify, connection: connection)
+            self.updateIdentifiedPeerInPeerStore(
+                identifiedPeer: identifiedPeer,
+                peerRecord: peerRecord,
+                identifyMessage: remoteIdentify,
+                connection: connection
+            )
 
             /// Publish the identifiedPeer event
             self.application?.events.post(
                 .identifiedPeer(
-                    IdentifiedPeer(peer: peerRecord.peerID, identity: try remoteIdentify.serializedData().byteArray)
+                    IdentifiedPeer(peer: identifiedPeer, identity: try remoteIdentify.serializedData().byteArray)
                 )
             )
 
@@ -163,6 +190,50 @@ extension Identify {
             connection.logger.warning("Identify::Failed to consume Remote IdentifyMessage -> \(error)")
             connection.logger.trace("\(payload.toHexString())")
             return
+        }
+    }
+
+    /// Verifies the optional signed peer record carried in an Identify message.
+    ///
+    /// Returns the verified `PeerRecord` only when:
+    /// - both `publicKey` and `signedPeerRecord` are present,
+    /// - the envelope signature validates against the advertised public key, and
+    /// - the record's peer ID matches the peer we authenticated on this connection.
+    ///
+    /// Otherwise returns `nil` (the caller still stores the message's unsigned fields).
+    private func verifiedPeerRecord(
+        from remoteIdentify: IdentifyMessage,
+        expectedPeer: PeerID,
+        connection: Connection
+    ) -> PeerRecord? {
+        guard !remoteIdentify.signedPeerRecord.isEmpty, !remoteIdentify.publicKey.isEmpty else {
+            connection.logger.trace("Identify::No signed peer record present, storing unsigned fields only")
+            return nil
+        }
+        do {
+            let signedEnvelope = try SealedEnvelope(
+                marshaledEnvelope: remoteIdentify.signedPeerRecord.byteArray,
+                verifiedWithPublicKey: remoteIdentify.publicKey.byteArray
+            )
+            let peerRecord = try PeerRecord(
+                marshaledData: Data(signedEnvelope.rawPayload),
+                withPublicKey: remoteIdentify.publicKey
+            )
+            /// The record must belong to the same peer that opened this stream
+            guard peerRecord.peerID == expectedPeer else {
+                connection.logger.warning(
+                    "Identify::Signed peer record identity (\(peerRecord.peerID.b58String)) does not match the authenticated peer (\(expectedPeer.b58String)); ignoring record"
+                )
+                return nil
+            }
+            connection.logger.debug("Identify::\n\(signedEnvelope)")
+            connection.logger.debug("Identify::\n\(peerRecord)")
+            return peerRecord
+        } catch {
+            connection.logger.warning(
+                "Identify::Failed to verify signed peer record -> \(error); storing unsigned fields only"
+            )
+            return nil
         }
     }
 }
@@ -176,21 +247,30 @@ extension Identify {
         do {
             /// Ensure the Payload is an IdentifyMessage
             let remoteIdentify = try IdentifyMessage(serializedBytes: payload)
-            /// and that is valid
-            let signedEnvelope = try SealedEnvelope(
-                marshaledEnvelope: remoteIdentify.signedPeerRecord.byteArray,
-                verifiedWithPublicKey: remoteIdentify.publicKey.byteArray
-            )
-            let peerRecord = try PeerRecord(
-                marshaledData: Data(signedEnvelope.rawPayload),
-                withPublicKey: remoteIdentify.publicKey
-            )
 
-            connection.logger.debug("Identify::Push::\n\(signedEnvelope)")
-            connection.logger.debug("Identify::Push::\n\(peerRecord)")
+            /// The identity of the peer is established by the security handshake, not
+            /// by the contents of the Identify message.
+            guard let identifiedPeer = connection.remotePeer else {
+                connection.logger.warning("Identify::Push::Refusing to consume push on an unauthenticated connection")
+                return
+            }
+
+            /// Optional signed record, verified and bound to the authenticated peer.
+            let peerRecord = self.verifiedPeerRecord(
+                from: remoteIdentify,
+                expectedPeer: identifiedPeer,
+                connection: connection
+            )
 
             connection.logger.trace("Identify::Push::Updating PeerStore with Identified Peer")
-            self.updateIdentifiedPeerInPeerStore(peerRecord, identifyMessage: remoteIdentify, connection: connection)
+            /// Push messages are partial updates: only the fields present should be applied
+            self.updateIdentifiedPeerInPeerStore(
+                identifiedPeer: identifiedPeer,
+                peerRecord: peerRecord,
+                identifyMessage: remoteIdentify,
+                connection: connection,
+                isPartialUpdate: true
+            )
 
             connection.logger.trace(
                 "Identify::Push::Successfully Updated Identified Remote Peer using the Identify Push Protocol"
@@ -221,8 +301,10 @@ extension Identify {
 
         var id = IdentifyMessage()
         id.publicKey = try self.localPeerID.keyPair!.publicKey.marshal()
-        //let registeredProtos = self.libp2p?.registeredProtocols.compactMap { $0.protocolString() } ?? []
+        // TODO: We need a way to filter out protocols we don't want to advertise
+        // (like local only protocols, outbound only protocols, or protocols for certain peers only, deprecated protocols (like Delta)
         let registeredProtos = req.application.routes.all.compactMap { $0.description }
+            .filter { $0 != Identify.Multicodecs.DELTA }
         id.protocols = registeredProtos
         id.protocolVersion = Identify.protocolVersion
         id.agentVersion = req.application.agentVersion
@@ -248,15 +330,16 @@ extension Identify {
 /// PeerStore Update Methods
 extension Identify {
     private func updateIdentifiedPeerInPeerStore(
-        _ peerRecord: PeerRecord,
+        identifiedPeer: PeerID,
+        peerRecord: PeerRecord?,
         identifyMessage: IdentifyMessage,
-        connection: Connection
+        connection: Connection,
+        isPartialUpdate: Bool = false
     ) {
         guard let application = application else {
             connection.logger.error("Identify::Lost reference to our Application")
             return
         }
-        let identifiedPeer = peerRecord.peerID
         guard identifiedPeer != application.peerID else { return }
         connection.logger.trace("Identify::Identified Remote Peer")
 
@@ -265,35 +348,42 @@ extension Identify {
         // This call to add key will only update/upgrade the PeerID in the PeerStore, it wont 'downgrade' an existing PeerID
         tasks.append(application.peers.add(key: identifiedPeer, on: connection.channel.eventLoop))
 
-        // Update our peers listening addresses
-        let listeningAddresses = identifyMessage.listenAddrs.compactMap { multiaddrData -> Multiaddr? in
-            if let ma = try? Multiaddr(multiaddrData) {
-                if !ma.protocols().contains(.p2p) {
-                    return try? ma.encapsulate(proto: .p2p, address: identifiedPeer.b58String)
-                } else {
-                    return ma
+        // Update our peers listening addresses.
+        // For partial (push) updates an empty list means "no change", so we skip it
+        if !identifyMessage.listenAddrs.isEmpty {
+            let listeningAddresses = identifyMessage.listenAddrs.compactMap { multiaddrData -> Multiaddr? in
+                if let ma = try? Multiaddr(multiaddrData) {
+                    if !ma.protocols().contains(.p2p) {
+                        return try? ma.encapsulate(proto: .p2p, address: identifiedPeer.b58String)
+                    } else {
+                        return ma
+                    }
                 }
+                return nil
             }
-            return nil
-        }
-        tasks.append(
-            application.peers.add(
-                addresses: listeningAddresses,
-                toPeer: identifiedPeer,
-                on: connection.channel.eventLoop
+            tasks.append(
+                application.peers.add(
+                    addresses: listeningAddresses,
+                    toPeer: identifiedPeer,
+                    on: connection.channel.eventLoop
+                )
             )
-        )
+        }
 
-        // Update our peers known protocols
+        // Update our peers known protocols (skip empty lists on partial updates).
         let protocols = identifyMessage.protocols.compactMap { SemVerProtocol($0) }
-        connection.logger.trace("Identify::Adding known protocols to peer \(identifiedPeer.b58String)")
-        connection.logger.trace("Identify::\(protocols.map({ $0.stringValue }).joined(separator: ","))")
-        tasks.append(
-            application.peers.add(protocols: protocols, toPeer: identifiedPeer, on: connection.channel.eventLoop)
-        )
+        if !protocols.isEmpty {
+            connection.logger.trace("Identify::Adding known protocols to peer \(identifiedPeer.b58String)")
+            connection.logger.trace("Identify::\(protocols.map({ $0.stringValue }).joined(separator: ","))")
+            tasks.append(
+                application.peers.add(protocols: protocols, toPeer: identifiedPeer, on: connection.channel.eventLoop)
+            )
+        }
 
-        // Add the PeerRecord to our Records list
-        tasks.append(application.peers.add(record: peerRecord, on: connection.channel.eventLoop))
+        // Add the (verified) PeerRecord to our Records list when one is present.
+        if let peerRecord = peerRecord {
+            tasks.append(application.peers.add(record: peerRecord, on: connection.channel.eventLoop))
+        }
 
         // Update our peers metadata (agent version, protocol version, etc.. maybe include a verified attribute (the signed peer record))
         connection.logger.trace("Identify::Adding Metadata to peer \(identifiedPeer.b58String)")
@@ -336,7 +426,7 @@ extension Identify {
             )
         }
 
-        // -TODO: Our Connection should do this when we complete our security handshake, also we should remove this here...
+        // TODO: Our Connection should do this when we complete our security handshake, also we should remove this here...
         tasks.append(
             application.peers.add(
                 metaKey: .LastHandshake,
@@ -351,11 +441,40 @@ extension Identify {
             connection.logger.trace(
                 "Identify::Done Adding Metadata to PeerStore. Alerting Application to Remote Peer Protocol Change."
             )
+            // On a partial (push) update with no protocol change there's nothing to
+            // report, so avoid emitting a misleading empty protocol-change event.
+            guard !isPartialUpdate || !protocols.isEmpty else { return }
             application.events.post(
                 .remotePeerProtocolChange(
                     RemotePeerProtocolChange(peer: identifiedPeer, protocols: protocols, connection: connection)
                 )
             )
+        }
+    }
+}
+
+/// Push Methods
+extension Identify {
+    /// Proactively pushes our current Identify state to every connected, authenticated
+    /// peer using the `/ipfs/id/push/1.0.0` protocol.
+    ///
+    /// Call this after our listen addresses or supported protocols change. Opening the
+    /// stream triggers the registered push route responder, which sends the message on
+    /// the outbound stream's `.ready` event (see `handlePushRequest`).
+    public func push() {
+        guard let application = application else { return }
+        application.connections.getConnections(on: nil).whenComplete { result in
+            switch result {
+            case .failure(let error):
+                self.logger.warning("Identify::Push::Failed to enumerate connections: \(error)")
+            case .success(let connections):
+                let targets = connections.filter { $0.remotePeer != nil && $0.status != .closed }
+                guard !targets.isEmpty else { return }
+                self.logger.trace("Identify::Push::Pushing updated Identify to \(targets.count) peer(s)")
+                for connection in targets {
+                    connection.newStream(forProtocol: Identify.Multicodecs.PUSH)
+                }
+            }
         }
     }
 }
@@ -368,8 +487,10 @@ extension Identify {
             self.pingCache.withLockedValue { pings in
                 if let outstandingPing = pings[peer.id] {
                     // If the outstanding ping has been in flight for more than 3 seconds, fail the promise
-                    if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime > 3_000_000_000 {
-                        print("We have an outstanding ping thats older than 3 seconds")
+                    if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime
+                        > Identify.pingTimeout.nanoseconds
+                    {
+                        self.logger.trace("Identify::Ping::Outstanding ping older than our timeout, failing it")
                         outstandingPing.promise?.fail(Errors.timedOut)
                     } else if let promise = outstandingPing.promise {
                         // If the outstanding ping hasn't timed out yet, just return the results of the existing promise
@@ -404,8 +525,10 @@ extension Identify {
                 }
                 if let outstandingPing = pings[peer.id] {
                     // If the outstanding ping has been in flight for more than 3 seconds, fail the promise
-                    if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime > 3_000_000_000 {
-                        print("We have an outstanding ping thats older than 3 seconds")
+                    if DispatchTime.now().uptimeNanoseconds - outstandingPing.startTime
+                        > Identify.pingTimeout.nanoseconds
+                    {
+                        self.logger.trace("Identify::Ping::Outstanding ping older than our timeout, failing it")
                         outstandingPing.promise?.fail(Errors.timedOut)
                     } else if let promise = outstandingPing.promise {
                         // If the outstanding ping hasn't timed out yet, just return the results of the existing promise

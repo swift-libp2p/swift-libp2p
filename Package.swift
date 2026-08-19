@@ -29,7 +29,7 @@ let package = Package(
     dependencies: [
         // Dependencies declare other packages that this package depends on.
         // LibP2P Core
-        .package(url: "https://github.com/swift-libp2p/swift-libp2p-core.git", .upToNextMinor(from: "0.5.0")),
+        .package(url: "https://github.com/swift-libp2p/swift-libp2p-core.git", .upToNextMinor(from: "0.5.2")),
         // LibP2P Multiaddr
         .package(url: "https://github.com/swift-libp2p/swift-multiaddr.git", .upToNextMinor(from: "0.2.0")),
         // LibP2P Peer Identities

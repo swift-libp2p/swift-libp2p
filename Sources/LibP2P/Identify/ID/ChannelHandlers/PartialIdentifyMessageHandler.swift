@@ -36,68 +36,47 @@ public class PartialIdentifyMessageDecoder: ByteToMessageDecoder {
         // Make sure there's data to be read
         guard buffer.readableBytes > 0 else { return .needMoreData }
 
+        // Backstop against unbounded buffering from a misbehaving / malicious peer.
+        guard buffer.readableBytes <= Identify.maxMessageSize else {
+            context.fireErrorCaught(Errors.invalidIdentifyMessage)
+            buffer.moveReaderIndex(forwardBy: buffer.readableBytes)
+            return .continue
+        }
+
         //Try and decode the Identity Reponse
         guard var remoteIdentify = try? IdentifyMessage(serializedBytes: Data(buffer.readableBytesView)) else {
             return .needMoreData
         }
 
-        if !remoteIdentify.publicKey.isEmpty && !remoteIdentify.signedPeerRecord.isEmpty {
-            // Send the message's bytes up the pipeline to the next handler.
-            context.fireChannelRead(self.wrapInboundOut(buffer))
+        // `publicKey` and `signedPeerRecord` are both optional per the identify spec, so
+        // any message that decodes is forwarded to the route handler immediately. We keep
+        // a best-effort cache of a public key seen without a signed record so that a peer
+        // that splits the two across frames can still have its record verified — but we
+        // never stall waiting for a second frame that may never arrive.
+        let hasPublicKey = !remoteIdentify.publicKey.isEmpty
+        let hasSignedRecord = !remoteIdentify.signedPeerRecord.isEmpty
 
-            // Consume the bytes
-            buffer.moveReaderIndex(forwardBy: buffer.readableBytes)
-
-            // We can keep going if you have more data.
-            return .continue
-
-        } else {
-            // We received a partial identify message...
-            if !remoteIdentify.publicKey.isEmpty && remoteIdentify.signedPeerRecord.isEmpty {
-                // If this message contains the pubkey without the signature then store it in our cache
-                self.partialIdentify = remoteIdentify
-
-                // Consume the bytes
-                buffer.moveReaderIndex(forwardBy: buffer.readableBytes)
-
-                // Wait for the remainder of the IdentifyMessage to come in...
-                return .needMoreData
-
-            } else if !remoteIdentify.signedPeerRecord.isEmpty && remoteIdentify.publicKey.isEmpty,
-                var cachedIdentify = self.partialIdentify
-            {
-                // If this message contains the signature without the pubkey, append the sig to the cached entry and attempt to validate
-                cachedIdentify.signedPeerRecord = remoteIdentify.signedPeerRecord
-
-                // Swap the remote identify message with the cached version and append the signedPeerRecord
-                remoteIdentify = cachedIdentify
-
-                // Consume the bytes
-                buffer.moveReaderIndex(forwardBy: buffer.readableBytes)
-
-                // Send the message's bytes up the pipeline to the next handler.
-                context.fireChannelRead(
-                    self.wrapInboundOut(ByteBuffer(bytes: try remoteIdentify.serializedData().byteArray))
-                )
-
-                // We can keep going if you have more data.
-                return .continue
-
-            } else {
-                //print("PartialIdentifyMessageHandler:SignedPeerRecord is nil: \(remoteIdentify.signedPeerRecord.isEmpty)")
-                //print("PartialIdentifyMessageHandler:PublicKey is nil: \(remoteIdentify.publicKey.isEmpty)")
-                //print(remoteIdentify)
-
-                // Partial identify message received and we're not sure what to do with it...
-                context.fireErrorCaught(Errors.invalidPartialIdentifyMessage)
-
-                // Consume the bytes
-                buffer.moveReaderIndex(forwardBy: buffer.readableBytes)
-
-                // We can keep going if you have more data.
-                return .continue
-            }
+        if hasPublicKey && !hasSignedRecord {
+            // Remember the public key in case a record-only frame follows.
+            self.partialIdentify = remoteIdentify
+        } else if hasSignedRecord && !hasPublicKey, var cachedIdentify = self.partialIdentify {
+            // Reunite a record-only frame with the previously seen public key.
+            cachedIdentify.signedPeerRecord = remoteIdentify.signedPeerRecord
+            remoteIdentify = cachedIdentify
+            self.partialIdentify = nil
+        } else if hasPublicKey && hasSignedRecord {
+            // Complete message — clear any stale cache.
+            self.partialIdentify = nil
         }
+
+        // Consume the bytes and forward the (possibly reassembled) message up the pipeline.
+        buffer.moveReaderIndex(forwardBy: buffer.readableBytes)
+        context.fireChannelRead(
+            self.wrapInboundOut(ByteBuffer(bytes: try remoteIdentify.serializedData().byteArray))
+        )
+
+        // We can keep going if there's more data.
+        return .continue
     }
 
     public func decodeLast(

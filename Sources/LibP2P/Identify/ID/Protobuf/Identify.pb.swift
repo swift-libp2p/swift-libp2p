@@ -21,15 +21,11 @@
 // For information on using the generated types, please see the documentation:
 //   https://github.com/apple/swift-protobuf/
 
-//
-//  IdentifyProto.proto
-//
-//  Created by Libp2p
-//  Modified by Brandon Toms on 5/1/22.
-//
-// https://github.com/libp2p/specs/blob/master/identify/README.md
-
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 import SwiftProtobuf
 
 // If the compiler emits an error on this type, it is because this file
@@ -65,22 +61,22 @@ struct IdentifyMessage: Sendable {
 
   /// protocolVersion determines compatibility between peers
   var protocolVersion: String {
-    get {return _protocolVersion ?? String()}
+    get {_protocolVersion ?? String()}
     set {_protocolVersion = newValue}
   }
   /// Returns true if `protocolVersion` has been explicitly set.
-  var hasProtocolVersion: Bool {return self._protocolVersion != nil}
+  var hasProtocolVersion: Bool {self._protocolVersion != nil}
   /// Clears the value of `protocolVersion`. Subsequent reads from it will return its default value.
   mutating func clearProtocolVersion() {self._protocolVersion = nil}
 
   /// agentVersion is like a UserAgent string in browsers, or client version in
   /// bittorrent includes the client name and client.
   var agentVersion: String {
-    get {return _agentVersion ?? String()}
+    get {_agentVersion ?? String()}
     set {_agentVersion = newValue}
   }
   /// Returns true if `agentVersion` has been explicitly set.
-  var hasAgentVersion: Bool {return self._agentVersion != nil}
+  var hasAgentVersion: Bool {self._agentVersion != nil}
   /// Clears the value of `agentVersion`. Subsequent reads from it will return its default value.
   mutating func clearAgentVersion() {self._agentVersion = nil}
 
@@ -88,11 +84,11 @@ struct IdentifyMessage: Sendable {
   /// - may not need to be sent, as secure channel implies it has been sent.
   /// - then again, if we change / disable secure channel, may still want it.
   var publicKey: Data {
-    get {return _publicKey ?? Data()}
+    get {_publicKey ?? Data()}
     set {_publicKey = newValue}
   }
   /// Returns true if `publicKey` has been explicitly set.
-  var hasPublicKey: Bool {return self._publicKey != nil}
+  var hasPublicKey: Bool {self._publicKey != nil}
   /// Clears the value of `publicKey`. Subsequent reads from it will return its default value.
   mutating func clearPublicKey() {self._publicKey = nil}
 
@@ -105,11 +101,11 @@ struct IdentifyMessage: Sendable {
   /// helps the remote endpoint determine whether its connection to the local
   /// peer goes through NAT.
   var observedAddr: Data {
-    get {return _observedAddr ?? Data()}
+    get {_observedAddr ?? Data()}
     set {_observedAddr = newValue}
   }
   /// Returns true if `observedAddr` has been explicitly set.
-  var hasObservedAddr: Bool {return self._observedAddr != nil}
+  var hasObservedAddr: Bool {self._observedAddr != nil}
   /// Clears the value of `observedAddr`. Subsequent reads from it will return its default value.
   mutating func clearObservedAddr() {self._observedAddr = nil}
 
@@ -119,11 +115,11 @@ struct IdentifyMessage: Sendable {
   /// a delta update is incompatible with everything else. If this field is
   /// included, none of the others can appear.
   var delta: Delta {
-    get {return _delta ?? Delta()}
+    get {_delta ?? Delta()}
     set {_delta = newValue}
   }
   /// Returns true if `delta` has been explicitly set.
-  var hasDelta: Bool {return self._delta != nil}
+  var hasDelta: Bool {self._delta != nil}
   /// Clears the value of `delta`. Subsequent reads from it will return its default value.
   mutating func clearDelta() {self._delta = nil}
 
@@ -135,11 +131,11 @@ struct IdentifyMessage: Sendable {
   /// github.com/libp2p/go-libp2p-core/peer/pb/peer_record.proto for message
   /// definitions.
   var signedPeerRecord: Data {
-    get {return _signedPeerRecord ?? Data()}
+    get {_signedPeerRecord ?? Data()}
     set {_signedPeerRecord = newValue}
   }
   /// Returns true if `signedPeerRecord` has been explicitly set.
-  var hasSignedPeerRecord: Bool {return self._signedPeerRecord != nil}
+  var hasSignedPeerRecord: Bool {self._signedPeerRecord != nil}
   /// Clears the value of `signedPeerRecord`. Subsequent reads from it will return its default value.
   mutating func clearSignedPeerRecord() {self._signedPeerRecord = nil}
 
