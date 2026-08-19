@@ -150,26 +150,36 @@ extension Identify {
         do {
             /// Ensure the Payload is an IdentifyMessage
             let remoteIdentify = try IdentifyMessage(serializedBytes: payload)
-            /// and that is valid
-            let signedEnvelope = try SealedEnvelope(
-                marshaledEnvelope: remoteIdentify.signedPeerRecord.byteArray,
-                verifiedWithPublicKey: remoteIdentify.publicKey.byteArray
-            )
-            let peerRecord = try PeerRecord(
-                marshaledData: Data(signedEnvelope.rawPayload),
-                withPublicKey: remoteIdentify.publicKey
-            )
 
-            connection.logger.debug("Identify::\n\(signedEnvelope)")
-            connection.logger.debug("Identify::\n\(peerRecord)")
+            /// The identity of the peer is established by the security handshake, not
+            /// by the contents of the Identify message.
+            guard let identifiedPeer = connection.remotePeer else {
+                connection.logger.warning(
+                    "Identify::Refusing to consume IdentifyMessage on an unauthenticated connection"
+                )
+                return
+            }
+
+            /// The signed peer record is optional per the spec. When present, verify it
+            /// and confirm it belongs to the authenticated peer before trusting it.
+            let peerRecord = self.verifiedPeerRecord(
+                from: remoteIdentify,
+                expectedPeer: identifiedPeer,
+                connection: connection
+            )
 
             connection.logger.trace("Identify::Updating PeerStore with Identified Peer")
-            self.updateIdentifiedPeerInPeerStore(peerRecord, identifyMessage: remoteIdentify, connection: connection)
+            self.updateIdentifiedPeerInPeerStore(
+                identifiedPeer: identifiedPeer,
+                peerRecord: peerRecord,
+                identifyMessage: remoteIdentify,
+                connection: connection
+            )
 
             /// Publish the identifiedPeer event
             self.application?.events.post(
                 .identifiedPeer(
-                    IdentifiedPeer(peer: peerRecord.peerID, identity: try remoteIdentify.serializedData().byteArray)
+                    IdentifiedPeer(peer: identifiedPeer, identity: try remoteIdentify.serializedData().byteArray)
                 )
             )
 
@@ -237,21 +247,30 @@ extension Identify {
         do {
             /// Ensure the Payload is an IdentifyMessage
             let remoteIdentify = try IdentifyMessage(serializedBytes: payload)
-            /// and that is valid
-            let signedEnvelope = try SealedEnvelope(
-                marshaledEnvelope: remoteIdentify.signedPeerRecord.byteArray,
-                verifiedWithPublicKey: remoteIdentify.publicKey.byteArray
-            )
-            let peerRecord = try PeerRecord(
-                marshaledData: Data(signedEnvelope.rawPayload),
-                withPublicKey: remoteIdentify.publicKey
-            )
 
-            connection.logger.debug("Identify::Push::\n\(signedEnvelope)")
-            connection.logger.debug("Identify::Push::\n\(peerRecord)")
+            /// The identity of the peer is established by the security handshake, not
+            /// by the contents of the Identify message.
+            guard let identifiedPeer = connection.remotePeer else {
+                connection.logger.warning("Identify::Push::Refusing to consume push on an unauthenticated connection")
+                return
+            }
+
+            /// Optional signed record, verified and bound to the authenticated peer.
+            let peerRecord = self.verifiedPeerRecord(
+                from: remoteIdentify,
+                expectedPeer: identifiedPeer,
+                connection: connection
+            )
 
             connection.logger.trace("Identify::Push::Updating PeerStore with Identified Peer")
-            self.updateIdentifiedPeerInPeerStore(peerRecord, identifyMessage: remoteIdentify, connection: connection)
+            /// Push messages are partial updates: only the fields present should be applied
+            self.updateIdentifiedPeerInPeerStore(
+                identifiedPeer: identifiedPeer,
+                peerRecord: peerRecord,
+                identifyMessage: remoteIdentify,
+                connection: connection,
+                isPartialUpdate: true
+            )
 
             connection.logger.trace(
                 "Identify::Push::Successfully Updated Identified Remote Peer using the Identify Push Protocol"
