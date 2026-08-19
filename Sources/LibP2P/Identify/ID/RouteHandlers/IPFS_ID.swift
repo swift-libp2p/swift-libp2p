@@ -26,10 +26,12 @@ internal func handleIDRequest(_ req: Request) -> Response<ByteBuffer> {
         req.logger.trace("Identify::/ipfs/id/1.0.0 => New Stream Ready...")
 
         // Construct and send our outbound Identify message
-        if let res = handleOutboundIdentifyMessage(req) {
+        do {
+            let res = try handleOutboundIdentifyMessage(req)
             return .respondThenClose(res)
-        } else {
-            return .close  // TODO: Should be reset...
+        } catch {
+            req.logger.error("Identify::Failed to construct outbound Identify message: \(error)")
+            return .reset(error)
         }
 
     case .data(let payload):
@@ -67,19 +69,13 @@ private func handleInboundIdentifyMessage(_ req: Request, payload: ByteBuffer) {
     return
 }
 
-private func handleOutboundIdentifyMessage(_ req: Request) -> ByteBuffer? {
-    //Send the identify message
-    do {
-        /// TODO: Fix this! We need to cast to Identify in order to construct our message becuase Request isn't part of LibP2PCore
-        guard let manager = req.application.identify as? Identify else {
-            req.logger.error("Identify::Unknown IdentityManager. Unable to contruct identify message")
-            return nil
-        }
-        let idMessage = try manager.constructIdentifyMessage(req: req)
-        req.logger.info("Identify::Sending Identify Payload to \(String(describing: req.remotePeer))")
-        return req.allocator.buffer(bytes: idMessage)
-    } catch {
-        req.logger.error("Identify::Error while constructing Identify Message: \(error)")
-        return nil
+private func handleOutboundIdentifyMessage(_ req: Request) throws -> ByteBuffer {
+    /// TODO: Fix this! We need to cast to Identify in order to construct our message becuase Request isn't part of LibP2PCore
+    guard let manager = req.application.identify as? Identify else {
+        req.logger.error("Identify::Unknown IdentityManager. Unable to contruct identify message")
+        throw Identify.Errors.unknownIdentityManager
     }
+    let idMessage = try manager.constructIdentifyMessage(req: req)
+    req.logger.info("Identify::Sending Identify Payload to \(String(describing: req.remotePeer))")
+    return req.allocator.buffer(bytes: idMessage)
 }

@@ -36,6 +36,7 @@ public final class Identify: IdentityManager, CustomStringConvertible {
 
     public enum Errors: Error {
         case timedOut
+        case unknownIdentityManager
     }
 
     internal struct PendingPing {
