@@ -117,7 +117,7 @@ struct LibP2PTests {
             #expect(app.logger.label.count == 26)
         }
     }
-    
+
     @Test func testWithAppDontAutoStart() async throws {
         try await withApp(autoStart: false) { app in
             #expect(app.isRunning == false)
