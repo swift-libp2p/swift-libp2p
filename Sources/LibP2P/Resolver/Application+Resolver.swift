@@ -23,69 +23,33 @@ public protocol AddressResolver: Sendable {
     static var key: String { get }
     func resolve(multiaddr: Multiaddr) -> EventLoopFuture<[Multiaddr]?>
     func resolve(multiaddr: Multiaddr, for: Set<MultiaddrProtocol>) -> EventLoopFuture<Multiaddr?>
-    //func resolve(multiaddr:Multiaddr) -> EventLoopFuture<[Multiaddr]?>
-    //func resolve(multiaddr:Multiaddr, for:Set<MultiaddrProtocol>) -> EventLoopFuture<Multiaddr?>
 }
 
 extension Application {
+
+    /// A list of codecs that our installed resolvers *might* be able to resolve
+    static let DNSCodecs: Set<MultiaddrProtocol> = [.dns, .dns4, .dns6, .dnsaddr]
+
     public var resolvers: Resolvers {
         .init(application: self)
     }
 
-    //    public func resolve(_ multiaddr:Multiaddr) -> [Multiaddr]? {
-    //        self.logger.trace("Attempting to resolve \(multiaddr)")
-    //        guard multiaddr.addresses.first?.codec == .dnsaddr else {
-    //            self.logger.info("Unable to resolve \(multiaddr)")
-    //            return nil
-    //        }
-    //
-    //        var resolvedAddress:[Multiaddr]? = nil
-    //
-    //        /// Should we check our peerstore for the address in question? and return cached results, if any?
-    //
-    //        for resolver in self.resolvers.allResolvers {
-    //            if let addy = resolver.resolve(multiaddr: multiaddr), !addy.isEmpty {
-    //                resolvedAddress = addy
-    //                break
-    //            }
-    //        }
-    //
-    //        if resolvedAddress == nil {
-    //            self.logger.info("Unable to resolve \(multiaddr)")
-    //        }
-    //
-    //        /// Should we attempt to cache the resolved address in the peer store?
-    //
-    //
-    //        return resolvedAddress
-    //    }
+    /// Compares the leading codec of the given `Multiaddr` against our set of `DNSCodecs`
+    private func isMultiaddrResolvable(_ ma: Multiaddr) -> Bool {
+        guard let codec = ma.addresses.first?.codec, Application.DNSCodecs.contains(codec) else {
+            return false
+        }
+        return true
+    }
 
-    //    public func resolve(_ multiaddr:Multiaddr, for codecs:Set<MultiaddrProtocol>) -> Multiaddr? {
-    //        self.logger.trace("Attempting to resolve \(multiaddr) for codecs: \(codecs)")
-    //        guard multiaddr.addresses.first?.codec == .dnsaddr else {
-    //            self.logger.info("Unable to resolve \(multiaddr) for codecs: \(codecs)")
-    //            return nil
-    //        }
-    //
-    //        var resolvedAddress:Multiaddr? = nil
-    //        for resolver in self.resolvers.allResolvers {
-    //            if let addy = resolver.resolve(multiaddr: multiaddr, for: codecs) {
-    //                resolvedAddress = addy
-    //                break
-    //            }
-    //        }
-    //
-    //        if resolvedAddress == nil {
-    //            self.logger.info("Unable to resolve \(multiaddr) for codecs: \(codecs)")
-    //        }
-    //
-    //        return resolvedAddress
-    //    }
+    public func resolve(_ multiaddr: Multiaddr) async throws -> [Multiaddr]? {
+        try await self.resolve(multiaddr).get()
+    }
 
     public func resolve(_ multiaddr: Multiaddr) -> EventLoopFuture<[Multiaddr]?> {
         self.logger.trace("Attempting to resolve \(multiaddr)")
         let el = self.eventLoopGroup.next()
-        guard multiaddr.addresses.first?.codec == .dnsaddr else {
+        guard isMultiaddrResolvable(multiaddr) else {
             self.logger.info("Unable to resolve \(multiaddr)")
             return el.makeSucceededFuture(nil)
         }
@@ -112,11 +76,15 @@ extension Application {
         }
     }
 
+    public func resolve(_ multiaddr: Multiaddr, for codecs: Set<MultiaddrProtocol>) async throws -> Multiaddr? {
+        try await self.resolve(multiaddr, for: codecs).get()
+    }
+
     public func resolve(_ multiaddr: Multiaddr, for codecs: Set<MultiaddrProtocol>) -> EventLoopFuture<Multiaddr?> {
-        self.logger.trace("Attempting to resolve \(multiaddr)")
+        self.logger.trace("Attempting to resolve \(multiaddr) for \(self.list(codecs))")
         let el = self.eventLoopGroup.next()
-        guard multiaddr.addresses.first?.codec == .dnsaddr else {
-            self.logger.info("Unable to resolve \(multiaddr)")
+        guard isMultiaddrResolvable(multiaddr) else {
+            self.logger.info("Unable to resolve \(multiaddr) for \(self.list(codecs))")
             return el.makeSucceededFuture(nil)
         }
 
@@ -133,7 +101,7 @@ extension Application {
                 let uniqueSet = Set(allAddress.compactMap { $0 })
 
                 guard !uniqueSet.isEmpty else {
-                    self.logger.info("Unable to resolve \(multiaddr)")
+                    self.logger.info("Unable to resolve \(multiaddr) for \(self.list(codecs))")
                     return el.makeSucceededFuture(nil)
                 }
 
@@ -142,13 +110,23 @@ extension Application {
         }
     }
 
+    /// Pretty prints a MultiaddrProtocol set
+    private func list(_ codecs: Set<MultiaddrProtocol>) -> String {
+        "[\(codecs.map({ $0.name }).joined(separator: ","))]"
+    }
+
+    /// Checks our PeerStore for a cached address to dial for the given Multiaddr
+    ///
+    /// - Note: There is no active TTL mechanism here
     private func isCached(_ multiaddr: Multiaddr) -> EventLoopFuture<[Multiaddr]> {
         let el = self.eventLoopGroup.next()
 
-        /// Search by PeerID if possible...
+        // Search by PeerID if possible
+        // Note: We end up saving the resolved address in our peerstore, so usually a peerID lookup is the only way to find a hit
         if let pid = try? multiaddr.getPeerID() {
             return self.peers.getAddresses(forPeer: pid, on: el).flatMapAlways {
                 result -> EventLoopFuture<[Multiaddr]> in
+                // TODO: Should we check the last handshake time as a TTL
                 switch result {
                 case .success(let addresses):
                     return el.makeSucceededFuture(
@@ -161,6 +139,7 @@ extension Application {
         } else {  // Search by multiaddr
             return self.peers.getPeerInfo(byAddress: multiaddr, on: el).flatMapAlways {
                 result -> EventLoopFuture<[Multiaddr]> in
+                // TODO: Should we check the last handshake time as a TTL
                 switch result {
                 case .success(let peerInfo):
                     return el.makeSucceededFuture(
