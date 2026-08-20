@@ -35,7 +35,7 @@ extension LibP2PTests {
             }
         }
     }
-    
+
     @Test("Ensure udpAddress parses dns, dns4, dns6, ip4 and ip6 Multiaddr's")
     func udpAddressTests() throws {
         let peer = "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN"
