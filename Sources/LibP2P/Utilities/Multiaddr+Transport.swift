@@ -17,6 +17,10 @@ import Multiaddr
 extension Multiaddr {
 
     /// Extracts the address, port and protocol version from a Multiaddr if it is a valid TCP address
+    ///
+    /// The `address` may be a literal IP (`/ip4`, `/ip6`) or a hostname (`/dns`, `/dns4`, `/dns6`). Hostnames are
+    /// left unresolved here; the dialer passes them to NIO's `connect(host:port:)`, which performs the A/AAAA
+    /// lookup at connection time.
     public var tcpAddress: (address: String, port: Int, ip4: Bool)? {
         var host: String? = nil
         var port: Int? = nil
@@ -33,15 +37,21 @@ extension Multiaddr {
 
         for address in self.addresses {
             switch address.codec {
-            case .ip4:
+            case .ip4, .dns4:
                 if let h = address.addr {
                     host = h
                     isIP4 = true
                 }
-            case .ip6:
+            case .ip6, .dns6:
                 if let h = address.addr {
                     host = h
                     isIP4 = false
+                }
+            case .dns:
+                // `/dns` may resolve to either family; treat it as dialable and let NIO pick.
+                if let h = address.addr {
+                    host = h
+                    isIP4 = true
                 }
             case .tcp:
                 if let pStr = address.addr, let p = Int(pStr) {
@@ -62,6 +72,9 @@ extension Multiaddr {
     }
 
     /// Extracts the address, port and protocol version from a Multiaddr if it is a valid UDP address
+    ///
+    /// As with ``tcpAddress``, the `address` may be a literal IP or an unresolved hostname (`/dns`, `/dns4`,
+    /// `/dns6`) that the dialer resolves at connection time.
     public var udpAddress: (address: String, port: Int, ip4: Bool)? {
         var host: String? = nil
         var port: Int? = nil
@@ -78,15 +91,21 @@ extension Multiaddr {
 
         for address in self.addresses {
             switch address.codec {
-            case .ip4:
+            case .ip4, .dns4:
                 if let h = address.addr {
                     host = h
                     isIP4 = true
                 }
-            case .ip6:
+            case .ip6, .dns6:
                 if let h = address.addr {
                     host = h
                     isIP4 = false
+                }
+            case .dns:
+                // `/dns` may resolve to either family; treat it as dialable and let NIO pick.
+                if let h = address.addr {
+                    host = h
+                    isIP4 = true
                 }
             case .udp:
                 if let pStr = address.addr, let p = Int(pStr) {
