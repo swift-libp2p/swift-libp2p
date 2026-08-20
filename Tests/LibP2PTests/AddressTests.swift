@@ -24,9 +24,9 @@ extension LibP2PTests {
             "/dns4/sv15.bootstrap.libp2p.io/tcp/4001/p2p/\(peer)",
             "/dns6/sv15.bootstrap.libp2p.io/tcp/4001/p2p/\(peer)",
             "/ip4/1.2.3.4/tcp/4001/p2p/\(peer)",
-            "/ip6/2604:1380:4602:5c00::3/tcp/4001/p2p/\(peer)"
+            "/ip6/2604:1380:4602:5c00::3/tcp/4001/p2p/\(peer)",
         ]
-        
+
         for address in addresses {
             #expect(throws: Never.self) {
                 let ma = try Multiaddr(address)
