@@ -28,37 +28,21 @@ public protocol AddressResolver: Sendable {
 }
 
 extension Application {
+
+    /// A list of codecs that our installed resolvers *might* be able to resolve
+    static let DNSCodecs: Set<MultiaddrProtocol> = [.dns, .dns4, .dns6, .dnsaddr]
+
     public var resolvers: Resolvers {
         .init(application: self)
     }
 
-    //    public func resolve(_ multiaddr:Multiaddr) -> [Multiaddr]? {
-    //        self.logger.trace("Attempting to resolve \(multiaddr)")
-    //        guard multiaddr.addresses.first?.codec == .dnsaddr else {
-    //            self.logger.info("Unable to resolve \(multiaddr)")
-    //            return nil
-    //        }
-    //
-    //        var resolvedAddress:[Multiaddr]? = nil
-    //
-    //        /// Should we check our peerstore for the address in question? and return cached results, if any?
-    //
-    //        for resolver in self.resolvers.allResolvers {
-    //            if let addy = resolver.resolve(multiaddr: multiaddr), !addy.isEmpty {
-    //                resolvedAddress = addy
-    //                break
-    //            }
-    //        }
-    //
-    //        if resolvedAddress == nil {
-    //            self.logger.info("Unable to resolve \(multiaddr)")
-    //        }
-    //
-    //        /// Should we attempt to cache the resolved address in the peer store?
-    //
-    //
-    //        return resolvedAddress
-    //    }
+    /// Compares the leading codec of the given `Multiaddr` against our set of `DNSCodecs`
+    private func isMultiaddrResolvable(_ ma: Multiaddr) -> Bool {
+        guard let codec = ma.addresses.first?.codec, Application.DNSCodecs.contains(codec) else {
+            return false
+        }
+        return true
+    }
 
     //    public func resolve(_ multiaddr:Multiaddr, for codecs:Set<MultiaddrProtocol>) -> Multiaddr? {
     //        self.logger.trace("Attempting to resolve \(multiaddr) for codecs: \(codecs)")
