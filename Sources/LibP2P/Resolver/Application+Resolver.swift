@@ -23,8 +23,6 @@ public protocol AddressResolver: Sendable {
     static var key: String { get }
     func resolve(multiaddr: Multiaddr) -> EventLoopFuture<[Multiaddr]?>
     func resolve(multiaddr: Multiaddr, for: Set<MultiaddrProtocol>) -> EventLoopFuture<Multiaddr?>
-    //func resolve(multiaddr:Multiaddr) -> EventLoopFuture<[Multiaddr]?>
-    //func resolve(multiaddr:Multiaddr, for:Set<MultiaddrProtocol>) -> EventLoopFuture<Multiaddr?>
 }
 
 extension Application {
@@ -44,27 +42,9 @@ extension Application {
         return true
     }
 
-    //    public func resolve(_ multiaddr:Multiaddr, for codecs:Set<MultiaddrProtocol>) -> Multiaddr? {
-    //        self.logger.trace("Attempting to resolve \(multiaddr) for codecs: \(codecs)")
-    //        guard multiaddr.addresses.first?.codec == .dnsaddr else {
-    //            self.logger.info("Unable to resolve \(multiaddr) for codecs: \(codecs)")
-    //            return nil
-    //        }
-    //
-    //        var resolvedAddress:Multiaddr? = nil
-    //        for resolver in self.resolvers.allResolvers {
-    //            if let addy = resolver.resolve(multiaddr: multiaddr, for: codecs) {
-    //                resolvedAddress = addy
-    //                break
-    //            }
-    //        }
-    //
-    //        if resolvedAddress == nil {
-    //            self.logger.info("Unable to resolve \(multiaddr) for codecs: \(codecs)")
-    //        }
-    //
-    //        return resolvedAddress
-    //    }
+    public func resolve(_ multiaddr: Multiaddr) async throws -> [Multiaddr]? {
+        try await self.resolve(multiaddr).get()
+    }
 
     public func resolve(_ multiaddr: Multiaddr) -> EventLoopFuture<[Multiaddr]?> {
         self.logger.trace("Attempting to resolve \(multiaddr)")
@@ -94,6 +74,10 @@ extension Application {
                 return el.makeSucceededFuture(Array(uniqueSet))
             }
         }
+    }
+
+    public func resolve(_ multiaddr: Multiaddr, for codecs: Set<MultiaddrProtocol>) async throws -> Multiaddr? {
+        try await self.resolve(multiaddr, for: codecs).get()
     }
 
     public func resolve(_ multiaddr: Multiaddr, for codecs: Set<MultiaddrProtocol>) -> EventLoopFuture<Multiaddr?> {
