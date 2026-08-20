@@ -247,9 +247,9 @@ extension Application {
     private func resolveAddressIfNecessary(_ ma: Multiaddr, on loop: EventLoop) -> EventLoopFuture<[Multiaddr]?> {
         guard let f = ma.addresses.first else { return loop.makeSucceededFuture(nil) }
         switch f.codec {
-        case .ip4, .ip6, .udp:
+        case .ip4, .ip6, .udp, .dns, .dns4, .dns6:
             return loop.makeSucceededFuture([ma])
-        case .dns, .dnsaddr:
+        case .dnsaddr:
             return self.resolve(ma)
         default:
             self.logger.error("We don't support `\(f.codec) yet!`")
@@ -264,9 +264,9 @@ extension Application {
     ) -> EventLoopFuture<Multiaddr?> {
         guard let f = ma.addresses.first else { return loop.makeSucceededFuture(nil) }
         switch f.codec {
-        case .ip4, .ip6, .udp:
+        case .ip4, .ip6, .udp, .dns, .dns4, .dns6:
             return loop.makeSucceededFuture(ma)
-        case .dns, .dnsaddr:
+        case .dnsaddr:
             return self.resolve(ma, for: codecs)
         default:
             self.logger.error("We don't support `\(f.codec) yet!`")
