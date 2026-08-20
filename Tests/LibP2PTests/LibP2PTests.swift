@@ -106,12 +106,22 @@ struct LibP2PTests {
 
     @Test func testWithApp() async throws {
         try await withApp { app in
+            #expect(app.isRunning == true)
             #expect(app.environment == Environment.testing)
             #expect(app.peerID.type == .isPrivate)
             #expect(app.peerID.keyPair?.keyType == .ed25519)
             #expect(app.listenAddresses.isEmpty)
             #expect(app.logger.label.hasPrefix("libp2p.application"))
+            // The above prefix with the first 6 chars of our PeerID
+            // ex: libp2p.application[D6e3qy]
             #expect(app.logger.label.count == 26)
+        }
+    }
+
+    @Test func testWithAppDontAutoStart() async throws {
+        try await withApp(autoStart: false) { app in
+            #expect(app.isRunning == false)
+            #expect(app.environment == Environment.testing)
         }
     }
 
@@ -152,10 +162,6 @@ struct LibP2PTests {
         }
 
         try await withApp(configure: configure) { app in
-            // Actually run the app so the TCP server binds its
-            // socket; only then does port 0 get resolved to an OS-assigned port.
-            try await app.startup()
-
             // Fetch the address from the TCP server directly
             let localAddress = try #require(app.servers.server(for: TCPServer.self)?.listeningAddress)
             guard let tcp = localAddress.tcpAddress else {
@@ -203,9 +209,6 @@ struct LibP2PTests {
         }
 
         try await withApp(configure: configure) { app in
-            // Actually run the `serve` command so the TCP server binds its socket.
-            try await app.startup()
-
             // Fetch the address from the app's listenAddresses param
             let listenAddress = try #require(app.listenAddresses.first?.tcpAddress)
             #expect(listenAddress.address == "127.0.0.1")
@@ -253,9 +256,6 @@ struct LibP2PTests {
         }
 
         try await withApp(configure: configure) { app in
-            // Actually run the `serve` command so the TCP server binds its socket.
-            try await app.startup()
-
             // The address fetched from the TCPServer is the literal address we define (0.0.0.0:3022)
             let localAddress = try #require(app.servers.server(for: TCPServer.self)?.listeningAddress)
             guard let tcp = localAddress.tcpAddress else {
