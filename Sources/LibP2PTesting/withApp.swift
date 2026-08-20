@@ -40,18 +40,25 @@ import LibP2P
 @discardableResult
 public func withApp<T>(
     peerID: KeyPairFile = .ephemeral(),
+    autoStart: Bool = true,
     configure: ((Application) async throws -> Void)? = nil,
     _ test: (Application) async throws -> T
 ) async throws -> T {
     let app = try await Application.make(.testing, peerID: peerID)
     let result: T
     do {
+        // Configure the app (if a configuration is present)
         try await configure?(app)
+        // Start the app
+        if autoStart { try await app.startup() }
+        // Run the body / test
         result = try await test(app)
     } catch {
+        // Shutdown
         try? await app.asyncShutdown()
         throw error
     }
+    // Shutdown
     try await app.asyncShutdown()
     return result
 }
@@ -74,7 +81,8 @@ public func withApp<T>(
 @discardableResult
 public func withApp<T>(
     peerID: KeyPairFile = .ephemeral(),
+    autoStart: Bool = true,
     _ test: (Application) async throws -> T
 ) async throws -> T {
-    try await withApp(peerID: peerID, configure: nil, test)
+    try await withApp(peerID: peerID, autoStart: autoStart, configure: nil, test)
 }

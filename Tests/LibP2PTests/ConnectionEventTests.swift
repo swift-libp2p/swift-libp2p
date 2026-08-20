@@ -68,8 +68,6 @@ extension LibP2PTests {
         @Test("Application fires `connected` with the opened connection")
         func testConnectedEventFires() async throws {
             try await withApp { app in
-                try await app.startup()
-
                 let subscriber = Subscriber()
                 let received = NIOLockedValueBox<[UUID]>([])
                 app.events.on(
@@ -91,8 +89,6 @@ extension LibP2PTests {
         @Test("Application fires `disconnected` with the connection and (nil) peer")
         func testDisconnectedEventFires() async throws {
             try await withApp { app in
-                try await app.startup()
-
                 let subscriber = Subscriber()
                 let received = NIOLockedValueBox<(id: UUID, peerWasNil: Bool)?>(nil)
                 app.events.on(
@@ -116,8 +112,6 @@ extension LibP2PTests {
         @Test("Application fires `upgraded` with the upgraded connection")
         func testUpgradedEventFires() async throws {
             try await withApp { app in
-                try await app.startup()
-
                 let subscriber = Subscriber()
                 let received = NIOLockedValueBox<[UUID]>([])
                 app.events.on(
@@ -139,8 +133,6 @@ extension LibP2PTests {
         @Test("Application fires `remotePeer` carrying the identified peer")
         func testRemotePeerEventFires() async throws {
             try await withApp { app in
-                try await app.startup()
-
                 let peer = try PeerID(.Ed25519)
                 let subscriber = Subscriber()
                 let received = NIOLockedValueBox<String?>(nil)
@@ -164,8 +156,6 @@ extension LibP2PTests {
         @Test("Application fires `openedStream` and `closedStream` with the stream")
         func testStreamOpenedAndClosedEventsFire() async throws {
             try await withApp { app in
-                try await app.startup()
-
                 let subscriber = Subscriber()
                 let opened = NIOLockedValueBox<[UInt64]>([])
                 let closed = NIOLockedValueBox<[UInt64]>([])
@@ -209,7 +199,7 @@ extension LibP2PTests {
 
         @Test("Events posted while the application is not running are dropped")
         func testEventsDroppedWhenApplicationNotRunning() async throws {
-            try await withApp { app in
+            try await withApp(autoStart: false) { app in
                 // Deliberately do NOT start the app: `isRunning` is false, so `post` must drop the event.
                 #expect(app.isRunning == false)
 
@@ -242,8 +232,6 @@ extension LibP2PTests {
         @Test("Closing a running connection's channel publishes `disconnected`")
         func testChannelCloseFiresDisconnectedEvent() async throws {
             try await withApp { app in
-                try await app.startup()
-
                 let subscriber = Subscriber()
                 let received = NIOLockedValueBox<[UUID]>([])
                 app.events.on(
@@ -287,8 +275,6 @@ extension LibP2PTests {
         @Test("`unregister` stops further callback delivery to that owner")
         func testUnregisterStopsDelivery() async throws {
             try await withApp { app in
-                try await app.startup()
-
                 let subscriber = Subscriber()
                 let count = NIOLockedValueBox<Int>(0)
                 app.events.on(
@@ -321,8 +307,6 @@ extension LibP2PTests {
         @Test("`subscribe(to:)` delivers matching events and terminates on cancellation")
         func testAsyncStreamDeliversAndTerminates() async throws {
             try await withApp { app in
-                try await app.startup()
-
                 let received = NIOLockedValueBox<[UUID]>([])
                 let terminated = NIOLockedValueBox<Bool>(false)
                 let stream = app.events.subscribe(to: [.connected])
@@ -353,8 +337,6 @@ extension LibP2PTests {
         @Test("A terminated `subscribe(to:)` stream stops receiving events (the AsyncStream analogue of `unregister`)")
         func testAsyncStreamStopsDeliveryAfterTermination() async throws {
             try await withApp { app in
-                try await app.startup()
-
                 let received = NIOLockedValueBox<[UUID]>([])
                 let stream = app.events.subscribe(to: [.connected])
 
@@ -397,8 +379,6 @@ extension LibP2PTests {
         func testEventsAreIsolatedPerApplication() async throws {
             try await withApp { appA in
                 try await withApp { appB in
-                    try await appA.startup()
-                    try await appB.startup()
 
                     let subscriberA = Subscriber()
                     let subscriberB = Subscriber()
@@ -456,8 +436,6 @@ extension LibP2PTests {
         @Test("A slow / non-responsive consumer does not block other subscribers")
         func testSlowConsumerDoesNotBlockOthers() async throws {
             try await withApp { app in
-                try await app.startup()
-
                 // A non-responsive AsyncStream consumer: subscribed but never iterated. Its bounded buffer just
                 // fills and drops its own oldest events; yielding to it never blocks `post`.
                 let stalledStream = app.events.subscribe(to: [.connected])
@@ -537,8 +515,6 @@ extension LibP2PTests {
         )
         func testHighVolumeStaysBoundedAndDeinitializes() async throws {
             try await withApp { app in
-                try await app.startup()
-
                 let callbackSubscribers = 100
                 let fastStreamSubscribers = 100
                 let slowStreamSubscribers = 10
@@ -670,8 +646,6 @@ extension LibP2PTests {
                 app.eventbus.use(.default(bufferSize: bufferSize))
             }
             try await withApp(configure: configuration) { app in
-                try await app.startup()
-
                 // Register the subscriber, then post far more than the buffer WITHOUT draining, so the stream
                 // buffers as it goes and keeps only the newest `bufferSize` events.
                 let stream = app.events.subscribe(to: [.connected])
