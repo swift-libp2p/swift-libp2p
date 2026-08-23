@@ -105,9 +105,10 @@ extension LibP2PTests {
         /// connection, orphaning the first channel with no way to ever close it
         @Test("A second start() throws and leaves the first socket bound and accepting")
         func secondStartThrowsAndPreservesFirstSocket() async throws {
-            try await withApp(configure: { app in
+            var config: ((Application) async throws -> Void) = { app in
                 app.servers.use(.tcp(host: "127.0.0.1", port: 0))
-            }) { app in
+            }
+            try await withApp(configure: config) { app in
                 let server = try #require(app.servers.server(for: TCPServer.self))
                 let boundPort = try #require(server.localAddress?.port)
                 #expect(boundPort > 0)
@@ -137,7 +138,7 @@ extension LibP2PTests {
             let listened = NIOLockedValueBox<[String]>([])
             let closed = NIOLockedValueBox<[String]>([])
 
-            try await withApp(configure: { app in
+            var config: ((Application) async throws -> Void) = { app in
                 app.servers.use(.tcp(host: "127.0.0.1", port: 0))
                 app.events.on(
                     subscriber,
@@ -147,7 +148,8 @@ extension LibP2PTests {
                     subscriber,
                     event: .listenClosed { _, ma in closed.withLockedValue { $0.append(ma.description) } }
                 )
-            }) { app in
+            }
+            try await withApp(configure: config) { app in
                 let server = try #require(app.servers.server(for: TCPServer.self))
 
                 #expect(await Self.waitUntil { !listened.withLockedValue { $0.isEmpty } })
@@ -170,13 +172,14 @@ extension LibP2PTests {
             let subscriber = Subscriber()
             let closed = NIOLockedValueBox<[String]>([])
 
-            try await withApp(configure: { app in
+            var config: ((Application) async throws -> Void) = { app in
                 app.servers.use(.tcp(host: "127.0.0.1", port: 0))
                 app.events.on(
                     subscriber,
                     event: .listenClosed { _, ma in closed.withLockedValue { $0.append(ma.description) } }
                 )
-            }) { app in
+            }
+            try await withApp(configure: config) { app in
                 let server = try #require(app.servers.server(for: TCPServer.self))
 
                 server.shutdown()
@@ -216,10 +219,11 @@ extension LibP2PTests {
         /// is observable as "accepted but never closed".
         @Test("A dial that fails after connecting closes the socket instead of leaking it")
         func failedDialClosesTheChannel() async throws {
-            try await withApp(configure: { app in
+            var config: ((Application) async throws -> Void) = { app in
                 // A ceiling of one, so the second registration is refused.
                 app.connectionManager.use(.default(maxConcurrentConnections: 1, ASCEnabled: false))
-            }) { app in
+            }
+            try await withApp(configure: config) { app in
                 let accepted = NIOLockedValueBox(0)
                 let closed = NIOLockedValueBox(0)
 
