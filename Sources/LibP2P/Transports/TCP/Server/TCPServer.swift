@@ -208,7 +208,7 @@ public final class TCPServer: Server, @unchecked Sendable {
             addressDescription = "unix: \(socketPath)"
         }
 
-        self.configuration.logger.notice("TCP Server starting on \(addressDescription)")
+        self.configuration.logger.debug("TCP Initialized on \(addressDescription)")
 
         // start the actual TCPServer
         self.connection = try TCPServerConnection.start(
@@ -219,6 +219,21 @@ public final class TCPServer: Server, @unchecked Sendable {
         ).wait()
 
         self.didStart = true
+
+        if let la = self.localAddress {
+            self.configuration.logger.notice("TCP Server started on \(la.description)")
+            if let ma = try? la.toMultiaddr(proto: .tcp) {
+                // Expand our host into one concrete address per routable interface so
+                // `.listen` subscribers never observe a wildcard.
+                for address in self.application.expandingUnspecified(ma) {
+                    self.application.events.post(
+                        .listen(self.application.peerID.b58String, address)
+                    )
+                }
+            }
+        } else {
+            self.configuration.logger.warning("TCP Server started without a socket")
+        }
     }
 
     public func shutdown() {
