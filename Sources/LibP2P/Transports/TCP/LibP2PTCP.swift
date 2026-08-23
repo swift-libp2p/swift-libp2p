@@ -17,12 +17,16 @@ import Multicodec
 import NIOPosix
 
 // Install our TCP Tranport on the LibP2P Application
-public struct TCP: Transport, @unchecked Sendable {
+public struct TCP: Transport, Sendable {
     public static let key: String = "tcp"
 
+    /// How long a dial may spend in `connect` before we give up. Matches NIO's own default;
+    /// stated explicitly so the value is visible rather than implied.
+    public static let defaultConnectTimeout: TimeAmount = .seconds(10)
+
     let application: Application
-    public var protocols: [LibP2PProtocol]
-    public var proxy: Bool
+    public let protocols: [LibP2PProtocol]
+    public let proxy: Bool
     public let uuid: UUID
 
     public var sharedClient: ClientBootstrap {
@@ -30,18 +34,21 @@ public struct TCP: Transport, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         if let existing = self.application.storage[Key.self] {
-            return existing
+            return existing.bootstrap
         }
         let new = ClientBootstrap(group: self.application.eventLoopGroup)
             // Enable SO_REUSEADDR.
             .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+            // Match the accept side, which sets TCP_NODELAY on every child channel.
+            .channelOption(ChannelOptions.tcpOption(.tcp_nodelay), value: 1)
+            .channelOption(ChannelOptions.connectTimeout, value: Self.defaultConnectTimeout)
             .channelInitializer { channel in
                 // Do we install the upgrader here or do we let the Connection install the handlers???
                 //channel.pipeline.addHandlers(upgrader.channelHandlers(mode: .initiator)) // The MSS Handler itself needs to have access to the Connection Delegate
                 channel.eventLoop.makeSucceededVoidFuture()
             }
 
-        self.application.storage.set(Key.self, to: new)
+        self.application.storage.set(Key.self, to: SharedDialBootstrap(new))
 
         return new
     }
@@ -102,12 +109,14 @@ public struct TCP: Transport, @unchecked Sendable {
                         //}
                     }
                 }
+            }.flatMapError { error in
+                /// Make sure to close the channel upon an error
+                self.application.logger.trace("Closing dialed channel after failed upgrade: \(error)")
+                return channel.close(mode: .all).flatMapAlways { _ in
+                    /// Surface the original failure, not whatever `close` reported.
+                    channel.eventLoop.makeFailedFuture(error)
+                }
             }
-
-            // return conn.initializeOutboundParentChannel().map {
-            // return conn.initializeParentChannel(mode: .initiator).map {
-            //      return conn
-            // }
         }
     }
 
@@ -122,11 +131,11 @@ public struct TCP: Transport, @unchecked Sendable {
     }
 
     public func listen(address: Multiaddr) -> EventLoopFuture<Listener> {
-        application.eventLoopGroup.any().makeFailedFuture(Errors.notYetImplemeted)
+        application.eventLoopGroup.any().makeFailedFuture(Errors.notYetImplemented)
     }
 
     struct Key: StorageKey, LockKey {
-        typealias Value = ClientBootstrap
+        typealias Value = SharedDialBootstrap
     }
 
     //    struct ConfigurationKey: StorageKey {
@@ -134,9 +143,22 @@ public struct TCP: Transport, @unchecked Sendable {
     //    }
 
     public enum Errors: Error {
-        case notYetImplemeted
+        case notYetImplemented
         case invalidMultiaddr
         case inboundConnectionAfterApplicationShutdown
+
+        @available(*, deprecated, renamed: "notYetImplemented")
+        public static var notYetImplemeted: Errors { .notYetImplemented }
+    }
+}
+
+/// Holds the shared dial bootstrap so it can live in `Application.storage` (whose values must be
+/// `Sendable`) without retroactively conforming NIO's `ClientBootstrap`.
+final class SharedDialBootstrap: @unchecked Sendable {
+    let bootstrap: ClientBootstrap
+
+    init(_ bootstrap: ClientBootstrap) {
+        self.bootstrap = bootstrap
     }
 }
 
@@ -149,5 +171,3 @@ extension Application.Transports.Provider {
         }
     }
 }
-
-extension ClientBootstrap: @unchecked Sendable {}

@@ -47,7 +47,7 @@ internal class DummyConnection: Connection, @unchecked Sendable {
 
     public init(peer: PeerID? = nil, direction: ConnectionStats.Direction = .inbound) {
         let id = UUID()
-        self.channel = EmbeddedChannel()
+        self.channel = NIOAsyncTestingChannel()
         self.logger = Logger(label: "DummyConnection")
         self.id = id
         self.state = .closed

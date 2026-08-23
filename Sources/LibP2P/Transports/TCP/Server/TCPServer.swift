@@ -14,6 +14,7 @@
 
 import Logging
 import NIO
+import NIOConcurrencyHelpers
 import NIOExtras
 
 public final class TCPServer: Server, @unchecked Sendable {
@@ -24,9 +25,12 @@ public final class TCPServer: Server, @unchecked Sendable {
     ///     let serverConfig = TCPServerConfig.default(port: 8123)
     ///     services.register(serverConfig)
     ///
-    public struct Configuration: @unchecked Sendable {
+    public struct Configuration: Sendable {
         public static let defaultHostname = "127.0.0.1"
         public static let defaultPort = 10000
+        /// NIO's own default. The accept path previously hard-coded `1`, which limits every
+        /// accepted connection to a single `read` per event-loop tick.
+        public static let defaultMaxMessagesPerRead: UInt = 4
 
         /// Address the server will bind to. Configuring an address using a hostname with a nil host or port will use the default hostname or port respectively.
         public var address: BindAddress
@@ -80,6 +84,11 @@ public final class TCPServer: Server, @unchecked Sendable {
         /// When `true`, OS will attempt to minimize TCP packet delay.
         public var tcpNoDelay: Bool
 
+        /// Maximum number of `read` calls the accept side will issue per event-loop tick, per
+        /// accepted connection. Lower values spread the loop more evenly across many
+        /// connections; higher values let an individual connection drain faster.
+        public var maxMessagesPerRead: UInt
+
         //public var tlsConfiguration: TLSConfiguration?
 
         /// If set, this name will be serialized as the `Server` header in outgoing responses.
@@ -97,6 +106,7 @@ public final class TCPServer: Server, @unchecked Sendable {
             backlog: Int = 256,
             reuseAddress: Bool = true,
             tcpNoDelay: Bool = true,
+            maxMessagesPerRead: UInt = Self.defaultMaxMessagesPerRead,
             //            responseCompression: CompressionConfiguration = .disabled,
             //            requestDecompression: DecompressionConfiguration = .disabled,
             //            supportPipelining: Bool = true,
@@ -111,6 +121,7 @@ public final class TCPServer: Server, @unchecked Sendable {
                 backlog: backlog,
                 reuseAddress: reuseAddress,
                 tcpNoDelay: tcpNoDelay,
+                maxMessagesPerRead: maxMessagesPerRead,
                 //                responseCompression: responseCompression,
                 //                requestDecompression: requestDecompression,
                 //                supportPipelining: supportPipelining,
@@ -127,6 +138,7 @@ public final class TCPServer: Server, @unchecked Sendable {
             backlog: Int = 256,
             reuseAddress: Bool = true,
             tcpNoDelay: Bool = true,
+            maxMessagesPerRead: UInt = Self.defaultMaxMessagesPerRead,
             //            responseCompression: CompressionConfiguration = .disabled,
             //            requestDecompression: DecompressionConfiguration = .disabled,
             //            supportPipelining: Bool = true,
@@ -140,6 +152,7 @@ public final class TCPServer: Server, @unchecked Sendable {
             self.backlog = backlog
             self.reuseAddress = reuseAddress
             self.tcpNoDelay = tcpNoDelay
+            self.maxMessagesPerRead = maxMessagesPerRead
             //            self.responseCompression = responseCompression
             //            self.requestDecompression = requestDecompression
             //            self.supportPipelining = supportPipelining
@@ -155,9 +168,19 @@ public final class TCPServer: Server, @unchecked Sendable {
         }
     }
 
+    /// Our mutable server state
+    private struct State {
+        var connection: TCPServerConnection?
+        var didStart: Bool = false
+        var didShutdown: Bool = false
+        /// The addresses we announced with `.listen`, so `shutdown()` can post a
+        /// matching `.listenClosed` for each one
+        var announcedAddresses: [Multiaddr] = []
+    }
+
     public var onShutdown: EventLoopFuture<Void> {
-        guard let connection = self.connection else {
-            fatalError("Server has not started yet")
+        guard let connection = self.state.withLockedValue({ $0.connection }) else {
+            return self.eventLoopGroup.any().makeSucceededVoidFuture()
         }
         return connection.channel.closeFuture
     }
@@ -165,12 +188,9 @@ public final class TCPServer: Server, @unchecked Sendable {
     private let responder: Responder
     private let configuration: Configuration
     private let eventLoopGroup: EventLoopGroup
+    private let application: Application
 
-    private var connection: TCPServerConnection?
-    private var didShutdown: Bool
-    private var didStart: Bool
-
-    private var application: Application
+    private let state = NIOLockedValueBox(State())
 
     init(
         application: Application,
@@ -182,11 +202,25 @@ public final class TCPServer: Server, @unchecked Sendable {
         self.responder = responder
         self.configuration = configuration
         self.eventLoopGroup = eventLoopGroup
-        self.didStart = false
-        self.didShutdown = false
     }
 
     public func start(address: BindAddress?) throws {
+        // Flip our didStart
+        try self.state.withLockedValue { state in
+            guard !state.didStart else { throw Errors.alreadyStarted }
+            guard !state.didShutdown else { throw Errors.alreadyShutdown }
+            state.didStart = true
+        }
+
+        // Revert didStart if we fail to bind, so a recoverable failure (address already in
+        // use, say) can still be retried by the caller.
+        var boundSuccessfully = false
+        defer {
+            if !boundSuccessfully {
+                self.state.withLockedValue { $0.didStart = false }
+            }
+        }
+
         var configuration = self.configuration
 
         switch address {
@@ -194,38 +228,40 @@ public final class TCPServer: Server, @unchecked Sendable {
             break
         case .hostname(let hostname, let port):  // override the hostname, port, neither, or both
             configuration.address = .hostname(hostname ?? configuration.hostname, port: port ?? configuration.port)
-        case .unixDomainSocket:  // override the socket path
-            configuration.address = address!
+        case .unixDomainSocket(let socketPath):  // override the socket path
+            configuration.address = .unixDomainSocket(path: socketPath)
         }
 
-        // print starting message
-        //let scheme = configuration.tlsConfiguration == nil ? "http" : "https"
-        let addressDescription: String
-        switch configuration.address {
-        case .hostname(let hostname, let port):
-            addressDescription = "\(hostname ?? configuration.hostname):\(port ?? configuration.port)"
-        case .unixDomainSocket(let socketPath):
-            addressDescription = "unix: \(socketPath)"
+        func addressDescription(for configuration: Configuration) -> String {
+            switch configuration.address {
+            case .hostname(let hostname, let port):
+                return "\(hostname ?? configuration.hostname):\(port ?? configuration.port)"
+            case .unixDomainSocket(let path):
+                return "unix: \(path)"
+            }
         }
-
-        self.configuration.logger.debug("TCP Initialized on \(addressDescription)")
 
         // start the actual TCPServer
-        self.connection = try TCPServerConnection.start(
+        let connection = try TCPServerConnection.start(
             application: self.application,
             responder: self.responder,
             configuration: configuration,
             on: self.eventLoopGroup
         ).wait()
 
-        self.didStart = true
+        self.state.withLockedValue { $0.connection = connection }
+        boundSuccessfully = true
 
-        if let la = self.localAddress {
-            self.configuration.logger.notice("TCP Server started on \(la.description)")
+        if let la = connection.channel.localAddress {
+            self.configuration.logger.notice("TCP Server Started")
+            self.configuration.logger.notice(" - Initialized on \(addressDescription(for: configuration))")
             if let ma = try? la.toMultiaddr(proto: .tcp) {
                 // Expand our host into one concrete address per routable interface so
                 // `.listen` subscribers never observe a wildcard.
-                for address in self.application.expandingUnspecified(ma) {
+                let announced = self.application.expandingUnspecified(ma)
+                self.configuration.logger.notice(" - Reachable at \(announced)")
+                self.state.withLockedValue { $0.announcedAddresses = announced }
+                for address in announced {
                     self.application.events.post(
                         .listen(self.application.peerID.b58String, address)
                     )
@@ -237,9 +273,18 @@ public final class TCPServer: Server, @unchecked Sendable {
     }
 
     public func shutdown() {
-        guard let connection = self.connection else {
-            return
+        // Grab our connection and the announced addresses in one step, so a second `shutdown()` is a no-op
+        let (connection, announced) = self.state.withLockedValue {
+            state -> (TCPServerConnection?, [Multiaddr]) in
+            guard !state.didShutdown, let connection = state.connection else { return (nil, []) }
+            state.didShutdown = true
+            state.connection = nil
+            let announced = state.announcedAddresses
+            state.announcedAddresses = []
+            return (connection, announced)
         }
+        guard let connection else { return }
+
         self.configuration.logger.trace("Requesting TCP server shutdown")
         do {
             try connection.close(timeout: self.configuration.shutdownTimeout).wait()
@@ -247,31 +292,75 @@ public final class TCPServer: Server, @unchecked Sendable {
             self.configuration.logger.error("Could not stop TCP server: \(error)")
         }
         self.configuration.logger.trace("TCP server shutting down")
-        self.didShutdown = true
+
+        // Balance the `.listen` events posted at start-up.
+        if self.application.isRunning {
+            let localPeer = self.application.peerID.b58String
+            for address in announced {
+                self.application.events.post(.listenClosed(localPeer, address))
+            }
+        }
     }
 
     public var localAddress: SocketAddress? {
-        self.connection?.channel.localAddress
+        self.state.withLockedValue { $0.connection }?.channel.localAddress
     }
 
-    /// TODO: FIXME!
     public var listeningAddress: Multiaddr {
-        // `didStart` flips to `true` slightly *before* `localAddress`
-        // is populated by the underlying NIO channel — under
-        // concurrent load (many Applications booting in parallel) the
-        // race window opens reliably and a force-unwrap on
-        // `self.localAddress` traps. Fall back to the configured
-        // hostname/port when the live address isn't ready yet; it's
-        // the same fallback the `!didStart` branch already uses, so
-        // semantics are unchanged for callers.
-        guard didStart, let live = self.localAddress else {
-            return try! Multiaddr("/ip4/\(self.configuration.hostname)/tcp/\(self.configuration.port)")
+        // Prefer the live socket address when available
+        if let live = self.localAddress, let ma = try? live.toMultiaddr() {
+            return ma
         }
-        return try! live.toMultiaddr()
+        // Not bound yet, or already shut down, fall back to what we were configured with.
+        if let configured = Self.multiaddr(for: self.configuration.address) {
+            return configured
+        }
+        self.configuration.logger.warning(
+            "Unable to derive a listening multiaddr from \(self.configuration.address); reporting an unspecified address"
+        )
+        return Self.unspecifiedAddress
     }
+
+    /// Builds a multiaddr from a bind address
+    ///
+    /// Picks the codec matching the literal form of the host, because `Multiaddr` packs `.ip4`
+    /// through `IPv4.data(for:)`, which rejects anything that isn't a dotted quad — an
+    /// ordinary `hostname: "localhost"` used to crash the process here.
+    private static func multiaddr(for address: BindAddress) -> Multiaddr? {
+        switch address {
+        case .unixDomainSocket(let path):
+            return try? Multiaddr(.unix, address: path)
+
+        case .hostname(let host, let port):
+            let hostname = host ?? Configuration.defaultHostname
+            let port = port ?? Configuration.defaultPort
+
+            // Let NIO classify the host rather than hand-rolling address parsing.
+            let codec: MultiaddrProtocol
+            switch try? SocketAddress(ipAddress: hostname, port: port) {
+            case .some(let parsed) where parsed.protocol == .inet: codec = .ip4
+            case .some(let parsed) where parsed.protocol == .inet6: codec = .ip6
+            default: codec = .dns
+            }
+
+            guard let base = try? Multiaddr(codec, address: hostname) else { return nil }
+            return try? base.encapsulate(proto: .tcp, address: "\(port)")
+        }
+    }
+
+    /// Last-resort answer for the non-optional ``Server/listeningAddress`` requirement.
+    private static let unspecifiedAddress: Multiaddr = try! Multiaddr("/ip4/0.0.0.0/tcp/0")
 
     deinit {
-        assert(!self.didStart || self.didShutdown, "TCPServer did not shutdown before deinitializing")
+        let (didStart, didShutdown) = self.state.withLockedValue { ($0.didStart, $0.didShutdown) }
+        assert(!didStart || didShutdown, "TCPServer did not shutdown before deinitializing")
+    }
+
+    public enum Errors: Error {
+        /// `start()` was called on a server that is already listening.
+        case alreadyStarted
+        /// `start()` was called on a server that has already been shut down.
+        case alreadyShutdown
     }
 }
 
@@ -290,8 +379,8 @@ private final class TCPServerConnection: Sendable {
             // Specify backlog and enable SO_REUSEADDR for the server itself
             .serverChannelOption(ChannelOptions.backlog, value: Int32(configuration.backlog))
             .serverChannelOption(
-                ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR),
-                value: configuration.reuseAddress ? SocketOptionValue(1) : SocketOptionValue(0)
+                ChannelOptions.socketOption(.so_reuseaddr),
+                value: configuration.reuseAddress ? 1 : 0
             )
 
             // Set handlers that are applied to the Server's channel
@@ -326,19 +415,23 @@ private final class TCPServerConnection: Sendable {
                         // Initialize the new inbound channel
                         conn.initializeChannel()
                     }
+                }.flatMapError { error in
+                    // Ensure we close the channel upon an error
+                    channel.close(mode: .all).flatMapAlways { _ in
+                        channel.eventLoop.makeFailedFuture(error)
+                    }
                 }
             }
 
-            // Enable TCP_NODELAY and SO_REUSEADDR for the accepted Channels
+            // Enable TCP_NODELAY for the accepted Channels.
+            //
+            // SO_REUSEADDR is deliberately *not* set here: it only affects `bind`, so setting it
+            // on an already-accepted socket is a no-op.
             .childChannelOption(
-                ChannelOptions.socket(IPPROTO_TCP, TCP_NODELAY),
-                value: configuration.tcpNoDelay ? SocketOptionValue(1) : SocketOptionValue(0)
+                ChannelOptions.tcpOption(.tcp_nodelay),
+                value: configuration.tcpNoDelay ? 1 : 0
             )
-            .childChannelOption(
-                ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR),
-                value: configuration.reuseAddress ? SocketOptionValue(1) : SocketOptionValue(0)
-            )
-            .childChannelOption(ChannelOptions.maxMessagesPerRead, value: 1)
+            .childChannelOption(ChannelOptions.maxMessagesPerRead, value: configuration.maxMessagesPerRead)
 
         let channel: EventLoopFuture<Channel>
         switch configuration.address {
@@ -363,10 +456,13 @@ private final class TCPServerConnection: Sendable {
 
     func close(timeout: TimeAmount) -> EventLoopFuture<Void> {
         let promise = self.channel.eventLoop.makePromise(of: Void.self)
-        self.channel.eventLoop.scheduleTask(in: timeout) {
-            //promise.fail(Abort(.internalServerError, reason: "Server stop took too long."))
+        let timeoutTask = self.channel.eventLoop.scheduleTask(in: timeout) {
             promise.fail(Errors.serverStopTookTooLong)
         }
+        // Cancel the deadline as soon as the quiesce settles. Left armed it pins a pending task
+        // to the event loop for the full timeout even after a prompt shutdown, which delays
+        // `EventLoopGroup.syncShutdownGracefully()`.
+        promise.futureResult.whenComplete { _ in timeoutTask.cancel() }
         self.quiesce.initiateShutdown(promise: promise)
         return promise.futureResult
     }
@@ -376,25 +472,14 @@ private final class TCPServerConnection: Sendable {
     }
 
     deinit {
-        assert(!self.channel.isActive, "TCPServerConnection deinitialized without calling shutdown()")
+        // just make sure the listening socket can't outlive us
+        if self.channel.isActive {
+            self.channel.close(mode: .all, promise: nil)
+        }
     }
 
     public enum Errors: Error {
         case serverStopTookTooLong
-    }
-}
-
-final class TCPServerErrorHandler: ChannelInboundHandler {
-    typealias InboundIn = Never
-    let logger: Logger
-
-    init(logger: Logger) {
-        self.logger = logger
-    }
-
-    func errorCaught(context: ChannelHandlerContext, error: Error) {
-        self.logger.error("Unhandled TCP server error: \(error)")
-        context.close(mode: .output, promise: nil)
     }
 }
 
@@ -407,14 +492,16 @@ final class TCPServerErrorHandler: ChannelInboundHandler {
 /// quiesce blocked until the server's `shutdownTimeout` elapses (surfacing as `serverStopTookTooLong`).
 /// Installing this at the head of each accepted channel makes graceful server shutdown prompt,
 /// independent of whether the connection manager also closed the connection.
-final class QuiesceOnShutdownHandler: ChannelInboundHandler, @unchecked Sendable {
+final class QuiesceOnShutdownHandler: ChannelInboundHandler, Sendable {
     typealias InboundIn = ByteBuffer
     typealias InboundOut = ByteBuffer
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        // Forward first, so handlers further down the pipeline still observe the quiesce before
+        // the channel is torn out from under them.
+        context.fireUserInboundEventTriggered(event)
         if event is ChannelShouldQuiesceEvent {
             context.close(mode: .all, promise: nil)
         }
-        context.fireUserInboundEventTriggered(event)
     }
 }

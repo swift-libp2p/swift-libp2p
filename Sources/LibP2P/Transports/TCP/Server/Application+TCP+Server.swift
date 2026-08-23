@@ -41,24 +41,29 @@ extension Application.TCP {
         let application: Application
 
         public var shared: TCPServer {
+            // Hold the lock for the entire call
+            let lock = self.application.locks.lock(for: Key.self)
+            lock.lock()
+            defer { lock.unlock() }
+
             if let existing = self.application.storage[Key.self] {
                 return existing
-            } else {
-                let new = TCPServer.init(
-                    application: self.application,
-                    responder: self.application.responder.current,
-                    configuration: self.configuration,
-                    on: self.application.eventLoopGroup
-                )
-                self.application.storage[Key.self] = new
-                // Add lifecycle handler.
-                //self.application.logger.trace("Initialized TCP Server, hooking into lifecycle handler")
-                //sself.application.lifecycle.use(new)
-                return new
             }
+            let new = TCPServer(
+                application: self.application,
+                responder: self.application.responder.current,
+                configuration: self.configuration,
+                on: self.application.eventLoopGroup
+            )
+            // Release the listening socket even if the lifecycle handler never runs — e.g. the
+            // server was created but never installed via `servers.use(...)`. Application
+            // teardown runs lifecycle handlers before storage shutdown, so in the normal case
+            // this is a second call; `TCPServer.shutdown()` is idempotent, so that's a no-op.
+            self.application.storage.set(Key.self, to: new) { $0.shutdown() }
+            return new
         }
 
-        struct Key: StorageKey {
+        struct Key: StorageKey, LockKey {
             typealias Value = TCPServer
         }
 
