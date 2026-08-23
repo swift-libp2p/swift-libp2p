@@ -130,7 +130,6 @@ extension SocketAddress {
     public func toMultiaddr(proto: MultiaddrProtocol = .tcp) throws -> Multiaddr {
         var ma: Multiaddr
         if let ip = self.ipAddress {
-            /// - TODO: Determine if ip4 or ip6
             switch self.protocol {
             case .inet:
                 ma = try Multiaddr(.ip4, address: ip)
@@ -139,14 +138,6 @@ extension SocketAddress {
             default:
                 throw NSError(domain: "Failed to convert SocketAddress to Multiaddr", code: 0, userInfo: nil)
             }
-            //            if self.description.hasPrefix("[IPv6]") {
-            //                ma = try Multiaddr(.ip6, address: ip)
-            //            } else if self.description.hasPrefix("[IPv4]") {
-            //                ma = try Multiaddr(.ip4, address: ip)
-            //            } else {
-            //                throw NSError(domain: "Failed to convert SocketAddress to Multiaddr", code: 0, userInfo: nil)
-            //            }
-
             if let port = self.port {
                 switch proto {
                 case .tcp:
@@ -158,7 +149,6 @@ extension SocketAddress {
                     ma = try ma.encapsulate(proto: proto, address: "\(port)")
                 }
             }
-
         } else if let path = self.pathname {
             ma = try Multiaddr(.unix, address: path)
         } else {
