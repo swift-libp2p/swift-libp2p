@@ -21,13 +21,18 @@ extension Application.Connections.Provider {
         }
     }
 
-    public static func `default`(maxConcurrentConnections: Int, ASCEnabled: Bool = true) -> Self {
+    public static func `default`(
+        maxConcurrentConnections: Int,
+        ASCEnabled: Bool = true,
+        upgradeTimeout: TimeAmount = Application.Connections.defaultUpgradeTimeout
+    ) -> Self {
         .init { app in
             app.connectionManager.use {
                 BasicInMemoryConnectionManager(
                     application: $0,
                     maxPeers: maxConcurrentConnections,
-                    ASCEnabled: ASCEnabled
+                    ASCEnabled: ASCEnabled,
+                    upgradeTimeout: upgradeTimeout
                 )
             }
         }
@@ -69,6 +74,16 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
     /// Idle Connection Timeout
     private var idleTimeout: TimeAmount = .seconds(3)
 
+    /// The amount of time a newly registered Connection is given to reach the `.upgraded` state.
+    ///
+    /// Connections are handed to us the moment their channel becomes active, well before the security
+    /// and muxer handshakes complete. A remote that connects and then goes silent would otherwise
+    /// occupy a slot indefinitely
+    private var upgradeTimeout: TimeAmount
+
+    /// Pending upgrade timeout tasks, keyed by the Connection's `id.uuidString`
+    private var upgradeTimeouts: [String: Scheduled<Void>] = [:]
+
     /// The inbound vs outbound buffer
     private var buffer: Int
 
@@ -84,7 +99,12 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
         didSet { precondition(oldValue == .running && state == .shuttingDown, "Invalid State Transition") }
     }
 
-    internal init(application: Application, maxPeers: Int = 50, ASCEnabled: Bool = false) {
+    internal init(
+        application: Application,
+        maxPeers: Int = 50,
+        ASCEnabled: Bool = false,
+        upgradeTimeout: TimeAmount = Application.Connections.defaultUpgradeTimeout
+    ) {
         self.application = application
         self.eventLoop = application.eventLoopGroup.next()
         self.logger = application.logger
@@ -94,9 +114,12 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
         self.connections = [:]
         self.maxPeers = maxPeers
         self.buffer = Int(Double(maxPeers) * 0.2)
+        self.upgradeTimeout = upgradeTimeout
 
         /// Subscribe to onDisconnect events
         self.application.events.on(self, event: .disconnected(onDisconnectedNew))
+        /// Subscribe to onUpgraded events so we can disarm a Connection's upgrade timeout
+        self.application.events.on(self, event: .upgraded(onUpgraded))
         if ASCEnabled {
             self.application.events.on(self, event: .openedStream(onOpenedStream))
             self.application.events.on(self, event: .closedStream(onClosedStream))
@@ -116,6 +139,17 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
 
     func setIdleTimeout(_ timeout: TimeAmount) {
         self.idleTimeout = timeout
+    }
+
+    /// Updates the window a Connection is given to complete its upgrade.
+    ///
+    /// - Note: Only Connections registered after this call observe the new value; timeouts already
+    ///   armed continue to run with the window that was in effect when they were scheduled.
+    func setUpgradeTimeout(_ timeout: TimeAmount) {
+        let _ = self.eventLoop.submit {
+            self.upgradeTimeout = timeout
+            self.logger.info("Upgrade Timeout updated to \(timeout.seconds) seconds")
+        }
     }
 
     func getConnections(on loop: EventLoop?) -> EventLoopFuture<[Connection]> {
@@ -182,10 +216,54 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
             guard self.connections[connection.id.uuidString] == nil else { throw Errors.connectionAlreadyExists }
             self.connections[connection.id.uuidString] = connection
             self.totalConnectionCounter += 1
+            /// Give the Connection a bounded window to finish upgrading before we reclaim its slot
+            self.armUpgradeTimeout(for: connection)
             /// Kick off a prune if we're close to our max peer count
             if self.connections.count > (self.maxPeers - self.buffer) { let _ = self.debouncedPrune() }
             return
         }.hop(to: loop ?? eventLoop)
+    }
+
+    // MARK: - Upgrade Timeout
+
+    /// Schedules the upgrade deadline for a freshly registered Connection.
+    /// - Note: Must be called on `self.eventLoop`.
+    private func armUpgradeTimeout(for connection: Connection) {
+        let key = connection.id.uuidString
+        /// A Connection that's already upgraded (or beyond) doesn't need a deadline
+        guard connection.status != .upgraded, connection.status != .closing, connection.status != .closed else {
+            return
+        }
+        guard self.upgradeTimeouts[key] == nil else { return }
+        let timeout = self.upgradeTimeout
+        self.upgradeTimeouts[key] = self.eventLoop.scheduleTask(in: timeout) { [weak self] in
+            guard let self = self else { return }
+            self.upgradeTimeouts.removeValue(forKey: key)
+            /// The Connection may have already been closed and unregistered by another path
+            guard let connection = self.connections[key] else { return }
+            /// If the `.upgraded` event was missed (or raced us), the status is the source of truth
+            guard connection.status != .upgraded else { return }
+            self.logger.warning(
+                "Connection[\(key.prefix(5))][\(connection.remoteAddr?.description ?? "???")] failed to upgrade within \(timeout.seconds) seconds. Closing."
+            )
+            /// Close the stalled Connection and reclaim its slot
+            let _ = self.closeConnectionWithTimeout(id: connection.id)
+        }
+    }
+
+    /// Cancels a Connection's pending upgrade deadline, if one is still armed.
+    /// - Note: Must be called on `self.eventLoop`.
+    private func cancelUpgradeTimeout(for id: UUID) {
+        if let task = self.upgradeTimeouts.removeValue(forKey: id.uuidString) {
+            task.cancel()
+        }
+    }
+
+    /// The Connection completed its security + muxer handshakes, so it no longer needs a deadline.
+    func onUpgraded(_ connection: Connection) {
+        let _ = self.eventLoop.submit {
+            self.cancelUpgradeTimeout(for: connection.id)
+        }
     }
 
     private func dumpConnectionMetricsRandomSample() {
@@ -254,6 +332,8 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
             self.connections = [:]
             self.pruneTask?.cancel()
             self.pruneTask = nil
+            for task in self.upgradeTimeouts.values { task.cancel() }
+            self.upgradeTimeouts = [:]
         }
     }
 
@@ -327,6 +407,7 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
                 self.logger.error("Failed to remove Connection from list.")
             }
             self.connectionStreamCount.removeValue(forKey: id.uuidString)
+            self.cancelUpgradeTimeout(for: id)
         }
     }
 
