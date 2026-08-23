@@ -105,7 +105,7 @@ extension LibP2PTests {
         /// connection, orphaning the first channel with no way to ever close it
         @Test("A second start() throws and leaves the first socket bound and accepting")
         func secondStartThrowsAndPreservesFirstSocket() async throws {
-            var config: ((Application) async throws -> Void) = { app in
+            let config: ((Application) async throws -> Void) = { app in
                 app.servers.use(.tcp(host: "127.0.0.1", port: 0))
             }
             try await withApp(configure: config) { app in
@@ -138,7 +138,7 @@ extension LibP2PTests {
             let listened = NIOLockedValueBox<[String]>([])
             let closed = NIOLockedValueBox<[String]>([])
 
-            var config: ((Application) async throws -> Void) = { app in
+            let config: ((Application) async throws -> Void) = { app in
                 app.servers.use(.tcp(host: "127.0.0.1", port: 0))
                 app.events.on(
                     subscriber,
@@ -172,7 +172,7 @@ extension LibP2PTests {
             let subscriber = Subscriber()
             let closed = NIOLockedValueBox<[String]>([])
 
-            var config: ((Application) async throws -> Void) = { app in
+            let config: ((Application) async throws -> Void) = { app in
                 app.servers.use(.tcp(host: "127.0.0.1", port: 0))
                 app.events.on(
                     subscriber,
@@ -219,7 +219,7 @@ extension LibP2PTests {
         /// is observable as "accepted but never closed".
         @Test("A dial that fails after connecting closes the socket instead of leaking it")
         func failedDialClosesTheChannel() async throws {
-            var config: ((Application) async throws -> Void) = { app in
+            let config: ((Application) async throws -> Void) = { app in
                 // A ceiling of one, so the second registration is refused.
                 app.connectionManager.use(.default(maxConcurrentConnections: 1, ASCEnabled: false))
             }
