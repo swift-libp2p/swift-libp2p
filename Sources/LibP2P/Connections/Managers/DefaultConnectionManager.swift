@@ -39,7 +39,17 @@ extension Application.Connections.Provider {
     }
 }
 
-class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
+/// The default, in-memory `ConnectionManager`.
+///
+/// ### Concurrency
+///
+/// Every mutable property on this class is confined to ``eventLoop`` therefore
+/// - Public entry points must hop
+/// - Private helpers assume they are already on the eventloop
+///
+/// - Note:
+/// `Connection.status` is the known exception, fixing it requires changes to `ConnectionStats`
+final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
 
     private let application: Application
     /// A mapping of all connections we are currently managing
@@ -138,7 +148,10 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
     }
 
     func setIdleTimeout(_ timeout: TimeAmount) {
-        self.idleTimeout = timeout
+        self.eventLoop.execute {
+            self.idleTimeout = timeout
+            self.logger.info("Idle Timeout updated to \(timeout.seconds) seconds")
+        }
     }
 
     /// Updates the window a Connection is given to complete its upgrade.
@@ -190,8 +203,8 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
     }
 
     func addConnection(_ connection: Connection, on loop: EventLoop?) -> EventLoopFuture<Void> {
-        guard self.state == .running else { return self.eventLoop.makeFailedFuture(Errors.tooManyPeers) }
-        return eventLoop.submit { () in
+        eventLoop.submit { () in
+            guard self.state == .running else { throw Errors.shuttingDown }
             if connection.direction == .inbound {
                 /// Allow inbound connections up until maxConnections - buffer  ( 100 - 20 )
                 guard self.connections.count < self.maxPeers - self.buffer else {
@@ -319,21 +332,31 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
         }
     }
 
+    /// Closes every managed Connection and puts the manager into its terminal `.shuttingDown` state.
+    ///
+    /// The guard, the state transition and the drain all run on `eventLoop`: `state`'s `didSet`
+    /// asserts a single one-way transition, so reading and writing it off the loop would let two
+    /// concurrent callers both pass the guard and trip that assertion.
     func closeAllConnections() -> EventLoopFuture<Void> {
-        guard self.state == .running else { return self.eventLoop.makeSucceededVoidFuture() }
-        self.state = .shuttingDown
-        return connections.map {
-            $0.value.close()
-        }.flatten(on: eventLoop).always { _ in
-            for connection in self.connections {
-                guard let pid = connection.value.remotePeer else { return }
-                self.connectionHistory[pid.b58String, default: []].append(connection.value.stats)
+        self.eventLoop.flatSubmit {
+            guard self.state == .running else { return self.eventLoop.makeSucceededVoidFuture() }
+            self.state = .shuttingDown
+
+            /// Snapshot the connections up front. Closing them can re-enter our own bookkeeping (a
+            /// close posts `.disconnected`), and we need the same set again for the history append.
+            let closing = Array(self.connections.values)
+
+            return closing.map { $0.close() }.flatten(on: self.eventLoop).always { _ in
+                
+                for connection in closing {
+                    // Update our history for the remote peer if we have one
+                    if let pid = connection.remotePeer {
+                        self.connectionHistory[pid.b58String, default: []].append(connection.stats)
+                    }
+                }
+                self.connections = [:]
+                self.cancelAllScheduledTasks()
             }
-            self.connections = [:]
-            self.pruneTask?.cancel()
-            self.pruneTask = nil
-            for task in self.upgradeTimeouts.values { task.cancel() }
-            self.upgradeTimeouts = [:]
         }
     }
 
@@ -397,6 +420,9 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
         }
     }
 
+    /// The single point for unregistering a Connection
+    /// Archives the Connections stats and cleans its state.
+    /// Anything keyed by connection identity belongs here, so no cleanup path can forget it.
     private func removeConnectionFromList(id: UUID) -> EventLoopFuture<Void> {
         self.eventLoop.submit {
             if let c = self.connections.removeValue(forKey: id.uuidString) {
@@ -408,6 +434,47 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
             }
             self.connectionStreamCount.removeValue(forKey: id.uuidString)
             self.cancelUpgradeTimeout(for: id)
+            self.cancelIdleTimeout(for: id)
+        }
+    }
+
+    /// Cancels a Connection's pending idle-close task.
+    ///
+    /// Both of these used to be cleared only on the paths that scheduled them, so a Connection torn
+    /// down by any other route (a prune, a peer-initiated close) left its entries behind forever.
+    /// - Note: Must be called on `self.eventLoop`.
+    private func cancelIdleTimeout(for id: UUID) {
+        if let task = self.connectionTimeouts.removeValue(forKey: id.uuidString) {
+            task.cancel()
+        }
+        self.alerts.removeValue(forKey: id)
+    }
+
+    /// Cancels the debounced prune task, if one is armed.
+    /// - Note: Must be called on `self.eventLoop`.
+    private func cancelPruneTask() {
+        self.pruneTask?.cancel()
+        self.pruneTask = nil
+    }
+
+    /// Cancels every scheduled task this manager owns and drops the bookkeeping that goes with them.
+    /// Used on shutdown so nothing we scheduled outlives the manager.
+    /// - Note: Must be called on `self.eventLoop`.
+    private func cancelAllScheduledTasks() {
+        self.cancelPruneTask()
+        for task in self.upgradeTimeouts.values { task.cancel() }
+        self.upgradeTimeouts = [:]
+        for task in self.connectionTimeouts.values { task.cancel() }
+        self.connectionTimeouts = [:]
+        self.alerts = [:]
+    }
+
+    /// The number of per-Connection scheduled tasks and bookkeeping entries currently held.
+    /// Exists so tests can assert that unregistering a Connection leaves nothing behind.
+    internal func perConnectionBookkeepingCount() -> EventLoopFuture<Int> {
+        self.eventLoop.submit {
+            self.upgradeTimeouts.count + self.connectionTimeouts.count + self.alerts.count
+                + self.connectionStreamCount.count
         }
     }
 
@@ -429,19 +496,15 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
     }
 
     private func debouncedPrune() -> EventLoopFuture<Void> {
-        guard self.application.isRunning && !self.application.didShutdown && self.state == .running else {
-            if let pt = self.pruneTask {
-                pt.cancel()
-                self.pruneTask = nil
+        self.eventLoop.flatSubmit {
+            guard self.application.isRunning, !self.application.didShutdown, self.state == .running else {
+                self.cancelPruneTask()
+                return self.eventLoop.makeSucceededVoidFuture()
             }
-            return self.eventLoop.makeSucceededVoidFuture()
-        }
-        return self.eventLoop.flatSubmit {
-            // self.logger.notice("Debouncing Prune");
             guard self.pruneTask == nil else {
                 return self.eventLoop.makeSucceededVoidFuture()
             }
-            self.pruneTask = self.eventLoop.scheduleTask(
+            let task = self.eventLoop.scheduleTask(
                 in: self.pruneDebounceValue,
                 { [weak self] in
                     guard let self = self, self.application.isRunning, !self.application.didShutdown else { return }
@@ -456,15 +519,19 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
                     }
                 }
             )
-            return self.pruneTask!.futureResult
+            self.pruneTask = task
+            return task.futureResult
         }
     }
 
+    /// - Note: EventBus callbacks are delivered on the bus's own drain `Task`, so this hops before reading `state`.
     func onDisconnectedNew(_ connection: Connection, peer: PeerID?) {
-        guard self.application.isRunning && !self.application.didShutdown else { return }
-        guard self.state == .running else { return }
-        debouncedPrune().whenComplete { res in
-            self.logger.trace("Done with debounced prune \(res)")
+        self.eventLoop.execute {
+            guard self.application.isRunning, !self.application.didShutdown else { return }
+            guard self.state == .running else { return }
+            self.debouncedPrune().whenComplete { res in
+                self.logger.trace("Done with debounced prune \(res)")
+            }
         }
     }
 
@@ -587,6 +654,8 @@ class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
         case tooManyPeers
         case connectionAlreadyExists
         case failedToCloseConnection
+        /// The ConnectionManager has begun shutting down and is no longer accepting Connections.
+        case shuttingDown
     }
 }
 
