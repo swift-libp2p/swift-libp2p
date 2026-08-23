@@ -40,7 +40,7 @@ public struct TCP: Transport, Sendable {
             // Enable SO_REUSEADDR.
             .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             // Match the accept side, which sets TCP_NODELAY on every child channel.
-            .channelOption(ChannelOptions.socketOption(.tcp_nodelay), value: 1)
+            .channelOption(ChannelOptions.tcpOption(.tcp_nodelay), value: 1)
             .channelOption(ChannelOptions.connectTimeout, value: Self.defaultConnectTimeout)
             .channelInitializer { channel in
                 // Do we install the upgrader here or do we let the Connection install the handlers???

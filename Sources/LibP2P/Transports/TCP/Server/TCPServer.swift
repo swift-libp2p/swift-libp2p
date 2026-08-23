@@ -428,7 +428,7 @@ private final class TCPServerConnection: Sendable {
             // SO_REUSEADDR is deliberately *not* set here: it only affects `bind`, so setting it
             // on an already-accepted socket is a no-op.
             .childChannelOption(
-                ChannelOptions.socketOption(.tcp_nodelay),
+                ChannelOptions.tcpOption(.tcp_nodelay),
                 value: configuration.tcpNoDelay ? 1 : 0
             )
             .childChannelOption(ChannelOptions.maxMessagesPerRead, value: configuration.maxMessagesPerRead)
