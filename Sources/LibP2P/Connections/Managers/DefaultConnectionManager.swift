@@ -94,6 +94,19 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     /// Pending upgrade timeout tasks, keyed by the Connection's `id.uuidString`
     private var upgradeTimeouts: [String: Scheduled<Void>] = [:]
 
+    /// The EventBus we're subscribed to, resolved once at init.
+    ///
+    /// `deinit` must not reach it through `application.events`: this manager is owned by
+    /// `Application.Connections.Storage`, so its `deinit` can run from inside `Application.storage`'s
+    /// own locked teardown, and going back through that storage re-enters a non-recursive lock.
+    /// Holding the bus directly also guarantees we unregister from the same instance we subscribed to
+    /// `application.events` mints a fresh ephemeral bus once the app is shutting down.
+    private let eventBus: EventBus
+
+    /// The identity our EventBus subscriptions are filed under. Captured during `init` because
+    /// deriving it in `deinit` would require passing a deallocating `self` as an `AnyObject`.
+    private var eventBusOwner: ObjectIdentifier? = nil
+
     /// The inbound vs outbound buffer
     private var buffer: Int
 
@@ -116,6 +129,7 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         upgradeTimeout: TimeAmount = Application.Connections.defaultUpgradeTimeout
     ) {
         self.application = application
+        self.eventBus = application.events
         self.eventLoop = application.eventLoopGroup.next()
         self.logger = application.logger
         self.logger[metadataKey: "ConnManager"] = .string("[\(UUID().uuidString.prefix(5))]")
@@ -126,17 +140,27 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         self.buffer = Int(Double(maxPeers) * 0.2)
         self.upgradeTimeout = upgradeTimeout
 
-        /// Subscribe to onDisconnect events
-        self.application.events.on(self, event: .disconnected(onDisconnectedNew))
-        /// Subscribe to onUpgraded events so we can disarm a Connection's upgrade timeout
-        self.application.events.on(self, event: .upgraded(onUpgraded))
+        // Every subscription captures `self` weakly to avoid retain cycles
+        self.eventBus.on(self, event: .disconnected({ [weak self] conn, peer in
+            self?.onDisconnectedNew(conn, peer: peer)
+        }))
+        self.eventBus.on(self, event: .upgraded({ [weak self] conn in self?.onUpgraded(conn) }))
         if ASCEnabled {
             self.application.events.on(self, event: .openedStream(onOpenedStream))
             self.application.events.on(self, event: .closedStream(onClosedStream))
         } else {
-            self.application.events.on(self, event: .openedStream(onOpenedStreamCounter))
+            self.eventBus.on(self, event: .openedStream({ [weak self] s in self?.onOpenedStreamCounter(s) }))
         }
+        self.eventBusOwner = ObjectIdentifier(self)
         self.logger.trace("Initialized \(ASCEnabled ? "with" : "without") Automatic Stream Counting")
+    }
+
+    deinit {
+        // Cancels the bus's drain tasks for our subscriptions. Reachable only because the callbacks
+        // above capture `self` weakly.
+        if let owner = self.eventBusOwner {
+            self.eventBus.unregister(owner: owner)
+        }
     }
 
     func setMaxConnections(_ maxConnections: Int) {
