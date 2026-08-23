@@ -228,7 +228,6 @@ public final class TCPServer: Server, @unchecked Sendable {
                 return "unix: \(path)"
             }
         }
-        self.configuration.logger.debug("TCP Initialized on \(addressDescription(for: configuration))")
 
         // start the actual TCPServer
         let connection = try TCPServerConnection.start(
