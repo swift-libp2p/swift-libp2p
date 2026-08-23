@@ -236,26 +236,30 @@ extension LibP2PTests {
                     }
                     .bind(host: "127.0.0.1", port: 0)
                     .get()
-                defer { try? listener.close().wait() }
+                do {
+                    let port = try #require(listener.localAddress?.port)
 
-                let port = try #require(listener.localAddress?.port)
+                    // Occupy the only slot the manager will hand out.
+                    try await app.connections.addConnection(DummyConnection(direction: .outbound), on: nil).get()
 
-                // Occupy the only slot the manager will hand out.
-                try await app.connections.addConnection(DummyConnection(direction: .outbound), on: nil).get()
+                    let tcp = TCP(application: app, protocols: [], proxy: false, uuid: UUID())
+                    let target = try Multiaddr("/ip4/127.0.0.1/tcp/\(port)")
 
-                let tcp = TCP(application: app, protocols: [], proxy: false, uuid: UUID())
-                let target = try Multiaddr("/ip4/127.0.0.1/tcp/\(port)")
+                    await #expect(throws: BasicInMemoryConnectionManager.Errors.self) {
+                        _ = try await tcp.dial(address: target).get()
+                    }
 
-                await #expect(throws: BasicInMemoryConnectionManager.Errors.self) {
-                    _ = try await tcp.dial(address: target).get()
+                    // The socket was established (so the leak was possible) and then cleaned up.
+                    #expect(await Self.waitUntil { accepted.withLockedValue { $0 } == 1 })
+                    #expect(
+                        await Self.waitUntil { closed.withLockedValue { $0 } == 1 },
+                        "dialed socket was accepted but never closed — it leaked"
+                    )
+                } catch {
+                    try? await listener.close().get()
+                    throw error
                 }
-
-                // The socket was established (so the leak was possible) and then cleaned up.
-                #expect(await Self.waitUntil { accepted.withLockedValue { $0 } == 1 })
-                #expect(
-                    await Self.waitUntil { closed.withLockedValue { $0 } == 1 },
-                    "dialed socket was accepted but never closed — it leaked"
-                )
+                try? await listener.close().get()
             }
         }
     }
