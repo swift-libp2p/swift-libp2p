@@ -112,6 +112,12 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
 
     /// Connection Pruning Task
     private var pruneTask: Scheduled<Void>? = nil
+    /// Completed once the prune chain kicked off by ``pruneTask`` has actually finished, so callers of
+    /// ``debouncedPrune()`` can await the pruning rather than merely the scheduled task firing.
+    ///
+    /// - Important: Whoever drops this promise must complete it first — a deallocated, uncompleted
+    ///   `EventLoopPromise` trips NIO's leaked-promise `fatalError` in debug builds.
+    private var prunePromise: EventLoopPromise<Void>? = nil
     private let pruneDebounceValue: TimeAmount = .milliseconds(100)
 
     private enum State {
@@ -505,6 +511,8 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     private func cancelPruneTask() {
         self.pruneTask?.cancel()
         self.pruneTask = nil
+        self.prunePromise?.succeed(())
+        self.prunePromise = nil
     }
 
     /// Cancels every scheduled task this manager owns and drops the bookkeeping that goes with them.
@@ -531,46 +539,58 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     private func pruneConnectionHistory(maxEntries: Int) -> EventLoopFuture<Void> {
         self.eventLoop.submit {
             if self.connectionHistory.count > maxEntries {
-                for _ in (0..<self.connectionHistory.count - maxEntries) {
-                    if let randEntry = self.connectionHistory.randomElement()?.key {
-                        self.connectionHistory.removeValue(forKey: randEntry)
-                    }
+                // Evict the peers we heard from longest ago, oldest first.
+                let staleFirst = self.connectionHistory.sorted { lhs, rhs in
+                    Self.lastSeen(in: lhs.value) < Self.lastSeen(in: rhs.value)
+                }
+                for entry in staleFirst.prefix(self.connectionHistory.count - maxEntries) {
+                    self.connectionHistory.removeValue(forKey: entry.key)
                 }
             }
             for (key, value) in self.connectionHistory {
-                if value.count > 10 {
-                    self.connectionHistory.updateValue(Array(value.suffix(10)), forKey: key)
+                if value.count > maxEntries {
+                    self.connectionHistory.updateValue(Array(value.suffix(maxEntries)), forKey: key)
                 }
             }
         }
     }
 
-    private func debouncedPrune() -> EventLoopFuture<Void> {
+    /// Schedules a prune, coalescing calls that arrive inside the debounce window.
+    /// - Note: `internal` rather than `private` only so tests can await a prune directly.
+    func debouncedPrune() -> EventLoopFuture<Void> {
         self.eventLoop.flatSubmit {
             guard self.application.isRunning, !self.application.didShutdown, self.state == .running else {
                 self.cancelPruneTask()
                 return self.eventLoop.makeSucceededVoidFuture()
             }
-            guard self.pruneTask == nil else {
-                return self.eventLoop.makeSucceededVoidFuture()
+            // A prune is already pending — join it rather than scheduling a second one.
+            if let pending = self.prunePromise {
+                return pending.futureResult
             }
-            let task = self.eventLoop.scheduleTask(
-                in: self.pruneDebounceValue,
-                { [weak self] in
-                    guard let self = self, self.application.isRunning, !self.application.didShutdown else { return }
-                    return self.pruneClosedConnections().flatMap {
-                        self.pruneOldConnections().flatMap {
-                            self.pruneConnectionHistory(maxEntries: self.maxConnectionHistoryCount).map {
-                                self.logger.debug("\(self.connections.count) / \(self.maxPeers) Connections")
-                            }
-                        }
-                    }.whenComplete { _ in
-                        self.pruneTask = nil
-                    }
+
+            let promise = self.eventLoop.makePromise(of: Void.self)
+            self.prunePromise = promise
+
+            // The promise is captured strongly so it is always completable, even if the manager is
+            // gone by the time the task fires; `self` stays weak so a pending prune doesn't keep the
+            // manager alive.
+            self.pruneTask = self.eventLoop.scheduleTask(in: self.pruneDebounceValue) { [weak self] in
+                guard let self = self, self.application.isRunning, !self.application.didShutdown else {
+                    promise.succeed(())
+                    return
                 }
-            )
-            self.pruneTask = task
-            return task.futureResult
+                self.pruneClosedConnections().flatMap {
+                    self.pruneOldConnections()
+                }.flatMap {
+                    self.pruneConnectionHistory(maxEntries: self.maxConnectionHistoryCount)
+                }.whenComplete { result in
+                    self.logger.debug("\(self.connections.count) / \(self.maxPeers) Connections")
+                    self.pruneTask = nil
+                    self.prunePromise = nil
+                    promise.completeWith(result)
+                }
+            }
+            return promise.futureResult
         }
     }
 
