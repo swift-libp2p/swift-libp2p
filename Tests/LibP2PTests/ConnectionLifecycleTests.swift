@@ -296,5 +296,92 @@ extension LibP2PTests {
                 #expect(connection.status != .closed)
             }
         }
+
+        // MARK: - Shutdown & bookkeeping
+
+        /// Teardown must drain every connection, including ones that never finished their security
+        /// handshake and therefore have no `remotePeer`.
+        @Test("closeAllConnections clears every connection, even peer-less ones")
+        func testCloseAllConnectionsClearsPeerlessConnections() async throws {
+            try await withApp { app in
+                let manager = BasicInMemoryConnectionManager(application: app, maxPeers: 10, ASCEnabled: false)
+                let loop = app.eventLoopGroup.next()
+
+                // `DummyConnection` has no `remotePeer` — exactly the case that used to abort teardown.
+                let connection = DummyConnection(direction: .inbound)
+                #expect(connection.remotePeer == nil)
+
+                try await manager.addConnection(connection, on: loop).get()
+                #expect(try await manager.getConnections(on: loop).get().count == 1)
+
+                // `DummyConnection.close()` fails by design, so the drain future fails — the teardown
+                // bookkeeping still has to run to completion.
+                _ = try? await manager.closeAllConnections().get()
+
+                #expect(try await manager.getConnections(on: loop).get().isEmpty)
+                #expect(try await manager.perConnectionBookkeepingCount().get() == 0)
+            }
+        }
+
+        @Test("closeAllConnections is idempotent")
+        func testCloseAllConnectionsIsIdempotent() async throws {
+            try await withApp { app in
+                let manager = BasicInMemoryConnectionManager(application: app, maxPeers: 10, ASCEnabled: false)
+
+                try await manager.closeAllConnections().get()
+                try await manager.closeAllConnections().get()
+            }
+        }
+
+        /// Once the manager is shutting down it must reject new connections with a .shuttingDown error
+        @Test("addConnection is rejected with .shuttingDown once the manager is closed")
+        func testAddConnectionRejectedAfterShutdown() async throws {
+            try await withApp { app in
+                let manager = BasicInMemoryConnectionManager(application: app, maxPeers: 10, ASCEnabled: false)
+                let loop = app.eventLoopGroup.next()
+
+                try await manager.closeAllConnections().get()
+
+                await #expect(throws: BasicInMemoryConnectionManager.Errors.shuttingDown) {
+                    try await manager.addConnection(DummyConnection(direction: .outbound), on: loop).get()
+                }
+            }
+        }
+
+        /// Unregistering a connection must drop all of its per-connection bookkeeping. The idle-close
+        /// task and the ARC slow-loop alert entry used to be cleared only on the paths that scheduled
+        /// them, so a connection torn down any other way leaked both entries permanently.
+        @Test("Unregistering a connection leaves no per-connection bookkeeping behind")
+        func testUnregisteringConnectionClearsBookkeeping() async throws {
+            try await withApp { app in
+                let manager = BasicInMemoryConnectionManager(
+                    application: app,
+                    maxPeers: 10,
+                    ASCEnabled: false,
+                    upgradeTimeout: .milliseconds(100)
+                )
+                let loop = app.eventLoopGroup.next()
+                let channel = NIOAsyncTestingChannel()
+                let connection = BasicConnectionLight(
+                    application: app,
+                    channel: channel,
+                    direction: .inbound,
+                    remoteAddress: try Multiaddr("/ip4/127.0.0.1/tcp/1234"),
+                    expectedRemotePeer: nil
+                )
+
+                try await manager.addConnection(connection, on: loop).get()
+                // The armed upgrade timeout is the only bookkeeping we expect at this point.
+                #expect(try await manager.perConnectionBookkeepingCount().get() == 1)
+
+                // Let the upgrade window elapse so the manager closes and unregisters the connection.
+                try await Task.sleep(for: .milliseconds(500))
+
+                #expect(try await manager.getConnections(on: loop).get().isEmpty)
+                #expect(try await manager.perConnectionBookkeepingCount().get() == 0)
+
+                await channel.testingEventLoop.run()
+            }
+        }
     }
 }
