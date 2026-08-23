@@ -146,8 +146,8 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         }))
         self.eventBus.on(self, event: .upgraded({ [weak self] conn in self?.onUpgraded(conn) }))
         if ASCEnabled {
-            self.application.events.on(self, event: .openedStream(onOpenedStream))
-            self.application.events.on(self, event: .closedStream(onClosedStream))
+            self.eventBus.on(self, event: .openedStream({ [weak self] s in self?.onOpenedStream(s) }))
+            self.eventBus.on(self, event: .closedStream({ [weak self] s in self?.onClosedStream(s) }))
         } else {
             self.eventBus.on(self, event: .openedStream({ [weak self] s in self?.onOpenedStreamCounter(s) }))
         }
