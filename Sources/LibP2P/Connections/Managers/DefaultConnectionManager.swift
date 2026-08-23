@@ -406,10 +406,11 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         }
     }
 
+    /// Unregisters Connections that have already finished closing.
     private func pruneClosedConnections() -> EventLoopFuture<Void> {
         eventLoop.flatSubmit { () in
             self.connections.filter({ $0.value.status == .closed }).map {
-                self.closeConnectionWithTimeout(id: $0.value.id)
+                self.removeConnectionFromList(id: $0.value.id)
             }.flatten(on: self.eventLoop)
         }
     }
