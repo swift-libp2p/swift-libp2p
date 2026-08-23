@@ -26,29 +26,31 @@ extension Application {
         self.servers.use(serverProvider)
     }
 
-    //    public var listenAddresses:[Multiaddr] {
-    //        self.servers.allServers.reduce(into: Array<Multiaddr>()) { partialResult, server in
-    //            partialResult.append(server.listeningAddress)
-    //        }
-    //    }
-
     public var listenAddresses: [Multiaddr] {
         self.servers.allServers.reduce(into: [Multiaddr]()) { partialResult, server in
             partialResult.append(server.listeningAddress)
-        }.flatMap { ma -> [Multiaddr] in
-            // Expand an unspecified (`0.0.0.0`) bind address into one concrete
-            // multiaddr per non-loopback interface, mirroring rust-libp2p's
-            // transport-level `if_watch` expansion, so the wildcard never
-            // reaches the address-advertisement path. (The previous behavior
-            // swapped only the hardcoded `en0` interface and silently leaked
-            // raw `0.0.0.0` on any host whose primary interface wasn't `en0` —
-            // e.g. Wi-Fi/`en1`.) Never returns empty for a bound server, so
-            // callers that need `listenAddresses.first` keep a usable address.
-            guard let tcp = ma.tcpAddress, tcp.address == "0.0.0.0" else { return [ma] }
-            let interfaceIPs = self.getAllSystemAddresses()
-            guard !interfaceIPs.isEmpty else { return [ma] }
-            return interfaceIPs.compactMap { try? ma.swap(address: $0, forCodec: .ip4) }
-        }
+        }.flatMap { self.expandingUnspecified($0) }
+    }
+
+    /// Expands an unspecified (`0.0.0.0`) bind address into one concrete
+    /// multiaddr per non-loopback interface, so the wildcard never reaches the
+    /// address-advertisement path.
+    ///
+    /// Returns `[ma]` unchanged when the address isn't an IPv4 wildcard or when
+    /// interface enumeration turns up nothing, so this never returns empty for
+    /// a bound server and callers that need `.first` keep a usable address.
+    ///
+    /// - Note: Deliberately matched against `"0.0.0.0"` rather than
+    ///   ``Multiaddr/isUnspecifiedAddress``, which also matches the IPv6
+    ///   wildcard `::`. `getAllSystemAddresses()` returns IPv4 only, and
+    ///   `swap(address:forCodec: .ip4)` is a no-op on a multiaddr with no `ip4`
+    ///   component — so an IPv6 wildcard would expand into N copies of itself.
+    ///   IPv6 wildcard expansion remains unimplemented.
+    func expandingUnspecified(_ ma: Multiaddr) -> [Multiaddr] {
+        guard let tcp = ma.tcpAddress, tcp.address == "0.0.0.0" else { return [ma] }
+        let interfaceIPs = self.getAllSystemAddresses()
+        guard !interfaceIPs.isEmpty else { return [ma] }
+        return interfaceIPs.compactMap { try? ma.swap(address: $0, forCodec: .ip4) }
     }
 
     // MARK: - Advertised addresses
