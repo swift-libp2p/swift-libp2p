@@ -383,5 +383,70 @@ extension LibP2PTests {
                 await channel.testingEventLoop.run()
             }
         }
+
+        // MARK: - Connectedness, pruning & manager lifetime
+
+        /// A connection that has closed but hasn't been pruned yet still sits in the registry. Reporting
+        /// its peer as `.Connected` would claim a live connection to a peer we've already hung up on.
+        @Test("A closed-but-unpruned connection doesn't report its peer as connected")
+        func testClosedConnectionIsNotConnectedness() async throws {
+            try await withApp { app in
+                let manager = BasicInMemoryConnectionManager(application: app, maxPeers: 10, ASCEnabled: false)
+                let loop = app.eventLoopGroup.next()
+                let remotePeer = try PeerID(.Ed25519)
+
+                // `DummyConnection` is born `.closed`, which is exactly the state we care about here.
+                let connection = DummyConnection(direction: .inbound)
+                connection.remotePeer = remotePeer
+                #expect(connection.status == .closed)
+
+                try await manager.addConnection(connection, on: loop).get()
+                // Still registered — this is the unpruned window.
+                #expect(try await manager.getConnections(on: loop).get().count == 1)
+
+                let connectedness = try await manager.connectedness(peer: remotePeer, on: loop).get()
+                #expect(connectedness != .Connected)
+            }
+        }
+
+        /// `debouncedPrune()` used to hand back the scheduled task's future, which fired the moment the
+        /// debounce timer triggered, before the prune actaully ran. Awaiting it must now mean the pruning is done.
+        @Test("The prune future resolves only after pruning has actually run")
+        func testPruneFutureAwaitsTheActualPrune() async throws {
+            try await withApp { app in
+                let manager = BasicInMemoryConnectionManager(application: app, maxPeers: 10, ASCEnabled: false)
+                let loop = app.eventLoopGroup.next()
+
+                // A `.closed` connection is what `pruneClosedConnections` clears.
+                let connection = DummyConnection(direction: .inbound)
+                try await manager.addConnection(connection, on: loop).get()
+                #expect(try await manager.getConnections(on: loop).get().count == 1)
+
+                try await manager.debouncedPrune().get()
+
+                // No sleep, no polling: if the future is honest, the prune has already happened.
+                #expect(try await manager.getConnections(on: loop).get().isEmpty)
+            }
+        }
+
+        /// The EventBus retains every callback in a drain task for its own lifetime, so subscribing with
+        /// bound method references pinned the manager forever and its `deinit` could never run. The
+        /// manager must be free to deallocate once nothing else holds it.
+        @Test("A released connection manager deallocates instead of leaking into the EventBus")
+        func testManagerDeallocatesAfterRelease() async throws {
+            try await withApp { app in
+                weak var weakManager: BasicInMemoryConnectionManager?
+
+                do {
+                    let manager = BasicInMemoryConnectionManager(application: app, maxPeers: 10, ASCEnabled: true)
+                    weakManager = manager
+                    #expect(weakManager != nil)
+                    // Touch it so the compiler can't shorten its lifetime past this point.
+                    _ = try await manager.getConnections(on: app.eventLoopGroup.next()).get()
+                }
+
+                #expect(weakManager == nil)
+            }
+        }
     }
 }
