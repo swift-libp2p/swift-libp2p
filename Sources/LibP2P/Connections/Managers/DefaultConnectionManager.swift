@@ -648,8 +648,15 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
                     existingTimeoutTask.cancel()
                 }
                 // Wait for the idleTimeout, if it's still at 0 after a second then we assume it's idle / unsused and we proceed to close it...
-                self.connectionTimeouts[connection.id.uuidString] = self.eventLoop.scheduleTask(in: self.idleTimeout) {
-                    if let alertEntry = self.alerts.removeValue(forKey: connection.id) {
+                // `self` and the connection are both held weakly, capturing the connection
+                // could pin it for the whole idle window after its last stream closed.
+                let id = connection.id
+                self.connectionTimeouts[id.uuidString] = self.eventLoop.scheduleTask(in: self.idleTimeout) {
+                    [weak self] in
+                    guard let self = self else { return }
+                    self.connectionTimeouts.removeValue(forKey: id.uuidString)
+
+                    if let alertEntry = self.alerts.removeValue(forKey: id) {
                         if Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970
                             > (self.idleTimeout.milliseconds * 0.0015)
                         {
@@ -659,18 +666,15 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
                             )
                         }
                     }
-                    if self.connectionStreamCount[connection.id.uuidString] == 0
-                        && connection.lastActive > self.idleTimeout
-                    {
+
+                    // Re-resolve the connection: it may already have been unregistered while we waited.
+                    guard let connection = self.connections[id.uuidString] as? AppConnection else { return }
+                    if self.connectionStreamCount[id.uuidString] == 0 && connection.lastActive > self.idleTimeout {
                         connection.close().whenComplete { _ in
                             self.logger.debug("Closed Connection using Automatic Reference Counting!")
                         }
-                        if let c = self.connections.removeValue(forKey: connection.id.uuidString) {
-                            if let pid = c.remotePeer {
-                                self.connectionHistory[pid.b58String, default: []].append(c.stats)
-                            }
-                        }
-                        self.connectionStreamCount.removeValue(forKey: connection.id.uuidString)
+                        // Route through the shared close point
+                        let _ = self.removeConnectionFromList(id: id)
                     }
                 }
 
