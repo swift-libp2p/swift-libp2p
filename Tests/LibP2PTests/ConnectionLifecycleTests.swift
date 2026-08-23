@@ -218,5 +218,83 @@ extension LibP2PTests {
                 #expect(try await manager.getConnections(on: loop).get().count == 1)
             }
         }
+
+        // MARK: - Upgrade timeout
+
+        /// Connections are registered the moment their channel becomes active
+        /// A peer that connects and then goes silent must be closed and cleaned up
+        @Test("Connection manager closes connections that never finish upgrading")
+        func testConnectionManagerReapsStalledUpgrades() async throws {
+            try await withApp { app in
+                let manager = BasicInMemoryConnectionManager(
+                    application: app,
+                    maxPeers: 10,
+                    ASCEnabled: false,
+                    upgradeTimeout: .milliseconds(100)
+                )
+                let loop = app.eventLoopGroup.next()
+                let channel = NIOAsyncTestingChannel()
+                let connection = BasicConnectionLight(
+                    application: app,
+                    channel: channel,
+                    direction: .inbound,
+                    remoteAddress: try Multiaddr("/ip4/127.0.0.1/tcp/1234"),
+                    expectedRemotePeer: nil
+                )
+
+                try await manager.addConnection(connection, on: loop).get()
+                #expect(try await manager.getConnections(on: loop).get().count == 1)
+                // The connection never gets secured or muxed, so it stays short of `.upgraded`.
+                #expect(connection.status != .upgraded)
+
+                // Wait out the upgrade window (plus slack for the scheduled task to run).
+                try await Task.sleep(for: .milliseconds(500))
+
+                #expect(try await manager.getConnections(on: loop).get().isEmpty)
+
+                // The close itself was dispatched onto the connection's own testing
+                // loop, so run it to confirm the manager actually tore the connection down.
+                await channel.testingEventLoop.run()
+                #expect(connection.status == .closed)
+            }
+        }
+
+        /// A connection that completes its upgrade inside the window must keep its slot
+        /// the manager disarms the deadline when it observes the `.upgraded` event.
+        @Test("Upgrading within the window disarms the upgrade timeout")
+        func testUpgradeDisarmsTheUpgradeTimeout() async throws {
+            try await withApp { app in
+                let manager = BasicInMemoryConnectionManager(
+                    application: app,
+                    maxPeers: 10,
+                    ASCEnabled: false,
+                    upgradeTimeout: .milliseconds(100)
+                )
+                let loop = app.eventLoopGroup.next()
+                let channel = NIOAsyncTestingChannel()
+                let connection = BasicConnectionLight(
+                    application: app,
+                    channel: channel,
+                    direction: .inbound,
+                    remoteAddress: try Multiaddr("/ip4/127.0.0.1/tcp/1234"),
+                    expectedRemotePeer: nil
+                )
+
+                try await manager.addConnection(connection, on: loop).get()
+
+                // Hand the manager the same notification the connection posts once it's secured & muxed.
+                // The event itself should be enough to cancel the timeout (even though the connection's
+                // status isn't really `.upgraded`).
+                manager.onUpgraded(connection)
+
+                try await Task.sleep(for: .milliseconds(500))
+
+                #expect(try await manager.getConnections(on: loop).get().count == 1)
+
+                // Nothing was scheduled against the connection, so draining its loop leaves it untouched.
+                await channel.testingEventLoop.run()
+                #expect(connection.status != .closed)
+            }
+        }
     }
 }
