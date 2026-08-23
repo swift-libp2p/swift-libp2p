@@ -477,6 +477,17 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         }
     }
 
+    /// The most recent moment on file across a peer's archived Connections, used to decide which peers
+    /// to evict from `connectionHistory` first.
+    ///
+    /// Entries are appended as Connections close, so the last one is the freshest. `Timeline`'s
+    /// individual timestamps are internal to `LibP2PCore`, so we read them through its public
+    /// `history` dictionary
+    private static func lastSeen(in history: [ConnectionStats]) -> Date {
+        guard let mostRecent = history.last else { return .distantPast }
+        return mostRecent.timeline.history.values.max() ?? .distantPast
+    }
+
     /// Cancels a Connection's pending idle-close task.
     ///
     /// Both of these used to be cleared only on the paths that scheduled them, so a Connection torn
