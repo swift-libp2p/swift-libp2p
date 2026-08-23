@@ -206,23 +206,33 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         }.hop(to: loop ?? eventLoop)
     }
 
+    /// Our connectedness to `peer`.
+    ///
+    /// Attempts to classify our ability to connect to a given peer (returning .NotConnected, if we know nothing about them)
     func connectedness(peer: PeerID, on loop: EventLoop?) -> EventLoopFuture<Connectedness> {
         connectionsInvolvingPeer(peer: peer).map { conns -> Connectedness in
-            if conns.count > 0 {
+            if conns.contains(where: { $0.status != .closing && $0.status != .closed }) {
                 return .Connected
-            } else {
-                if let existing = self.connectionHistory[peer.b58String] {
-                    if let mostRecent = existing.last,
-                        mostRecent.timeline.history.contains(where: { $0.key == .upgraded })
-                    {
-                        return .CanConnect
-                    } else {
-                        return .CanNotConnect
-                    }
+            }
+
+            // Anything still registered has yet to be archived into `connectionHistory`, so consult it
+            // directly before falling back to the history.
+            if conns.contains(where: { $0.timeline[.upgraded] != nil }) {
+                return .CanConnect
+            }
+
+            if let existing = self.connectionHistory[peer.b58String] {
+                if let mostRecent = existing.last,
+                    mostRecent.timeline.history.contains(where: { $0.key == .upgraded })
+                {
+                    return .CanConnect
                 } else {
-                    return .NotConnected
+                    return .CanNotConnect
                 }
             }
+
+            // We've talked to this peer (a closing connection is still on file) but never upgraded.
+            return conns.isEmpty ? .NotConnected : .CanNotConnect
         }.hop(to: loop ?? eventLoop)
     }
 
