@@ -39,6 +39,9 @@ extension Application {
     }
 
     public struct Connections: Sendable {
+        /// The default time a new Connection is given to complete its upgrade before being closed
+        public static let defaultUpgradeTimeout: TimeAmount = .seconds(15)
+
         public enum Errors: Error {
             case notImplementedYet
             case invalidProtocolNegotatied
@@ -140,6 +143,13 @@ extension Application {
 
         public func setIdleTimeout(_ timeout: TimeAmount) {
             self.storage.manager.withLockedValue { $0?.setIdleTimeout(timeout) }
+        }
+
+        /// Limits the time a new Connection is given to complete its upgrade before being closed
+        public func setUpgradeTimeout(_ timeout: TimeAmount) {
+            self.storage.manager.withLockedValue { manager in
+                (manager as? BasicInMemoryConnectionManager)?.setUpgradeTimeout(timeout)
+            }
         }
 
         /// Coalesces concurrent cold dials to the same address into a single connection.
