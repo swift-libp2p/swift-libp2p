@@ -25,9 +25,12 @@ public final class TCPServer: Server, @unchecked Sendable {
     ///     let serverConfig = TCPServerConfig.default(port: 8123)
     ///     services.register(serverConfig)
     ///
-    public struct Configuration: @unchecked Sendable {
+    public struct Configuration: Sendable {
         public static let defaultHostname = "127.0.0.1"
         public static let defaultPort = 10000
+        /// NIO's own default. The accept path previously hard-coded `1`, which limits every
+        /// accepted connection to a single `read` per event-loop tick.
+        public static let defaultMaxMessagesPerRead: UInt = 4
 
         /// Address the server will bind to. Configuring an address using a hostname with a nil host or port will use the default hostname or port respectively.
         public var address: BindAddress
@@ -81,6 +84,11 @@ public final class TCPServer: Server, @unchecked Sendable {
         /// When `true`, OS will attempt to minimize TCP packet delay.
         public var tcpNoDelay: Bool
 
+        /// Maximum number of `read` calls the accept side will issue per event-loop tick, per
+        /// accepted connection. Lower values spread the loop more evenly across many
+        /// connections; higher values let an individual connection drain faster.
+        public var maxMessagesPerRead: UInt
+
         //public var tlsConfiguration: TLSConfiguration?
 
         /// If set, this name will be serialized as the `Server` header in outgoing responses.
@@ -98,6 +106,7 @@ public final class TCPServer: Server, @unchecked Sendable {
             backlog: Int = 256,
             reuseAddress: Bool = true,
             tcpNoDelay: Bool = true,
+            maxMessagesPerRead: UInt = Self.defaultMaxMessagesPerRead,
             //            responseCompression: CompressionConfiguration = .disabled,
             //            requestDecompression: DecompressionConfiguration = .disabled,
             //            supportPipelining: Bool = true,
@@ -112,6 +121,7 @@ public final class TCPServer: Server, @unchecked Sendable {
                 backlog: backlog,
                 reuseAddress: reuseAddress,
                 tcpNoDelay: tcpNoDelay,
+                maxMessagesPerRead: maxMessagesPerRead,
                 //                responseCompression: responseCompression,
                 //                requestDecompression: requestDecompression,
                 //                supportPipelining: supportPipelining,
@@ -128,6 +138,7 @@ public final class TCPServer: Server, @unchecked Sendable {
             backlog: Int = 256,
             reuseAddress: Bool = true,
             tcpNoDelay: Bool = true,
+            maxMessagesPerRead: UInt = Self.defaultMaxMessagesPerRead,
             //            responseCompression: CompressionConfiguration = .disabled,
             //            requestDecompression: DecompressionConfiguration = .disabled,
             //            supportPipelining: Bool = true,
@@ -141,6 +152,7 @@ public final class TCPServer: Server, @unchecked Sendable {
             self.backlog = backlog
             self.reuseAddress = reuseAddress
             self.tcpNoDelay = tcpNoDelay
+            self.maxMessagesPerRead = maxMessagesPerRead
             //            self.responseCompression = responseCompression
             //            self.requestDecompression = requestDecompression
             //            self.supportPipelining = supportPipelining
@@ -367,8 +379,8 @@ private final class TCPServerConnection: Sendable {
             // Specify backlog and enable SO_REUSEADDR for the server itself
             .serverChannelOption(ChannelOptions.backlog, value: Int32(configuration.backlog))
             .serverChannelOption(
-                ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR),
-                value: configuration.reuseAddress ? SocketOptionValue(1) : SocketOptionValue(0)
+                ChannelOptions.socketOption(.so_reuseaddr),
+                value: configuration.reuseAddress ? 1 : 0
             )
 
             // Set handlers that are applied to the Server's channel
@@ -411,16 +423,15 @@ private final class TCPServerConnection: Sendable {
                 }
             }
 
-            // Enable TCP_NODELAY and SO_REUSEADDR for the accepted Channels
+            // Enable TCP_NODELAY for the accepted Channels.
+            //
+            // SO_REUSEADDR is deliberately *not* set here: it only affects `bind`, so setting it
+            // on an already-accepted socket is a no-op.
             .childChannelOption(
-                ChannelOptions.socket(IPPROTO_TCP, TCP_NODELAY),
-                value: configuration.tcpNoDelay ? SocketOptionValue(1) : SocketOptionValue(0)
+                ChannelOptions.socketOption(.tcp_nodelay),
+                value: configuration.tcpNoDelay ? 1 : 0
             )
-            .childChannelOption(
-                ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR),
-                value: configuration.reuseAddress ? SocketOptionValue(1) : SocketOptionValue(0)
-            )
-            .childChannelOption(ChannelOptions.maxMessagesPerRead, value: 1)
+            .childChannelOption(ChannelOptions.maxMessagesPerRead, value: configuration.maxMessagesPerRead)
 
         let channel: EventLoopFuture<Channel>
         switch configuration.address {
@@ -472,20 +483,6 @@ private final class TCPServerConnection: Sendable {
     }
 }
 
-final class TCPServerErrorHandler: ChannelInboundHandler {
-    typealias InboundIn = Never
-    let logger: Logger
-
-    init(logger: Logger) {
-        self.logger = logger
-    }
-
-    func errorCaught(context: ChannelHandlerContext, error: Error) {
-        self.logger.error("Unhandled TCP server error: \(error)")
-        context.close(mode: .output, promise: nil)
-    }
-}
-
 /// Closes an accepted connection channel when the server begins to quiesce.
 ///
 /// `ServerQuiescingHelper` (used by ``TCPServer`` to shut down gracefully) stops accepting new
@@ -495,14 +492,16 @@ final class TCPServerErrorHandler: ChannelInboundHandler {
 /// quiesce blocked until the server's `shutdownTimeout` elapses (surfacing as `serverStopTookTooLong`).
 /// Installing this at the head of each accepted channel makes graceful server shutdown prompt,
 /// independent of whether the connection manager also closed the connection.
-final class QuiesceOnShutdownHandler: ChannelInboundHandler, @unchecked Sendable {
+final class QuiesceOnShutdownHandler: ChannelInboundHandler, Sendable {
     typealias InboundIn = ByteBuffer
     typealias InboundOut = ByteBuffer
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        // Forward first, so handlers further down the pipeline still observe the quiesce before
+        // the channel is torn out from under them.
+        context.fireUserInboundEventTriggered(event)
         if event is ChannelShouldQuiesceEvent {
             context.close(mode: .all, promise: nil)
         }
-        context.fireUserInboundEventTriggered(event)
     }
 }
