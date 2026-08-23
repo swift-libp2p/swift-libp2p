@@ -285,7 +285,16 @@ public final class EventBus: Sendable {
 
     /// Removes every callback registered under `object`'s identity across all event kinds.
     public func unregister(_ object: AnyObject) {
-        let owner = ObjectIdentifier(object)
+        self.unregister(owner: ObjectIdentifier(object))
+    }
+
+    /// Removes every callback registered under `owner` across all event kinds.
+    ///
+    /// Subscribers that unregister from their own `deinit` must use this overload with an identity
+    /// captured while they were still alive. Passing `self` to ``unregister(_:)`` from `deinit` hands a
+    /// deallocating object to an `AnyObject` parameter, which retains and then re-releases it at a
+    /// refcount of zero — an over-release that crashes the process.
+    public func unregister(owner: ObjectIdentifier) {
         let tokens = self.registry.withLockedValue { registry in
             registry.callbackTokens.removeValue(forKey: owner) ?? []
         }
