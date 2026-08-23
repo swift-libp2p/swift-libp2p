@@ -102,12 +102,14 @@ public struct TCP: Transport, @unchecked Sendable {
                         //}
                     }
                 }
+            }.flatMapError { error in
+                /// Make sure to close the channel upon an error
+                self.application.logger.trace("Closing dialed channel after failed upgrade: \(error)")
+                return channel.close(mode: .all).flatMapAlways { _ in
+                    /// Surface the original failure, not whatever `close` reported.
+                    channel.eventLoop.makeFailedFuture(error)
+                }
             }
-
-            // return conn.initializeOutboundParentChannel().map {
-            // return conn.initializeParentChannel(mode: .initiator).map {
-            //      return conn
-            // }
         }
     }
 
