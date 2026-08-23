@@ -286,6 +286,10 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         self.upgradeTimeouts[key] = self.eventLoop.scheduleTask(in: timeout) { [weak self] in
             guard let self = self else { return }
             self.upgradeTimeouts.removeValue(forKey: key)
+            // Teardown closes everything anyway; don't race it or log alarming warnings while it runs.
+            guard self.application.isRunning, !self.application.didShutdown, self.state == .running else {
+                return
+            }
             /// The Connection may have already been closed and unregistered by another path
             guard let connection = self.connections[key] else { return }
             /// If the `.upgraded` event was missed (or raced us), the status is the source of truth
@@ -363,7 +367,7 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
             } else {
                 return conns
             }
-        }
+        }.hop(to: loop ?? eventLoop)
     }
 
     /// Closes every managed Connection and puts the manager into its terminal `.shuttingDown` state.
