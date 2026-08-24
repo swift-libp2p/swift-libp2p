@@ -387,7 +387,7 @@ extension LibP2PTests {
         // MARK: - Connectedness, pruning & manager lifetime
 
         /// A connection that has closed but hasn't been pruned yet still sits in the registry. Reporting
-        /// its peer as `.Connected` would claim a live connection to a peer we've already hung up on.
+        /// its peer as `.Connected` would claim a live connection to a peer we've already closed.
         @Test("A closed-but-unpruned connection doesn't report its peer as connected")
         func testClosedConnectionIsNotConnectedness() async throws {
             try await withApp { app in

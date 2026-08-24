@@ -150,9 +150,12 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         self.upgradeTimeout = upgradeTimeout
 
         // Every subscription captures `self` weakly to avoid retain cycles
-        self.eventBus.on(self, event: .disconnected({ [weak self] conn, peer in
-            self?.onDisconnected(conn, peer: peer)
-        }))
+        self.eventBus.on(
+            self,
+            event: .disconnected({ [weak self] conn, peer in
+                self?.onDisconnected(conn, peer: peer)
+            })
+        )
         self.eventBus.on(self, event: .upgraded({ [weak self] conn in self?.onUpgraded(conn) }))
         if ASCEnabled {
             self.eventBus.on(self, event: .openedStream({ [weak self] s in self?.onOpenedStream(s) }))
@@ -366,7 +369,7 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
             let closing = Array(self.connections.values)
 
             return closing.map { $0.close() }.flatten(on: self.eventLoop).always { _ in
-                
+
                 for connection in closing {
                     // Update our history for the remote peer if we have one
                     if let pid = connection.remotePeer {
