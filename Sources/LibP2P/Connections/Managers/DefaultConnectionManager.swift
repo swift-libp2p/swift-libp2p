@@ -52,8 +52,7 @@ extension Application.Connections.Provider {
 final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendable {
 
     private let application: Application
-    /// A mapping of all connections we are currently managing
-    /// RemoteAddress (String) : [Connection]
+    /// Every Connection we are currently managing, keyed by `connection.id.uuidString`
     private var connections: [String: Connection]
 
     /// A dictionary keyed by the RemotePeer's b58String containing a list of ConnectionStats (one for each connection established to the peer)
@@ -64,7 +63,11 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
 
     /// Connection Stream ARC Counter
     private var connectionStreamCount: [String: Int] = [:]
+    /// Pending ARC style idle-close tasks, keyed by the Connection's `id.uuidString`
     private var connectionTimeouts: [String: Scheduled<Void>] = [:]
+    /// When each Connection went idle, used only to detect a slow-running ARC loop. Cleared alongside
+    /// the matching `connectionTimeouts` entry.
+    private var alerts: [UUID: Date] = [:]
 
     /// The max number of connections we can have open at any given time
     private var maxPeers: Int
@@ -77,9 +80,9 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
 
     // These params are used for Connection Pruning under heavy loads
     /// The minimum Idle connection time
-    private var minExpiration: Int = 3
+    private let minExpiration: Int = 3
     /// The maximum Idle connection time
-    private var maxExpiration: Int = 30
+    private let maxExpiration: Int = 30
 
     /// Idle Connection Timeout
     private var idleTimeout: TimeAmount = .seconds(3)
@@ -148,7 +151,7 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
 
         // Every subscription captures `self` weakly to avoid retain cycles
         self.eventBus.on(self, event: .disconnected({ [weak self] conn, peer in
-            self?.onDisconnectedNew(conn, peer: peer)
+            self?.onDisconnected(conn, peer: peer)
         }))
         self.eventBus.on(self, event: .upgraded({ [weak self] conn in self?.onUpgraded(conn) }))
         if ASCEnabled {
@@ -170,7 +173,7 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     }
 
     func setMaxConnections(_ maxConnections: Int) {
-        let _ = self.eventLoop.submit {
+        self.eventLoop.execute {
             self.maxPeers = maxConnections
             self.buffer = Int(Double(maxConnections) * 0.2)
             self.logger.info("Max Connections updated to \(maxConnections)")
@@ -180,7 +183,7 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     func setIdleTimeout(_ timeout: TimeAmount) {
         self.eventLoop.execute {
             self.idleTimeout = timeout
-            self.logger.info("Idle Timeout updated to \(timeout.seconds) seconds")
+            self.logger.info("Idle Timeout updated to \(timeout.asSeconds) seconds")
         }
     }
 
@@ -189,15 +192,15 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     /// - Note: Only Connections registered after this call observe the new value; timeouts already
     ///   armed continue to run with the window that was in effect when they were scheduled.
     func setUpgradeTimeout(_ timeout: TimeAmount) {
-        let _ = self.eventLoop.submit {
+        self.eventLoop.execute {
             self.upgradeTimeout = timeout
-            self.logger.info("Upgrade Timeout updated to \(timeout.seconds) seconds")
+            self.logger.info("Upgrade Timeout updated to \(timeout.asSeconds) seconds")
         }
     }
 
     func getConnections(on loop: EventLoop?) -> EventLoopFuture<[Connection]> {
         eventLoop.submit { () -> [Connection] in
-            self.connections.map { $0.value }
+            Array(self.connections.values)
         }.hop(to: loop ?? eventLoop)
     }
 
@@ -208,7 +211,7 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     func getBestConnectionForPeer(peer: PeerID, on loop: EventLoop?) -> EventLoopFuture<Connection?> {
         connectionsInvolvingPeer(peer: peer).map { connections -> Connection? in
             //Or some other check like ping / latency / last seen / etc...
-            connections.first(where: { $0.stats.status == .upgraded })
+            connections.first(where: { $0.status == .upgraded })
         }.hop(to: loop ?? eventLoop)
     }
 
@@ -252,7 +255,6 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
                         "Preventing new \(connection.direction) connection due to max connection limit reached \(self.connections.count)"
                     )
                     let _ = self.debouncedPrune()
-                    //self.dumpConnectionMetricsRandomSample()
                     throw Errors.tooManyPeers
                 }
             } else {
@@ -262,7 +264,6 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
                         "Preventing new \(connection.direction) connection due to max connection limit reached \(self.connections.count)"
                     )
                     let _ = self.debouncedPrune()
-                    //self.dumpConnectionMetricsRandomSample()
                     throw Errors.tooManyPeers
                 }
             }
@@ -301,10 +302,10 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
             /// If the `.upgraded` event was missed (or raced us), the status is the source of truth
             guard connection.status != .upgraded else { return }
             self.logger.warning(
-                "Connection[\(key.prefix(5))][\(connection.remoteAddr?.description ?? "???")] failed to upgrade within \(timeout.seconds) seconds. Closing."
+                "Connection[\(key.prefix(5))][\(connection.remoteAddr?.description ?? "???")] failed to upgrade within \(timeout.asSeconds) seconds. Closing."
             )
             /// Close the stalled Connection and reclaim its slot
-            let _ = self.closeConnectionWithTimeout(id: connection.id)
+            let _ = self.closeAndUnregister(id: connection.id)
         }
     }
 
@@ -318,31 +319,8 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
 
     /// The Connection completed its security + muxer handshakes, so it no longer needs a deadline.
     func onUpgraded(_ connection: Connection) {
-        let _ = self.eventLoop.submit {
+        self.eventLoop.execute {
             self.cancelUpgradeTimeout(for: connection.id)
-        }
-    }
-
-    private func dumpConnectionMetricsRandomSample() {
-        let _ = eventLoop.submit {
-            self.logger.debug("Oldest 4 Connections")
-            self.logger.debug("Date: \(Date())")
-            let bcl: [AppConnection] = self.connections.compactMap { $0.value as? AppConnection }
-
-            for sample in bcl.sorted(by: { lhs, rhs in
-                lhs.lastActivity() < rhs.lastActivity()
-            }).prefix(4) {
-                self.logger.debug("\(sample.id) -> \(sample.lastActivity())")
-                if Date().timeIntervalSince1970 - sample.lastActivity().timeIntervalSince1970 > 5 {
-                    self.logger.debug("\(sample.description)")
-                }
-                //self.logger.notice("Last Active: \($0.lastActivity())")
-                //self.logger.notice("\($0.streamHistory)")
-                //self.logger.notice("Stream Count::\($0.streams.count)")
-                //for stream in $0.streams {
-                //    self.logger.notice("[\(stream.id)]\(stream.protocolCodec)::\(stream.direction)::\(stream.streamState)")
-                //}
-            }
         }
     }
 
@@ -359,14 +337,11 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         onlyMuxed: Bool = false,
         on loop: EventLoop?
     ) -> EventLoopFuture<[Connection]> {
-        //print("Current Connections")
-        //print(self.connections.map { $0.value.remoteAddr.description }.joined(separator: "\n") )
-        //print("-------------------")
         eventLoop.submit { () -> [Connection] in
-            let conns = self.connections.filter({
-                $0.value.remoteAddr == ma
-                    && ($0.value.status == .open || $0.value.status == .opening || $0.value.status == .upgraded)
-            }).map { $0.value }
+            let conns = self.connections.values.filter {
+                $0.remoteAddr == ma
+                    && ($0.status == .open || $0.status == .opening || $0.status == .upgraded)
+            }
 
             if onlyMuxed {
                 return conns.filter { $0.isMuxed }
@@ -406,28 +381,15 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
 
     private func connectionsInvolvingPeer(peer: PeerID) -> EventLoopFuture<[Connection]> {
         eventLoop.submit { () -> [Connection] in
-            self.connections.filter({ (elem) -> Bool in
-                elem.value.localPeer == peer || elem.value.remotePeer == peer
-            }).map { $0.value }
+            self.connections.values.filter { $0.localPeer == peer || $0.remotePeer == peer }
         }
     }
 
     /// Unregisters Connections that have already finished closing.
     private func pruneClosedConnections() -> EventLoopFuture<Void> {
         eventLoop.flatSubmit { () in
-            self.connections.filter({ $0.value.status == .closed }).map {
-                self.removeConnectionFromList(id: $0.value.id)
-            }.flatten(on: self.eventLoop)
-        }
-    }
-
-    /// Removes connections that have 0 streams open.
-    private func pruneConnections() -> EventLoopFuture<Void> {
-        eventLoop.flatSubmit { () in
-            self.connections.filter({
-                ($0.value.status == .upgraded || $0.value.status == .closing) && $0.value.streams.isEmpty
-            }).map {
-                self.closeConnectionWithTimeout(id: $0.value.id)
+            self.connections.values.filter { $0.status == .closed }.map {
+                self.removeConnectionFromList(id: $0.id)
             }.flatten(on: self.eventLoop)
         }
     }
@@ -440,26 +402,23 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
             )
             let expiration = (factor * Double(self.maxExpiration - self.minExpiration)) + Double(self.minExpiration)
             let expirationDate = Date().addingTimeInterval(-expiration)
-            let bcl: [AppConnection] = self.connections.compactMap { $0.value as? AppConnection }.filter {
+            let bcl: [AppConnection] = self.connections.values.compactMap { $0 as? AppConnection }.filter {
                 $0.lastActivity() < expirationDate
             }
-            guard bcl.count > 0 else { return self.eventLoop.makeSucceededVoidFuture() }
+            guard !bcl.isEmpty else { return self.eventLoop.makeSucceededVoidFuture() }
             self.logger.debug("Pruning \(bcl.count) Connections that are older than \(Int(expiration)) seconds")
             return bcl.map { conn in
-                //self.logger.notice("Closing Old Connection[\(conn.id)][\(conn.remoteAddr?.description ?? "???")][\(conn.remotePeer?.description ?? "???")]")
-                self.closeConnectionWithTimeout(id: conn.id)
+                self.closeAndUnregister(id: conn.id)
             }.flatten(on: self.eventLoop).always { _ in
                 if bcl.count > 1 { self.dumpConnectionManagerStats() }
             }
         }
     }
 
-    private func closeConnectionWithTimeout(id: UUID) -> EventLoopFuture<Void> {
+    /// Closes a Connection and unregisters it.
+    private func closeAndUnregister(id: UUID) -> EventLoopFuture<Void> {
         self.eventLoop.submit {
-            guard let connection = self.connections[id.uuidString] else {
-                //self.logger.warning("Failed to find connection with id: \(id.uuidString) in connection database.")
-                return
-            }
+            guard let connection = self.connections[id.uuidString] else { return }
             let _ = connection.close()
             let _ = self.removeConnectionFromList(id: id)
         }
@@ -595,7 +554,7 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     }
 
     /// - Note: EventBus callbacks are delivered on the bus's own drain `Task`, so this hops before reading `state`.
-    func onDisconnectedNew(_ connection: Connection, peer: PeerID?) {
+    func onDisconnected(_ connection: Connection, peer: PeerID?) {
         self.eventLoop.execute {
             guard self.application.isRunning, !self.application.didShutdown else { return }
             guard self.state == .running else { return }
@@ -606,18 +565,17 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     }
 
     func onOpenedStreamCounter(_ stream: LibP2PCore.Stream) {
-        let _ = self.eventLoop.submit {
+        self.eventLoop.execute {
             self.totalStreamCounter += 1
         }
     }
 
     func onOpenedStream(_ stream: LibP2PCore.Stream) {
-        let _ = self.eventLoop.submit {
+        self.eventLoop.execute {
             guard let connection = stream.connection else {
                 self.logger.error("New Stream doesn't have an associated connection")
                 return
             }
-            //self.logger.notice("ARC[\(connection.id.uuidString)]::Incrementing Stream Count")
             self.connectionStreamCount[connection.id.uuidString, default: 0] += 1
             self.totalStreamCounter += 1
             if let existingTimeoutTask = self.connectionTimeouts.removeValue(forKey: connection.id.uuidString) {
@@ -626,9 +584,8 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         }
     }
 
-    var alerts: [UUID: Date] = [:]
     func onClosedStream(_ stream: LibP2PCore.Stream) {
-        let _ = self.eventLoop.submit {
+        self.eventLoop.execute {
             guard let connection = stream.connection as? AppConnection else {
                 self.logger.error("Closed Stream doesn't have an associated connection")
                 return
@@ -638,7 +595,6 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
                 self.logger.error("Unbalanced Stream Open/Closed Count")
                 return
             }
-            //self.logger.notice("ARC[\(connection.id.uuidString)]::Decrementing Stream Count \(streamCount) - 1")
             if streamCount == 1 {
                 /// Decrement our stream count
                 self.connectionStreamCount[connection.id.uuidString] = 0
@@ -658,11 +614,11 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
 
                     if let alertEntry = self.alerts.removeValue(forKey: id) {
                         if Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970
-                            > (self.idleTimeout.milliseconds * 0.0015)
+                            > (self.idleTimeout.asMilliseconds * 0.0015)
                         {
                             self.logger.warning("🚨🚨🚨 ARC Running Slow!!! 🚨🚨🚨")
                             self.logger.warning(
-                                "\(self.idleTimeout.seconds) seconds took \(Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970)s"
+                                "\(self.idleTimeout.asSeconds) seconds took \(Date().timeIntervalSince1970 - alertEntry.timeIntervalSince1970)s"
                             )
                         }
                     }
@@ -727,17 +683,18 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     public enum Errors: Error {
         case tooManyPeers
         case connectionAlreadyExists
-        case failedToCloseConnection
         /// The ConnectionManager has begun shutting down and is no longer accepting Connections.
         case shuttingDown
     }
 }
 
 extension TimeAmount {
-    var milliseconds: Double {
+    /// This `TimeAmount` as a fractional count of milliseconds.
+    var asMilliseconds: Double {
         Double(self.nanoseconds) / 1_000_000
     }
-    var seconds: Double {
+    /// This `TimeAmount` as a fractional count of seconds.
+    var asSeconds: Double {
         Double(self.nanoseconds) / 1_000_000_000
     }
 }
