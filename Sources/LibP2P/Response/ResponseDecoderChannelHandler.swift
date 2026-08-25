@@ -23,20 +23,25 @@ final class ResponseDecoderChannelHandler: ChannelOutboundHandler, RemovableChan
     typealias OutboundOut = ByteBuffer
 
     private let logger: Logger
+    /// Set only by `BaseConnection`, whose `StreamPruner` needs to know when this stream last moved bytes.
+    private let activity: StreamActivityRecord?
 
-    init(logger: Logger) {
+    init(logger: Logger, activity: StreamActivityRecord? = nil) {
         self.logger = logger
+        self.activity = activity
     }
 
     func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
         let response = self.unwrapOutboundIn(data)
 
-        /// Extract the bytes
+        self.activity?.touch()
+
+        // Extract the bytes
         let payload = response.payload
 
         self.logger.trace("ResponseDecoderChannelHandler: write() called")
 
-        /// Pass it along
+        // Pass it along
         context.writeAndFlush(self.wrapOutboundOut(payload), promise: promise)
     }
 
