@@ -24,6 +24,8 @@ final class RequestEncoderChannelHandler: ChannelInboundHandler, RemovableChanne
     private let logger: Logger
     private let `protocol`: String
     private let direction: ConnectionStats.Direction
+    /// Set only by `BaseConnection`, whose `StreamPruner` needs to know when this stream last moved bytes.
+    private let activity: StreamActivityRecord?
 
     private var hasSentIsReady: Bool = false
 
@@ -32,13 +34,15 @@ final class RequestEncoderChannelHandler: ChannelInboundHandler, RemovableChanne
         connection: Connection,
         protocol: String,
         logger: Logger,
-        direction: ConnectionStats.Direction
+        direction: ConnectionStats.Direction,
+        activity: StreamActivityRecord? = nil
     ) {
         self.app = application
         self.connection = connection
         self.logger = logger
         self.protocol = `protocol`
         self.direction = direction
+        self.activity = activity
     }
 
     func handlerAdded(context: ChannelHandlerContext) {
@@ -51,6 +55,8 @@ final class RequestEncoderChannelHandler: ChannelInboundHandler, RemovableChanne
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let inboundBytes = self.unwrapInboundIn(data)
+
+        self.activity?.touch()
 
         // Ensure we fire the .ready event before sending data down the pipeline
         if self.hasSentIsReady == false {
