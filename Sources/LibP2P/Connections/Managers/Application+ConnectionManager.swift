@@ -75,10 +75,18 @@ extension Application {
             /// peer and the network stack, concurrent dials to the same ma coalesce onto a single pending
             /// connection, while dials to a different ma each get their own independent dial.
             let dialsInFlight: NIOLockedValueBox<[String: EventLoopFuture<AppConnection>]>
+            /// Decides which streams a `BaseConnection` will carry. Unused by `ARCConnection` and
+            /// `BasicConnectionLight`, neither of which gates streams.
+            let streamGater: NIOLockedValueBox<StreamGater>
+            /// Decides which of a `BaseConnection`'s streams get evicted. Unused by `ARCConnection` and
+            /// `BasicConnectionLight`, neither of which prunes streams.
+            let streamPruner: NIOLockedValueBox<StreamPruner>
             init() {
                 self.manager = .init(nil)
-                self.connType = .init(ARCConnection.self)
+                self.connType = .init(BaseConnection.self)
                 self.dialsInFlight = .init([:])
+                self.streamGater = .init(AllowAllStreamGater())
+                self.streamPruner = .init(IdleTimeoutStreamPruner())
             }
         }
 
@@ -99,10 +107,36 @@ extension Application {
         }
 
         /// Specify the type of AppConnection to use when establishing a Connection to a remote peer.
-        /// Note: The built in options are `BasicConnectionLight` and `ARCConnection`
+        /// Note: The built in options are `BaseConnection`, `BasicConnectionLight` and `ARCConnection`
         /// Note: There's also a `DummyConnection` available for embedded testing.
         public func use(connectionType: AppConnection.Type) {
             self.storage.connType.withLockedValue { $0 = connectionType }
+        }
+
+        /// Specify the `StreamGater` a `BaseConnection` consults before accepting a stream.
+        ///
+        /// - Note: Only observed by Connections created *after* this call, and only by
+        ///   `BaseConnection` — the legacy Connection types don't gate streams.
+        func use(streamGater: StreamGater) {
+            self.storage.streamGater.withLockedValue { $0 = streamGater }
+        }
+
+        /// Specify the `StreamPruner` a `BaseConnection` uses to evict dead streams.
+        ///
+        /// - Note: Only observed by Connections created *after* this call, and only by
+        ///   `BaseConnection` — the legacy Connection types don't prune streams.
+        func use(streamPruner: StreamPruner) {
+            self.storage.streamPruner.withLockedValue { $0 = streamPruner }
+        }
+
+        /// The currently configured `StreamGater`, resolved by `BaseConnection` at init time.
+        var streamGater: StreamGater {
+            self.storage.streamGater.withLockedValue { $0 }
+        }
+
+        /// The currently configured `StreamPruner`, resolved by `BaseConnection` at init time.
+        var streamPruner: StreamPruner {
+            self.storage.streamPruner.withLockedValue { $0 }
         }
 
         let application: Application
