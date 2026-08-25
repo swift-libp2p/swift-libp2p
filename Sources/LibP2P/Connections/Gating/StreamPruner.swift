@@ -74,7 +74,7 @@ actor NoOpStreamPruner: StreamPruner {
 ///
 /// Four failure modes, in priority order:
 /// 1. **Already finished.** `.closed` / `.reset` streams that the muxer hasn't cleared yet.
-/// 2. **Half-closed too long.** One side hung up and the other never followed suite, reset rather than wait.
+/// 2. **Half-closed too long.** One side closed and the other never followed suite, reset rather than wait.
 /// 3. **Never upgraded.** The remote opened a stream and never agreed on a protocol.
 /// 4. **Idle.** A negotiated stream that hasn't moved a byte in ``Configuration/dataIdleTimeout``.
 actor IdleTimeoutStreamPruner: StreamPruner {
