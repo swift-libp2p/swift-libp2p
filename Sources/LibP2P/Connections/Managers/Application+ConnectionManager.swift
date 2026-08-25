@@ -115,16 +115,14 @@ extension Application {
 
         /// Specify the `StreamGater` a `BaseConnection` consults before accepting a stream.
         ///
-        /// - Note: Only observed by Connections created *after* this call, and only by
-        ///   `BaseConnection` — the legacy Connection types don't gate streams.
+        /// - Note: Only observed by Connections created *after* this call
         func use(streamGater: StreamGater) {
             self.storage.streamGater.withLockedValue { $0 = streamGater }
         }
 
         /// Specify the `StreamPruner` a `BaseConnection` uses to evict dead streams.
         ///
-        /// - Note: Only observed by Connections created *after* this call, and only by
-        ///   `BaseConnection` — the legacy Connection types don't prune streams.
+        /// - Note: Only observed by Connections created *after* this call
         func use(streamPruner: StreamPruner) {
             self.storage.streamPruner.withLockedValue { $0 = streamPruner }
         }
