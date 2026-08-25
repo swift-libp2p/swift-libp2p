@@ -511,9 +511,7 @@ internal final class MockMuxStreamChannel: Channel, ChannelCore, @unchecked Send
             } else {
                 self.multiplexer.childChannelClosed(channelID: ObjectIdentifier(self))
             }
-            self._pipeline = nil
             self.pendingReads.removeAll()
-            self.pendingReads = nil
         }
     }
 
