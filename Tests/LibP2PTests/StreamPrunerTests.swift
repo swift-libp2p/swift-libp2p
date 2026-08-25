@@ -14,6 +14,7 @@
 
 import Foundation
 import LibP2PCore
+import LibP2PTesting
 import NIOCore
 import Testing
 
@@ -59,7 +60,12 @@ extension LibP2PTests {
         @Test("Terminal streams are always evicted", arguments: [StreamState.closed, .reset])
         func testTerminalStreamsAreEvicted(state: StreamState) {
             let action = IdleTimeoutStreamPruner.action(
-                for: Self.snapshot(state: state, openedSecondsAgo: 0, negotiatedSecondsAgo: 0, lastActivitySecondsAgo: 0),
+                for: Self.snapshot(
+                    state: state,
+                    openedSecondsAgo: 0,
+                    negotiatedSecondsAgo: 0,
+                    lastActivitySecondsAgo: 0
+                ),
                 now: Self.now,
                 configuration: Self.config
             )
@@ -70,7 +76,10 @@ extension LibP2PTests {
         // MARK: - Half-closed streams
 
         /// One side closed, a half-closed stream may legitimately keep draining, but not forever.
-        @Test("Half-closed streams past the grace period are reset", arguments: [StreamState.receiveClosed, .writeClosed])
+        @Test(
+            "Half-closed streams past the grace period are reset",
+            arguments: [StreamState.receiveClosed, .writeClosed]
+        )
         func testStuckHalfClosedStreamsAreReset(state: StreamState) {
             let action = IdleTimeoutStreamPruner.action(
                 for: Self.snapshot(
@@ -86,7 +95,10 @@ extension LibP2PTests {
         }
 
         /// A half-closed stream that just moved bytes is still draining, leave it alone.
-        @Test("Half-closed streams inside the grace period are kept", arguments: [StreamState.receiveClosed, .writeClosed])
+        @Test(
+            "Half-closed streams inside the grace period are kept",
+            arguments: [StreamState.receiveClosed, .writeClosed]
+        )
         func testDrainingHalfClosedStreamsAreKept(state: StreamState) {
             let action = IdleTimeoutStreamPruner.action(
                 for: Self.snapshot(
@@ -244,6 +256,44 @@ extension LibP2PTests {
             #expect(config.negotiationTimeout < Application.Connections.defaultUpgradeTimeout)
             #expect(config.closingGrace < config.negotiationTimeout)
             #expect(config.negotiationTimeout < config.dataIdleTimeout)
+        }
+
+        /// A pruner that disables sweeping must not get a sweep task scheduled against it
+        @Test("A NoOp pruner leaves no sweep scheduled, an idle-timeout pruner arms one")
+        func testSweepIsScheduledOnlyWhenThePrunerWantsIt() async throws {
+            try await withApp { app in
+                let loop = EmbeddedEventLoop()
+
+                let quiet = BaseConnection(
+                    application: app,
+                    channel: EmbeddedChannel(loop: loop),
+                    direction: .outbound,
+                    remoteAddress: try Multiaddr("/ip4/127.0.0.1/tcp/1234"),
+                    expectedRemotePeer: nil,
+                    streamGater: AllowAllStreamGater(),
+                    streamPruner: NoOpStreamPruner()
+                )
+                quiet.armPruneSweepForTesting()
+                #expect(quiet.hasPruneSweepScheduled == false)
+
+                let sweeping = BaseConnection(
+                    application: app,
+                    channel: EmbeddedChannel(loop: loop),
+                    direction: .outbound,
+                    remoteAddress: try Multiaddr("/ip4/127.0.0.1/tcp/1235"),
+                    expectedRemotePeer: nil,
+                    streamGater: AllowAllStreamGater(),
+                    streamPruner: IdleTimeoutStreamPruner()
+                )
+                sweeping.armPruneSweepForTesting()
+                #expect(sweeping.hasPruneSweepScheduled == true)
+
+                // Closing must take the sweep down with it, so nothing we scheduled outlives us.
+                let closed: EventLoopFuture<Void> = sweeping.close()
+                loop.run()
+                try await closed.get()
+                #expect(sweeping.hasPruneSweepScheduled == false)
+            }
         }
 
         // MARK: - Helpers
