@@ -30,22 +30,22 @@ import Logging
 ///  app.connectionManager.use(streamPruner: )
 ///  ```
 public final class BaseConnection: AppConnection, @unchecked Sendable {
-    
+
     public let application: Application
-    
+
     public let channel: Channel
     private var eventLoop: EventLoop {
         self.channel.eventLoop
     }
-    
+
     public let id: UUID
-    
+
     public var localAddr: Multiaddr?
-    
+
     public var remoteAddr: Multiaddr?
-    
+
     public let localPeer: PeerID
-    
+
     /// The authenticated remote peer.
     ///
     /// Owned by ``stateMachine`` — `nil` until the security handshake completes, non-nil for the rest of
@@ -53,40 +53,40 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
     public var remotePeer: PeerID? {
         self.stateMachine.remotePeer
     }
-    
+
     public var expectedRemotePeer: PeerID?
-    
+
     public let stats: ConnectionStats
-    
+
     public var tags: Any? = nil
-    
+
     public private(set) var registry: [UInt64: LibP2PCore.Stream] = [:]
-    
+
     public var streams: [LibP2PCore.Stream] {
         self.muxer?.streams ?? []
     }
-    
+
     public weak var muxer: Muxer? = nil
-    
+
     public var isMuxed: Bool = false
-    
+
     public var status: ConnectionStats.Status {
         self.stats.status
     }
-    
+
     public var timeline: [ConnectionStats.Status: Date] {
         self.stats.timeline.history
     }
-    
+
     /// Our Connection's Logger
     public var logger: Logger
-    
+
     /// Decides which streams we're willing to carry.
     private let streamGater: StreamGater
-    
+
     /// Decides which of our streams get evicted.
     private let streamPruner: StreamPruner
-    
+
     struct StreamStateEntry {
         let proto: String
         let direction: ConnectionStats.Direction
@@ -96,23 +96,23 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
     /// Keep track of our Streams and thier lifecycle history.
     /// Feeds `lastActivity()`, which our ConnectionManager reads.
     internal private(set) var streamHistory: [StreamStateEntry] = []
-    
+
     private var stateMachine: ConnectionStateMachine
     public var state: ConnectionState {
         self.stateMachine.state
     }
-    
+
     /// These promises are used only once while upgrading the parent channel
     private let securedPromise: EventLoopPromise<SecuredResult>
     private let muxedPromise: EventLoopPromise<Muxer>
-    
+
     /// Whether each upgrade promise has been completed, so `deinit` can settle whatever is left
     private var securedPromiseSettled: Bool = false
     private var muxedPromiseSettled: Bool = false
-    
+
     /// The timestamp at which this connection was instantiated
     private let startTime: UInt64
-    
+
     /// The IdleTimeout Task that gets set each time our connection gets to zero open streams.
     /// We wait `idleTimeoutMilliseconds` for a new Stream to be opened. If one isn't opened in that
     /// window, the connection shuts down and deinits itself.
@@ -121,11 +121,11 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
     private var idleTimeoutTask: Scheduled<Void>? = nil
     /// The time in milliseconds that our connection will sit idle before terminating itself.
     private var idleTimeoutMilliseconds: Int64 = 250
-    
+
     /// Pending / Unopened Stream Caches
     private var newStreamCache: [StreamCache] = []
     private var pendingStreamCache: [StreamCache] = []
-    
+
     /// What we track per muxed stream so `streamPruner` can reason about liveness.
     ///
     /// Keyed by `ObjectIdentifier(childChannel)` rather than by stream `id`, because some muxer
@@ -140,11 +140,11 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
         var negotiatedAt: Date?
     }
     private var streamRecords: [ObjectIdentifier: StreamRecord] = [:]
-    
+
     /// The repeating sweep that asks our `streamPruner` what to evict.
     /// Started once we're muxed and cancelled on teardown.
     private var pruneSweepTask: RepeatedTask? = nil
-    
+
     public convenience init(
         application: Application,
         channel: Channel,
@@ -162,7 +162,7 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
             streamPruner: application.connectionManager.streamPruner
         )
     }
-    
+
     /// Designated initializer, taking the gater and pruner explicitly.
     ///
     /// - Note: Designed to be used in Tests so we can explicitly install Gaters and Pruners
@@ -186,47 +186,47 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
         self.stateMachine = ConnectionStateMachine()
         self.streamGater = streamGater
         self.streamPruner = streamPruner
-        
+
         // Addresses
         self.localAddr = try? channel.localAddress?.toMultiaddr()
         self.remoteAddr = remoteAddress
-        
+
         // Peers
         self.localPeer = application.peerID
         self.expectedRemotePeer = expectedRemotePeer
-        
+
         // Metadata
         self.registry = [:]
         self.tags = nil
         self.stats = ConnectionStats(uuid: id, direction: direction)
-        
+
         // State Promises
         self.securedPromise = channel.eventLoop.makePromise(of: SecuredResult.self)
         self.muxedPromise = channel.eventLoop.makePromise(of: Muxer.self)
-        
+
         self.startTime = DispatchTime.now().uptimeNanoseconds
-        
+
         // Register our channel's close future
         self.channel.closeFuture.whenComplete { [weak self] _ in
             guard let self = self else { return }
             self.logger.trace("Channel -> CloseFuture")
             self.stats.status = .closed
-            
+
             // Teardown any tasks we've started
             self.cancelPruneSweep()
             self.cancelTimeoutTask()
-            
+
             // Fail any streams that were queued while we were still upgrading. If the channel closed
             // before we finished muxing, those streams will never open. Surface the failure to their
             // callers immediately (this is what fails coalesced cold dials when an upgrade fails)
             // rather than leaving each request to hit its own timeout.
             self.failQueuedStreams(Application.Connections.Errors.connectionUpgradeFailed)
-            
+
             // Should ensure that we actually connected before posting a disconnect event
             if self.application.isRunning {
                 self.application.events.post(.disconnected(self, self.remotePeer))
             }
-            
+
             self.muxer?.onStream = nil
             self.muxer?.onStreamEnd = nil
             self.muxer?._connection = nil
@@ -234,10 +234,10 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
             self.registry = [:]
             self.streamRecords = [:]
         }
-        
+
         self.logger.trace("Initialized")
     }
-    
+
     deinit {
         // Settle any upgrade promise the connection died still holding — an unfulfilled one is a
         // `fatalError` in debug builds.
@@ -265,22 +265,22 @@ extension BaseConnection {
             self.securedPromiseSettled = true
             self.onSecured(result)
         }
-        
+
         self.muxedPromise.futureResult.whenComplete { [weak self] result in
             guard let self = self else { return }
             self.muxedPromiseSettled = true
             self.onMuxed(result)
         }
-        
+
         self.stats.status = .opening
-        
+
         // Kickoff security upgrade (also responsible for negotiation)
         return self.secureConnection(promise: self.securedPromise).always { [weak self] _ in
             guard let self = self else { return }
             self.stats.status = .open
         }
     }
-    
+
     private func onSecured(_ result: Result<SecuredResult, Error>) {
         switch result {
         case .failure(let error):
@@ -292,7 +292,7 @@ extension BaseConnection {
                 self.logger.info(
                     "Secured with `\(security.securityCodec)`! RemotePeer: \(String(describing: security.remotePeer)), Warnings: \(String(describing: security.warning))"
                 )
-                
+
                 // A connection isn't considered secured unless we know who we're talking to
                 guard let remotePeer = security.remotePeer else {
                     self.logger.error(
@@ -301,14 +301,14 @@ extension BaseConnection {
                     self.channel.close(mode: .all, promise: nil)
                     return
                 }
-                
+
                 self.logger.info("Remote Address: \(self.remoteAddr?.description ?? "NIL")")
                 try self.stateMachine.secureConnection(remotePeer: remotePeer)
                 self.stats.encryption = security.securityCodec
-                
+
                 let pInfo = PeerInfo(peer: remotePeer, addresses: [])
                 self.application.events.post(.remotePeer(pInfo))
-                
+
                 // Kick off Muxer upgrade
                 self.muxConnection(promise: self.muxedPromise).whenComplete { res in
                     switch res {
@@ -327,7 +327,7 @@ extension BaseConnection {
             }
         }
     }
-    
+
     private func onMuxed(_ result: Result<Muxer, Error>) {
         switch result {
         case .failure(let error):
@@ -342,23 +342,23 @@ extension BaseConnection {
                 try self.stateMachine.muxConnection()
                 self.stats.status = .upgraded
                 self.stats.muxer = muxer.protocolCodec
-                
+
                 // Callbacks driving idle connection teardown
                 self.muxer?.onStream = self.onNewStream
                 self.muxer?.onStreamEnd = self.onStreamClosed
-                
+
                 let timeToUpgrade = DispatchTime.now().uptimeNanoseconds - self.startTime
                 self.logger.notice("Upgrade Time: \(timeToUpgrade / 1_000_000) ms")
-                
+
                 self.eventLoop.execute {
                     // Our connection is upgraded...
                     self.logger.trace("Our connection has been Secured and Muxed! We're ready to rock!")
                     self.application.events.post(.connected(self))
                     self.application.events.post(.upgraded(self))
-                    
+
                     // Now that streams are possible, start sweeping for dead ones.
                     self.armPruneSweep()
-                    
+
                     // Open any pending streams now that we're muxed.
                     // These go through the same gated path as a stream requested after the upgrade
                     let pending = self.pendingStreamCache
@@ -367,7 +367,7 @@ extension BaseConnection {
                         self.openStream(pendingStream)
                     }
                 }
-                
+
             } catch {
                 self.logger.error("Failed to mux channel: \(error)")
                 self.channel.close(mode: .all, promise: nil)
@@ -380,7 +380,7 @@ extension BaseConnection {
 // MARK: - Stream Opening
 
 extension BaseConnection {
-    
+
     public enum NewStreamMode {
         case openStream
         case ifOneDoesntAlreadyExist
@@ -399,7 +399,7 @@ extension BaseConnection {
             self.responder = responder
         }
     }
-    
+
     public func newStream(_ protos: [String]) -> EventLoopFuture<LibP2PCore.Stream> {
         self.channel.eventLoop.makeFailedFuture(Application.Connections.Errors.notImplementedYet)
     }
@@ -540,7 +540,7 @@ extension BaseConnection {
             }
         }
     }
-    
+
     /// - Warning: Not gated. Consulting a ``StreamGater`` means awaiting an actor. Use the asynchronous
     ///   `newStream(forProtocol:)` family if the gater's policy needs to apply.
     public func newStreamSync(_ proto: String) throws -> LibP2PCore.Stream {
@@ -571,7 +571,7 @@ extension BaseConnection {
     public func newStreamHandlerSync(_ proto: String) throws -> StreamHandler {
         throw Application.Connections.Errors.notImplementedYet
     }
-    
+
     public func acceptStream(_ stream: LibP2PCore.Stream, protocol: String, metadata: [String]) -> EventLoopFuture<Bool>
     {
         self.channel.eventLoop.makeFailedFuture(Application.Connections.Errors.notImplementedYet)
@@ -585,7 +585,7 @@ extension BaseConnection {
             return self.muxer?.streams.first(where: { ($0.protocolCodec == proto) })
         }
     }
-    
+
     /// Called by our Muxer when a new stream has been opened
     /// - Note: We take this opportunity to cancel the idleTimeoutTask if one exists.
     private func onNewStream(_ stream: LibP2PCore.Stream) {
@@ -598,7 +598,7 @@ extension BaseConnection {
 
 // MARK: - Stream Teardown / Cleanup
 extension BaseConnection {
-    
+
     /// Called by our Muxer when a stream of ours has been closed.
     /// - Note: We take this opportunity to check if there are any active streams and kick off our
     ///   idleTimeoutTask if there aren't.
@@ -621,7 +621,7 @@ extension BaseConnection {
             )
         }
     }
-    
+
     /// Tears down a stream we've decided to prune.
     ///
     /// A rejection is treated as a `.reset`. Otherwise the stream would sit idle until it's timeout fired.
@@ -636,12 +636,12 @@ extension BaseConnection {
         }
         let _ = stream.reset()
     }
-    
+
     private func cancelTimeoutTask() {
         self.idleTimeoutTask?.cancel()
         self.idleTimeoutTask = nil
     }
-    
+
     private func armTimeoutTask() {
         guard self.idleTimeoutTask == nil else { return }
         self.idleTimeoutTask = self.eventLoop.scheduleTask(in: .milliseconds(self.idleTimeoutMilliseconds)) {
@@ -654,7 +654,7 @@ extension BaseConnection {
             let _ = self.close()
         }
     }
-    
+
     /// Delivers an `.error` event to a queued stream's responder so its caller (e.g. a pending
     /// `newRequest`) fails immediately instead of waiting for a timeout.
     private func fail(_ stream: StreamCache, with error: Error) {
@@ -698,7 +698,7 @@ extension BaseConnection {
             self.fail(stream, with: error)
         }
     }
-    
+
     public func removeStream(id: UInt64) -> EventLoopFuture<Void> {
         if let stream = self.registry.removeValue(forKey: id) {
             return stream.close(gracefully: true)
@@ -711,7 +711,7 @@ extension BaseConnection {
 // MARK: - Child Channel Ingress / Egress
 
 extension BaseConnection {
-    
+
     /// This function gets called by our Muxer when instantiating a new inbound child Channel.
     /// Take this opportunity to configure the child channel's pipeline before data transmission begins.
     ///
@@ -726,11 +726,11 @@ extension BaseConnection {
     public func inboundMuxedChildChannelInitializer(_ childChannel: Channel) -> EventLoopFuture<Void> {
         // Cancel our idleTimeoutTask if we have one
         self.cancelTimeoutTask()
-        
+
         // Start tracking the stream for pruning purposes right away — a stream that never negotiates
         // is exactly the sort of thing the pruner exists to reap.
         self.trackStream(on: childChannel, direction: .inbound)
-        
+
         guard let remotePeer = self.remotePeer, let remoteAddress = self.remoteAddr else {
             // This should be unreachable. `onSecured` closes any connection that doesn't yeild a
             // remote peer
@@ -740,16 +740,16 @@ extension BaseConnection {
                 Errors.streamRejectedByGater(reason: "connection has no authenticated remote peer")
             )
         }
-        
+
         let supported = self.supportedProtocols
-        
+
         // Hold anything the remote pipelines behind its stream-open until we have a verdict.
         let buffered = childChannel.pipeline.addHandler(
             StreamGateBuffer(logger: self.logger),
             name: StreamGateBuffer.handlerName,
             position: .last
         )
-        
+
         let context = InboundStreamGateContext(
             connectionID: self.id,
             remotePeer: remotePeer,
@@ -761,24 +761,24 @@ extension BaseConnection {
         self.consultGater({ await gater.shouldAcceptInboundStream(context) }) { [weak self] decision in
             self?.applyInboundGateDecision(decision, on: childChannel, supporting: supported)
         }
-        
+
         return buffered
     }
-    
+
     /// Installs the multistream-select listener on an accepted inbound child channel, restricted to the
     /// protocols the gater approved, then releases the bytes the gate buffer has been holding.
     private func configureInboundUpgrader(on childChannel: Channel, protocols: [String]) -> EventLoopFuture<Void> {
         let negotiationPromise = childChannel.eventLoop.makePromise(of: NegotiationResult.self)
-        
+
         self.logger.trace("Negotiating inbound stream over \(protocols.count) gater-approved protocol(s)")
-        
+
         let mssHandlers: [ChannelHandler] = self.application.upgrader.negotiate(
             protocols: protocols,
             mode: .listener,
             logger: self.logger,
             promise: negotiationPromise
         )
-        
+
         negotiationPromise.futureResult.whenComplete { [weak self] result in
             guard let self = self, self.application.isRunning else { return }
             switch result {
@@ -786,7 +786,7 @@ extension BaseConnection {
                 self.untrackStream(on: childChannel)
                 self.muxer?.removeStream(channel: childChannel)
                 self.logger.error("Error while upgrading Inbound ChildChannel: \(error)")
-                
+
             case .success(let proto):
                 // Append a stream event in our stream history array
                 self.streamHistory.append(
@@ -797,7 +797,7 @@ extension BaseConnection {
                         date: Date()
                     )
                 )
-                
+
                 // Finish the upgrade
                 self.finishUpgrading(
                     proto,
@@ -807,13 +807,13 @@ extension BaseConnection {
                 )
             }
         }
-        
+
         // MSS gets installed after the buffer so that it captures the replayed bytes upon the buffers removal
         return childChannel.pipeline.addHandler(mssHandlers.first!, name: "upgrader", position: .last).flatMap {
             childChannel.pipeline.removeHandler(name: StreamGateBuffer.handlerName)
         }
     }
-    
+
     /// This function gets called by our Muxer when instantiating a new outbound child Channel.
     /// Take this opportunity to configure the child channel's pipeline for the specified protocol
     /// before data transmission begins.
@@ -822,16 +822,16 @@ extension BaseConnection {
         self.eventLoop.flatSubmit {
             // Cancel our idleTimeoutTask if we have one
             self.cancelTimeoutTask()
-            
+
             guard let idx = self.newStreamCache.firstIndex(where: { $0.proto == `protocol` }) else {
                 self.logger.error("No Responder For `\(`protocol`)`")
                 self.logger.error("\(self.newStreamCache)")
                 return childChannel.eventLoop.makeFailedFuture(Application.Connections.Errors.noResponder)
             }
             let pendingStream = self.newStreamCache.remove(at: idx)
-            
+
             self.trackStream(on: childChannel, direction: .outbound)
-            
+
             let negotiationPromise = childChannel.eventLoop.makePromise(of: NegotiationResult.self)
             let mssHandlers: [ChannelHandler] = self.application.upgrader.negotiate(
                 protocols: [`protocol`],
@@ -839,7 +839,7 @@ extension BaseConnection {
                 logger: self.logger,
                 promise: negotiationPromise
             )
-            
+
             // Register our post negotiation callback
             negotiationPromise.futureResult.whenComplete { [weak self] result in
                 guard let self = self, self.application.isRunning else { return }
@@ -848,7 +848,7 @@ extension BaseConnection {
                     self.untrackStream(on: childChannel)
                     self.muxer?.removeStream(channel: childChannel)
                     self.logger.error("Error while upgrading Outbound ChildChannel: \(error)")
-                    
+
                 case .success(let proto):
                     // Append a stream event in our stream history array
                     self.streamHistory.append(
@@ -859,7 +859,7 @@ extension BaseConnection {
                             date: Date()
                         )
                     )
-                    
+
                     // Finish upgrading the child channel
                     self.finishUpgrading(
                         proto,
@@ -869,12 +869,12 @@ extension BaseConnection {
                     )
                 }
             }
-            
+
             // Kick off the negotiation
             return childChannel.pipeline.addHandler(mssHandlers.first!, name: "upgrader", position: .last)
         }
     }
-    
+
     /// Install the route's handlers, record the stream, and announce it.
     private func finishUpgrading(
         _ proto: NegotiationResult,
@@ -891,7 +891,7 @@ extension BaseConnection {
             self.failPendingCaller(responder, direction: direction, with: ChannelError.ioOnClosedChannel)
             return
         }
-        
+
         // Install the responder and finalize the child channel upgrade.
         self.upgradeChildChannel(
             proto,
@@ -900,26 +900,26 @@ extension BaseConnection {
             direction: direction
         ).whenComplete { [weak self] result in
             guard let self = self, self.application.isRunning else { return }
-            
+
             // Append a stream event in our stream history array
             self.streamHistory.append(
                 StreamStateEntry(proto: proto.protocol, direction: direction, state: .open, date: Date())
             )
-            
+
             self.logger.trace("Result of Upgrader Removal and Pipeline Config: \(result)")
             self.logger.debug("🔀 New \(direction) ChildChannel[`\(proto)`] Ready!")
             self.logger.trace("List of Streams:")
             self.logger.trace(
                 "\(self.streams.map({ "\($0.protocolCodec) -> \($0.id):\($0.name ?? "NIL"):\($0.streamState)" }).joined(separator: ", "))"
             )
-            
+
             // The pipeline never finished being configured — the stream closed mid-upgrade, or the
             // muxer went away — so, as above, there's no handler on it to report the failure.
             if case .failure(let error) = result {
                 self.failPendingCaller(responder, direction: direction, with: error)
                 return
             }
-            
+
             // Post about the new stream on our application's Event Bus
             guard let str = self.streams.first(where: { $0.channel === childChannel }) as? _Stream else { return }
             str._connection.withLockedValue { $0 = self }
@@ -937,7 +937,7 @@ extension BaseConnection {
             }
         }
     }
-    
+
     /// To be called when the childChannel's protocol negotiation completes
     ///
     /// Note: Also is responsible for forwarding any leftover bytes received during the childChannel
@@ -950,7 +950,7 @@ extension BaseConnection {
     ) -> EventLoopFuture<Void> {
         //Install the protocol on the channel's pipeline...
         logger.trace("Negotiated \(proto)")
-        
+
         guard let muxer = self.muxer else {
             logger.debug("Muxer went away before `\(proto.protocol)` could be installed")
             return childChannel.eventLoop.makeFailedFuture(
@@ -964,10 +964,10 @@ extension BaseConnection {
         }
         logger.trace("Attempting to install route (`\(proto)`) specific ChannelHandlers")
         logger.trace("\(handlers.map({ String(describing: $0) }).joined(separator: ", "))")
-        
+
         // Prepare our activity monitor for the Encoder / Decoder handlers
         let activity = self.activityRecord(for: childChannel)
-        
+
         // Prepare the Responder handlers for installation
         handlers.append(
             contentsOf: [
@@ -983,9 +983,9 @@ extension BaseConnection {
                 ResponderChannelHandler(responder: responder, logger: logger),
             ] as [ChannelHandler]
         )
-        
+
         let codec = proto.protocol
-        
+
         // update our stream state
         return muxer.updateStream(channel: childChannel, state: .open, proto: codec).flatMap {
             () -> EventLoopFuture<Void> in
@@ -1012,7 +1012,7 @@ extension BaseConnection {
             }
         }
     }
-    
+
     /// Whether it's still worth touching `childChannel.pipeline`.
     private func streamIsStillOpen(_ childChannel: Channel, proto: String) -> Bool {
         guard childChannel.isActive else {
@@ -1026,12 +1026,12 @@ extension BaseConnection {
 // MARK: - Stream gating
 
 extension BaseConnection {
-    
+
     /// The protocols our application supports (the gater can return a subset of these)
     private var supportedProtocols: [String] {
         self.application.routes.all.map { $0.description }
     }
-    
+
     /// Asks the gater for a verdict and delivers it back on our event loop.
     private func consultGater<Decision: Sendable>(
         _ ask: @escaping @Sendable () async -> Decision,
@@ -1043,7 +1043,7 @@ extension BaseConnection {
             eventLoop.execute { apply(decision) }
         }
     }
-    
+
     /// Narrows our supported protocols down to what the gater approved.
     private func approvedProtocols(
         _ decision: InboundStreamGateDecision,
@@ -1061,7 +1061,7 @@ extension BaseConnection {
             return []
         }
     }
-    
+
     /// Applies the gater's verdict to an inbound stream whose bytes a ``StreamGateBuffer`` has been
     /// holding: either install mss for the approved protocols, or reset the stream having negotiated
     /// nothing at all.
@@ -1072,20 +1072,20 @@ extension BaseConnection {
         supporting supported: [String]
     ) {
         guard self.application.isRunning else { return }
-        
+
         if case .reject(let reason) = decision {
             self.logger.notice("StreamGater rejected inbound stream: \(reason)")
             self.abandonStream(on: childChannel)
             return
         }
-        
+
         let approved = self.approvedProtocols(decision, from: supported)
         guard !approved.isEmpty else {
             self.logger.notice("StreamGater left no supported protocols for this inbound stream; rejecting it")
             self.abandonStream(on: childChannel)
             return
         }
-        
+
         // approved, proceed with the upgrade using the approved protocols
         self.configureInboundUpgrader(on: childChannel, protocols: approved).whenFailure { [weak self] error in
             guard let self = self else { return }
@@ -1102,7 +1102,7 @@ extension BaseConnection {
 // MARK: - Stream pruning
 
 extension BaseConnection {
-    
+
     /// Begin tracking a child channel. Called the moment we learn of a stream, negotiated or not.
     /// - Note: Must be called on `self.eventLoop`.
     private func trackStream(
@@ -1124,17 +1124,17 @@ extension BaseConnection {
             self?.streamRecords.removeValue(forKey: key)
         }
     }
-    
+
     /// - Note: Must be called on `self.eventLoop`.
     private func untrackStream(on childChannel: Channel) {
         self.streamRecords.removeValue(forKey: ObjectIdentifier(childChannel))
     }
-    
+
     /// - Note: Must be called on `self.eventLoop`.
     private func activityRecord(for childChannel: Channel) -> StreamActivityRecord? {
         self.streamRecords[ObjectIdentifier(childChannel)]?.activity
     }
-    
+
     /// Attach the muxer's `Stream` to our record and stamp the negotiation time.
     /// - Note: Must be called on `self.eventLoop`.
     private func resolveTrackedStream(_ stream: LibP2PCore.Stream, on childChannel: Channel) {
@@ -1144,7 +1144,7 @@ extension BaseConnection {
         record.negotiatedAt = Date()
         self.streamRecords[key] = record
     }
-    
+
     /// Schedule a prune
     /// - Note: Must be called on `self.eventLoop`.
     private func armPruneSweep() {
@@ -1159,30 +1159,30 @@ extension BaseConnection {
             self?.sweepForPrunableStreams()
         }
     }
-    
+
     private func cancelPruneSweep() {
         self.pruneSweepTask?.cancel()
         self.pruneSweepTask = nil
     }
-    
+
     /// Whether a prune sweep is currently armed.
     /// - Note: `internal` only so tests can assert we neither leak nor skip the sweep.
     internal var hasPruneSweepScheduled: Bool {
         self.pruneSweepTask != nil
     }
-    
+
     /// Arms the sweep without going through a full security + muxer upgrade.
     /// - Note: `internal` only so tests can exercise the scheduling decision directly.
     internal func armPruneSweepForTesting() {
         self.armPruneSweep()
     }
-    
+
     /// One pruning pass: snapshot on the loop, decide on the actor, apply back on the loop.
     /// - Note: Must be called on `self.eventLoop`.
     private func sweepForPrunableStreams() {
         guard self.stats.status != .closing, self.stats.status != .closed else { return }
         guard !self.streamRecords.isEmpty else { return }
-        
+
         let snapshots = self.streamRecords.map { key, record in
             StreamLivenessSnapshot(
                 key: key,
@@ -1195,7 +1195,7 @@ extension BaseConnection {
                 lastActivityAt: record.activity.lastActivityAt
             )
         }
-        
+
         let pruner = self.streamPruner
         let now = Date()
         let eventLoop = self.eventLoop
@@ -1207,7 +1207,7 @@ extension BaseConnection {
             }
         }
     }
-    
+
     /// Apply the results of the pruner (closing / reseting the streams)
     /// - Note: Must be called on `self.eventLoop`.
     private func applyPruneActions(_ actions: [ObjectIdentifier: StreamPruneAction]) {
@@ -1216,11 +1216,11 @@ extension BaseConnection {
             /// deciding — so re-resolve rather than trusting the snapshot.
             guard let record = self.streamRecords.removeValue(forKey: key) else { continue }
             guard record.channel.isActive else { continue }
-            
+
             let description =
-            "Stream[\(record.stream?.id.description ?? "?")][\(record.stream?.protocolCodec ?? "unnegotiated")][\(record.direction)]"
+                "Stream[\(record.stream?.id.description ?? "?")][\(record.stream?.protocolCodec ?? "unnegotiated")][\(record.direction)]"
             self.logger.debug("Pruning \(description) (\(action))")
-            
+
             switch action {
             case .reset:
                 if let stream = record.stream {
@@ -1239,11 +1239,10 @@ extension BaseConnection {
     }
 }
 
-
 // MARK: - Connection Closing
 
 extension BaseConnection {
-    
+
     /// Called as soon as there is a request to close the Connection (internally via the connection
     /// manager, or externally via the user)
     internal func onClosing() -> EventLoopFuture<Void> {
@@ -1252,7 +1251,7 @@ extension BaseConnection {
             self.logger.trace("Closing")
         }
     }
-    
+
     public func close() -> EventLoopFuture<Void> {
         self.registry = [:]
         self.cancelTimeoutTask()
@@ -1264,7 +1263,7 @@ extension BaseConnection {
                 let timeout = self.eventLoop.scheduleTask(in: .seconds(1)) {
                     closePromise.fail(Application.Connections.Errors.failedToCloseAllStreams)
                 }
-                
+
                 closePromise.completeWith(
                     self.streams.map { $0.close(gracefully: true) }.flatten(on: self.eventLoop).flatMapAlways {
                         result -> EventLoopFuture<Void> in
@@ -1292,7 +1291,7 @@ extension BaseConnection {
                         }
                     }
                 )
-                
+
                 return closePromise.futureResult.flatMapAlways { res in
                     self.stats.status = .closed
                     switch res {
@@ -1406,7 +1405,7 @@ extension BaseConnection {
     internal enum StateTransitionError: Error {
         case invalidStateTransition
     }
-    
+
     /// Drives the state machine to `.muxed(remotePeer)` without running a real security or muxer
     /// handshake, so a test can exercise the stream paths (which need an authenticated peer to build a
     /// gate context) against a hand-installed muxer.
