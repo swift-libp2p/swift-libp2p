@@ -16,6 +16,7 @@ import Foundation
 import LibP2PCore
 import LibP2PTesting
 import NIOCore
+import NIOEmbedded
 import Testing
 
 @testable import LibP2P
@@ -262,11 +263,11 @@ extension LibP2PTests {
         @Test("A NoOp pruner leaves no sweep scheduled, an idle-timeout pruner arms one")
         func testSweepIsScheduledOnlyWhenThePrunerWantsIt() async throws {
             try await withApp { app in
-                let loop = EmbeddedEventLoop()
+                let loop = NIOAsyncTestingEventLoop()
 
                 let quiet = BaseConnection(
                     application: app,
-                    channel: EmbeddedChannel(loop: loop),
+                    channel: NIOAsyncTestingChannel(loop: loop),
                     direction: .outbound,
                     remoteAddress: try Multiaddr("/ip4/127.0.0.1/tcp/1234"),
                     expectedRemotePeer: nil,
@@ -278,7 +279,7 @@ extension LibP2PTests {
 
                 let sweeping = BaseConnection(
                     application: app,
-                    channel: EmbeddedChannel(loop: loop),
+                    channel: NIOAsyncTestingChannel(loop: loop),
                     direction: .outbound,
                     remoteAddress: try Multiaddr("/ip4/127.0.0.1/tcp/1235"),
                     expectedRemotePeer: nil,
@@ -289,10 +290,10 @@ extension LibP2PTests {
                 #expect(sweeping.hasPruneSweepScheduled == true)
 
                 // Closing must take the sweep down with it, so nothing we scheduled outlives us.
-                let closed: EventLoopFuture<Void> = sweeping.close()
-                loop.run()
-                try await closed.get()
+                try await sweeping.close().get()
                 #expect(sweeping.hasPruneSweepScheduled == false)
+                try await quiet.close().get()
+                #expect(quiet.hasPruneSweepScheduled == false)
             }
         }
 

@@ -123,8 +123,8 @@ extension LibP2PTests {
         @Test("Closing a connection closes its open sub-streams")
         func testConnectionClosesItsSubStreams() async throws {
             try await withApp { app in
-                let loop = EmbeddedEventLoop()
-                let channel = EmbeddedChannel(loop: loop)
+                let channel = NIOAsyncTestingChannel()
+                let loop = channel.testingEventLoop
 
                 let connection = BaseConnection(
                     application: app,
@@ -142,9 +142,9 @@ extension LibP2PTests {
                 #expect(connection.streams.count == 1)
                 #expect(stream.streamState == .open)
 
-                let closeFuture: EventLoopFuture<Void> = connection.close()
-                loop.run()
-                try await closeFuture.get()
+                // A `NIOAsyncTestingEventLoop` drains itself whenever work is submitted from off the
+                // loop, so the whole close chain resolves without a manual `run()`.
+                try await connection.close().get()
 
                 #expect(connection.streams.count == 0)
                 #expect(stream.streamState == .closed)
@@ -158,8 +158,7 @@ extension LibP2PTests {
         @Test("close() marks the connection closed")
         func testCloseMarksStatusClosed() async throws {
             try await withApp { app in
-                let loop = EmbeddedEventLoop()
-                let channel = EmbeddedChannel(loop: loop)
+                let channel = NIOAsyncTestingChannel()
 
                 let connection = BaseConnection(
                     application: app,
@@ -169,9 +168,7 @@ extension LibP2PTests {
                     expectedRemotePeer: nil
                 )
 
-                let closeFuture: EventLoopFuture<Void> = connection.close()
-                loop.run()
-                try await closeFuture.get()
+                try await connection.close().get()
 
                 #expect(connection.status == .closed)
             }
