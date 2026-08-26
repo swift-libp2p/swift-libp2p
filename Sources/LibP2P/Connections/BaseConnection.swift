@@ -503,7 +503,10 @@ extension BaseConnection {
             openStreamCount: self.muxer?.streams.count ?? 0
         )
         let gater = self.streamGater
-        self.consultGater({ await gater.shouldAllowOutboundStream(context) }) { [weak self] decision in
+        let ask: (@Sendable () async -> OutboundStreamGateDecision) = {
+            await gater.shouldAllowOutboundStream(context)
+        }
+        self.consultGater(ask) { [weak self] decision in
             guard let self = self else { return }
 
             if case .reject(let reason) = decision {
@@ -758,7 +761,10 @@ extension BaseConnection {
             openStreamCount: self.muxer?.streams.count ?? 0
         )
         let gater = self.streamGater
-        self.consultGater({ await gater.shouldAcceptInboundStream(context) }) { [weak self] decision in
+        let ask: (@Sendable () async -> InboundStreamGateDecision) = {
+            await gater.shouldAcceptInboundStream(context)
+        }
+        self.consultGater(ask) { [weak self] decision in
             self?.applyInboundGateDecision(decision, on: childChannel, supporting: supported)
         }
 
