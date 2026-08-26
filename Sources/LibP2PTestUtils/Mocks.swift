@@ -104,17 +104,29 @@ public final class MockMuxer: Muxer, @unchecked Sendable {
     }
 
     /// Injects an already-open stream directly into the muxer (bypassing negotiation), for exercising the
-    /// connection's stream-teardown logic. The stream shares `loop` so `close()` chaining resolves under a
-    /// single `EmbeddedEventLoop.run()`.
+    /// connection's stream-teardown logic. The stream shares `loop` with the connection, so the two
+    /// `close()` chains resolve together under a single drain of that loop.
     @discardableResult
-    public func openStreamForTest(proto: String, loop: EmbeddedEventLoop) -> MockStream {
+    public func openStreamForTest(proto: String, loop: EventLoop) -> MockStream {
         self.makeStream(proto: proto, loop: loop)
     }
 
     private func makeStream(proto: String, loop: EventLoop) -> MockStream {
-        let embeddedLoop = (loop as? EmbeddedEventLoop) ?? EmbeddedEventLoop()
+        // Match the child channel to the loop it has to run on. `EmbeddedChannel` may only be driven from
+        // the thread that created its `EmbeddedEventLoop`, whereas `NIOAsyncTestingChannel` is safe to use
+        // from an `async` test that hops threads across `await`s.
+        let channel: Channel
+        switch loop {
+        case let loop as NIOAsyncTestingEventLoop:
+            channel = NIOAsyncTestingChannel(loop: loop)
+        case let loop as EmbeddedEventLoop:
+            channel = EmbeddedChannel(loop: loop)
+        default:
+            channel = EmbeddedChannel()
+        }
+
         let stream = MockStream(
-            channel: EmbeddedChannel(loop: embeddedLoop),
+            channel: channel,
             mode: .initiator,
             id: self.nextID,
             name: "\(self.nextID)",
