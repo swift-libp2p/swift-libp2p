@@ -28,10 +28,6 @@ extension Multiaddr {
 
         /// If our multiaddr is using the `dnsaddr` protocol, attempt to resolve it for a tcp ipv4 address
         if self.addresses.first?.codec == .dnsaddr {
-            //            #if canImport(LibP2PDNSAddr)
-            //            return self.resolve(for: [Codecs.ip4, Codecs.tcp])?.tcpAddress
-            //            #endif
-            print("ERROR: Can't resolve DNS Address without DNSADDR dependency")
             return nil
         }
 
@@ -82,10 +78,6 @@ extension Multiaddr {
 
         /// If our multiaddr is using the `dnsaddr` protocol, attempt to resolve it for a tcp ipv4 address
         if self.addresses.first?.codec == .dnsaddr {
-            //            #if canImport(LibP2PDNSAddr)
-            //            return self.resolve(for: [.ip4, .udp])?.udpAddress
-            //            #endif
-            print("Error: Can't resolve DNSAddr without LibP2PDNSAddr module")
             return nil
         }
 

@@ -74,19 +74,30 @@ extension Application {
         on: EventLoop
     ) -> EventLoopFuture<[Multiaddr]> {
         let promise = on.makePromise(of: [Multiaddr].self)
-        var dialableAddresses: [Multiaddr] = []
+        let dialableAddresses: NIOLockedValueBox<[Multiaddr]> = .init([])
 
         let _ = Set(mas).map { ma in
             self.transports.canDial(ma, on: on).map { canDial in
+                // TCP will pick up dns, dns4 and dns6 along with ip4 and ip6 addresses
                 if canDial {
                     if externalAddressesOnly {
                         guard !ma.isInternalAddress else { return }
                     }
-                    dialableAddresses.append(ma)
+                    dialableAddresses.withLockedValue({
+                        $0.append(ma)
+                    })
+                } else {
+                    // Otherwise, ask our registered resolvers if they can resolve the address
+                    // ex: dnsaddr/ will pass when the LibP2PDNSAddr package is registered
+                    if self.resolvers.can(resolve: ma) {
+                        dialableAddresses.withLockedValue({
+                            $0.append(ma)
+                        })
+                    }
                 }
             }
         }.flatten(on: on).map {
-            promise.succeed(dialableAddresses)
+            promise.succeed(dialableAddresses.withLockedValue({ $0 }))
         }
 
         return promise.futureResult

@@ -46,7 +46,7 @@ extension Array where Element == UInt8 {
 /// - PeerID with metadata (as we communicate with the peer) (latency, software, lib version, via Identify protocol and others)
 internal final class BasicInMemoryPeerStore: PeerStore, @unchecked Sendable {
 
-    /// Dictionary where Key == B58 PeerID String, and Value == PeerInfo that contains the PeerID and assocaited Multiaddr...
+    /// Dictionary where Key == B58 PeerID String, and Value == ComprehensivePeer that contains the PeerID and assocaited Multiaddr...
     private var store: [String: ComprehensivePeer]
 
     /// All access / manipulation of store happens on our EventLoop in order to ensure thread safety
@@ -270,7 +270,7 @@ internal final class BasicInMemoryPeerStore: PeerStore, @unchecked Sendable {
 
     /// - MARK: Address Book
 
-    /// Adds a Multiaddr to an existing PeerID
+    /// Adds a `Multiaddr` to an existing `PeerID`
     func add(address: Multiaddr, toPeer peer: PeerID, on: EventLoop? = nil) -> EventLoopFuture<Void> {
         getPeer(withID: peer.b58String).map { compPeer in
             if let pid = try? address.getPeerID() { guard pid == peer else { return } }
@@ -278,6 +278,7 @@ internal final class BasicInMemoryPeerStore: PeerStore, @unchecked Sendable {
         }.hop(to: on ?? eventLoop)
     }
 
+    /// Adds a set of `Multiaddr`s to an existing `PeerID`
     func add(addresses: [Multiaddr], toPeer peer: PeerID, on: EventLoop? = nil) -> EventLoopFuture<Void> {
         guard !addresses.isEmpty else { return on?.makeSucceededVoidFuture() ?? eventLoop.makeSucceededVoidFuture() }
         return getPeer(withID: peer.b58String).map { compPeer in
@@ -288,25 +289,28 @@ internal final class BasicInMemoryPeerStore: PeerStore, @unchecked Sendable {
         }.hop(to: on ?? eventLoop)
     }
 
-    /// Removes a Multiaddr from an existing PeerID
+    /// Removes a `Multiaddr` from an existing `PeerID`
     func remove(address: Multiaddr, fromPeer peer: PeerID, on: EventLoop? = nil) -> EventLoopFuture<Void> {
         getPeer(withID: peer.b58String).map { compPeer in
             compPeer.addresses.remove(address)
         }.hop(to: on ?? eventLoop)
     }
 
+    /// Removes all `Multiaddr`s associated with the `PeerID`
     func removeAllAddresses(forPeer peer: PeerID, on: EventLoop? = nil) -> EventLoopFuture<Void> {
         getPeer(withID: peer.b58String).map { compPeer in
             compPeer.addresses.removeAll()
         }.hop(to: on ?? eventLoop)
     }
 
+    /// Returns all `Multiaddr`s associated with the `PeerID`
     func getAddresses(forPeer peer: PeerID, on: EventLoop? = nil) -> EventLoopFuture<[Multiaddr]> {
         getPeer(withID: peer.b58String).map { compPeer in
             Array(compPeer.addresses)
         }.hop(to: on ?? eventLoop)
     }
 
+    /// Returns the `key` that this Peer is indexed by in the `PeerStore`
     func getPeer(byAddress address: Multiaddr, on: EventLoop? = nil) -> EventLoopFuture<String> {
         eventLoop.submit { () -> String in
             if let match =
@@ -321,6 +325,7 @@ internal final class BasicInMemoryPeerStore: PeerStore, @unchecked Sendable {
         }.hop(to: on ?? eventLoop)
     }
 
+    /// Returns the `PeerID` for the matching `Multiaddr`
     func getPeerID(byAddress address: Multiaddr, on: EventLoop? = nil) -> EventLoopFuture<PeerID> {
         eventLoop.submit { () -> PeerID in
             if let match =
@@ -335,6 +340,7 @@ internal final class BasicInMemoryPeerStore: PeerStore, @unchecked Sendable {
         }.hop(to: on ?? eventLoop)
     }
 
+    /// Returns the `PeerInfo` for the matching `Multiaddr`
     func getPeerInfo(byAddress address: Multiaddr, on: EventLoop? = nil) -> EventLoopFuture<PeerInfo> {
         eventLoop.submit { () -> PeerInfo in
             if let match =
