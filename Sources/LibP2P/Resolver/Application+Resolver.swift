@@ -42,10 +42,30 @@ extension Application {
         return true
     }
 
+    /// Resolves a `Multiaddr` into a set of 'dialable' addresses.
+    ///
+    /// - Note: We say 'dialable', instead of 'concrete', addresses because the resolved addresses may still
+    /// be `.dns` family prefrixed addresses that will still need A/AAAA name resolution, but TCP and most
+    /// Transports support top level A/AAAA name resolution at dial time. If you need a concrete IP address
+    /// you can call `resolve(Multiaddr)` on it again.
+    ///
+    /// - Parameters:
+    ///   - multiaddr: The `Multiaddr` to be resolved into a 'dialable' `Multiaddr`
+    /// - Returns: A set of 'dialable' `Multiaddr`s or `nil` if none exist.
     public func resolve(_ multiaddr: Multiaddr) async throws -> [Multiaddr]? {
         try await self.resolve(multiaddr).get()
     }
 
+    /// Resolves a `Multiaddr` into a set of 'dialable' addresses.
+    ///
+    /// - Note: We say 'dialable', instead of 'concrete', addresses because the resolved addresses may still
+    /// be `.dns` family prefrixed addresses that will still need A/AAAA name resolution, but TCP and most
+    /// Transports support top level A/AAAA name resolution at dial time. If you need a concrete IP address
+    /// you can call `resolve(Multiaddr)` on it again.
+    ///
+    /// - Parameters:
+    ///   - multiaddr: The `Multiaddr` to be resolved into a 'dialable' `Multiaddr`
+    /// - Returns: A set of 'dialable' `Multiaddr`s or `nil` if none exist.
     public func resolve(_ multiaddr: Multiaddr) -> EventLoopFuture<[Multiaddr]?> {
         self.logger.trace("Attempting to resolve \(multiaddr)")
         let el = self.eventLoopGroup.next()
@@ -71,15 +91,39 @@ extension Application {
                     return el.makeSucceededFuture(nil)
                 }
 
+                // TODO: Cache the resolved addresses
+
                 return el.makeSucceededFuture(Array(uniqueSet))
             }
         }
     }
 
+    /// Resolves a `Multiaddr` into a 'dialable' address that conforms to the specified `Codec` set.
+    ///
+    /// - Note: We say a 'dialable', instead of 'concrete', address because the resolved address may still
+    /// be a `.dns` family prefrixed address that will still need A/AAAA name resolution, but TCP and most
+    /// Transports support top level A/AAAA name resolution. If you need a concrete IP address you can call
+    /// `resolve(Multiaddr)` on it again.
+    ///
+    /// - Parameters:
+    ///   - multiaddr: The `Multiaddr` to be resolved into a 'dialable' `Multiaddr`
+    ///   - codecs: A set of `MultiaddrProtocol` the resolved address must conform to. Ex: [.ipv4, .tcp]
+    /// - Returns: A 'dialable' `Multiaddr` that conforms to the provided Codec set or `nil` if one doesn't exist.
     public func resolve(_ multiaddr: Multiaddr, for codecs: Set<MultiaddrProtocol>) async throws -> Multiaddr? {
         try await self.resolve(multiaddr, for: codecs).get()
     }
 
+    /// Resolves a `Multiaddr` into a 'dialable' address that conforms to the specified `Codec` set.
+    ///
+    /// - Note: We say a 'dialable', instead of 'concrete', address because the resolved address may still
+    /// be a `.dns` family prefrixed address that will still need A/AAAA name resolution, but TCP and most
+    /// Transports support top level A/AAAA name resolution. If you need a concrete IP address you can call
+    /// `resolve(Multiaddr)` on it again.
+    ///
+    /// - Parameters:
+    ///   - multiaddr: The `Multiaddr` to be resolved into a 'dialable' `Multiaddr`
+    ///   - codecs: A set of `MultiaddrProtocol` the resolved address must conform to. Ex: [.ipv4, .tcp]
+    /// - Returns: A 'dialable' `Multiaddr` that conforms to the provided Codec set or `nil` if one doesn't exist.
     public func resolve(_ multiaddr: Multiaddr, for codecs: Set<MultiaddrProtocol>) -> EventLoopFuture<Multiaddr?> {
         self.logger.trace("Attempting to resolve \(multiaddr) for \(self.list(codecs))")
         let el = self.eventLoopGroup.next()
@@ -104,6 +148,8 @@ extension Application {
                     self.logger.info("Unable to resolve \(multiaddr) for \(self.list(codecs))")
                     return el.makeSucceededFuture(nil)
                 }
+
+                // TODO: Cache the resolved address
 
                 return el.makeSucceededFuture(uniqueSet.first)
             }
