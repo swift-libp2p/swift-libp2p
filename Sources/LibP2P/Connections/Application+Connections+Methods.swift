@@ -97,7 +97,7 @@ extension Application {
                 }
             }
         }.flatten(on: on).map {
-            promise.succeed(dialableAddresses.withLockedValue({$0}))
+            promise.succeed(dialableAddresses.withLockedValue({ $0 }))
         }
 
         return promise.futureResult
