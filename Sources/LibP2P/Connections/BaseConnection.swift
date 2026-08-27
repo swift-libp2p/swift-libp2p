@@ -854,6 +854,8 @@ extension BaseConnection {
                     self.untrackStream(on: childChannel)
                     self.muxer?.removeStream(channel: childChannel)
                     self.logger.error("Error while upgrading Outbound ChildChannel: \(error)")
+                    // mss failed before the route's handlers were installed
+                    self.failPendingCaller(pendingStream.responder, direction: .outbound, with: error)
 
                 case .success(let proto):
                     // Append a stream event in our stream history array
