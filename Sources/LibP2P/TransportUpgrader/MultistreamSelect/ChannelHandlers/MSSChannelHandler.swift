@@ -17,7 +17,7 @@ import NIOCore
 
 /// Negotiates a protocol over multistream-select using a typed `MSSFrame` state machine.
 ///
-/// We frame the byte stream *inline* — via `MSSFrame.decodeFramePayload` — rather than
+/// We frame the byte stream inline via `MSSFrame.decodeFramePayload`, rather than
 /// installing a separate `ByteToMessageHandler`. Keeping the upgrader to a single ChannelHandler makes buffering
 /// and forwarding post mss data easier and less flakey. Installing and removing a ByteToMessageDecoder creates an
 /// additional point of buffered data that we have to drain upon removal adding complexity.
@@ -29,6 +29,8 @@ internal final class MultistreamSelectHandler: ChannelInboundHandler, RemovableC
     enum Errors: Error {
         case exhaustedProtocolSupport
         case unexpectedMessage
+        /// The channel got torn down before we could finish negotiating
+        case channelClosedMidNegotiation
     }
 
     /// The negotiation is symmetric enough that both roles share three states.
@@ -75,6 +77,15 @@ internal final class MultistreamSelectHandler: ChannelInboundHandler, RemovableC
     /// Set when a protocol is agreed; the promise is completed only after any leftover is stashed, so
     /// the connection can safely reconfigure the pipeline in its completion handler.
     private var negotiatedProtocol: SemVerProtocol?
+
+    /// Whether `negotiatedPromise` has been settled.
+    ///
+    /// It can be settled from any of four places
+    /// - an agreed protocol
+    /// - an MSS-level failure
+    /// - an error travelling up the pipeline
+    /// - or the channel going inactive
+    private var didSettlePromise = false
 
     init(
         mode: LibP2P.Mode,
@@ -124,13 +135,23 @@ internal final class MultistreamSelectHandler: ChannelInboundHandler, RemovableC
         self.start(context: context)
     }
 
+    public func channelInactive(context: ChannelHandlerContext) {
+        if !self.didSettlePromise {
+            self.logger.debug("Channel went inactive mid-negotiation; failing the negotiation")
+        }
+        // The channel went inactive mid negotiation, make sure we fail the promise
+        self.settle(withFailure: Errors.channelClosedMidNegotiation)
+        context.fireChannelInactive()
+    }
+
     public func channelReadComplete(context: ChannelHandlerContext) {
         context.fireChannelReadComplete()
     }
 
     public func errorCaught(context: ChannelHandlerContext, error: Error) {
         self.logger.error("ErrorCaught: \(error)")
-        self.negotiatedPromise.fail(error)
+        // We caught an error, make sure we fail the promise
+        self.settle(withFailure: error)
         context.close(promise: nil)
     }
 
@@ -193,7 +214,8 @@ internal final class MultistreamSelectHandler: ChannelInboundHandler, RemovableC
         if let negotiatedProtocol {
             self.negotiatedProtocol = nil
             self.logger.trace("Negotiated protocol: \(negotiatedProtocol)")
-            negotiatedPromise.succeed((negotiatedProtocol.stringValue, nil))
+            // complete the promise
+            self.settle(withSuccess: (negotiatedProtocol.stringValue, nil))
         }
     }
 
@@ -287,8 +309,23 @@ internal final class MultistreamSelectHandler: ChannelInboundHandler, RemovableC
     private func fail(_ error: Error, context: ChannelHandlerContext) {
         state = .done
         self.logger.error("MSS negotiation failed: \(error). Aborting and closing channel.")
-        negotiatedPromise.fail(error)
+        // make sure to fail the promise
+        self.settle(withFailure: error)
         context.close(mode: .all, promise: nil)
+    }
+
+    /// Settles `negotiatedPromise` with an agreed protocol, if it hasn't been settled already.
+    private func settle(withSuccess result: Connection.NegotiationResult) {
+        guard !self.didSettlePromise else { return }
+        self.didSettlePromise = true
+        self.negotiatedPromise.succeed(result)
+    }
+
+    /// Settles `negotiatedPromise` with a failure, if it hasn't been settled already.
+    private func settle(withFailure error: Error) {
+        guard !self.didSettlePromise else { return }
+        self.didSettlePromise = true
+        self.negotiatedPromise.fail(error)
     }
 
     private func send(_ frames: [MSSFrame], context: ChannelHandlerContext) {
