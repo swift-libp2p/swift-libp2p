@@ -21,8 +21,8 @@ import NIOConcurrencyHelpers
 
 public protocol AddressResolver: Sendable {
     static var key: String { get }
+    func can(resolve: Multiaddr) -> Bool
     func resolve(multiaddr: Multiaddr) -> EventLoopFuture<[Multiaddr]?>
-    func resolve(multiaddr: Multiaddr, for: Set<MultiaddrProtocol>) -> EventLoopFuture<Multiaddr?>
 }
 
 extension Application {
