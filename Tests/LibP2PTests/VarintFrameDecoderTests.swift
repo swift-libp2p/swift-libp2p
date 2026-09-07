@@ -113,7 +113,7 @@ extension LibP2PTests {
         @Test("VarIntFrameDecoder tolerates a prefix split across reads")
         func testPrefixStraddlingAReadBoundary() throws {
             let payloadBytes = [UInt8](repeating: 0xAB, count: 300)
-            let prefix = putUVarInt(UInt64(payloadBytes.count))  // 300 needs two bytes
+            let prefix = UInt64(payloadBytes.count).varIntBytes  // 300 needs two bytes
             #expect(prefix.count == 2)
 
             let channel = EmbeddedChannel(handler: ByteToMessageHandler(VarIntFrameDecoder()))
@@ -145,7 +145,7 @@ extension LibP2PTests {
 
             // A 200 byte announcement fits in the 2 byte prefix window but exceeds the ceiling.
             var prefixOnly = channel.allocator.buffer(capacity: 2)
-            prefixOnly.writeBytes(putUVarInt(200))
+            prefixOnly.writeVarInt(200)
             #expect(prefixOnly.readableBytes == 2)
             #expect(throws: VarIntDecodingError.messageTooLarge(length: 200, max: max)) {
                 try channel.writeInbound(prefixOnly)
@@ -163,10 +163,59 @@ extension LibP2PTests {
 
             let payloadBytes = [UInt8](repeating: 0xCD, count: max)
             var frame = channel.allocator.buffer(capacity: max + 2)
-            frame.writeBytes(putUVarInt(UInt64(max)) + payloadBytes)
+            frame.writeVarInt(UInt64(max))
+            frame.writeBytes(payloadBytes)
             try channel.writeInbound(frame)
             let decoded = try #require(try channel.readInbound(as: ByteBuffer.self))
             #expect(Array(decoded.readableBytesView) == payloadBytes)
+        }
+
+        @Test("VarIntFrameDecoder accepts a ByteCount ceiling")
+        func testByteCountCeilingIsIdenticalToInts() throws {
+            let decoder = VarIntFrameDecoder(maxMessageLength: .kibibytes(1))
+            #expect(decoder.maxMessageLength == 1024)
+            #expect(decoder.maxLengthPrefixBytes == VarIntPrefixSignedness.unsigned.maxPrefixByteCount(for: 1024))
+
+            // The same ceiling written three ways results in the same configuration.
+            #expect(VarIntFrameDecoder(maxMessageLength: .bytes(1024)).maxMessageLength == 1024)
+            #expect(VarIntFrameDecoder(maxMessageLength: 1024).maxMessageLength == 1024)
+            #expect(VarIntLengthFieldPrepender(maxMessageLength: .kibibytes(1)).maxMessageLength == 1024)
+
+            // The default is still the default
+            #expect(VarIntFrameDecoder().maxMessageLength == VarIntFrameDecoder.defaultMaxMessageLength)
+
+            // And the ceiling is enforced.
+            let channel = EmbeddedChannel(
+                handler: ByteToMessageHandler(VarIntFrameDecoder(maxMessageLength: .kibibytes(1)))
+            )
+            defer { _ = try? channel.finish() }
+
+            var prefixOnly = channel.allocator.buffer(capacity: 2)
+            prefixOnly.writeVarInt(2000)
+            #expect(throws: VarIntDecodingError.messageTooLarge(length: 2000, max: 1024)) {
+                try channel.writeInbound(prefixOnly)
+            }
+        }
+
+        /// A `signedness` only call still resolves, and picks up the `Int` default rather than
+        /// tripping over the `ByteCount` overload.
+        @Test("The ByteCount overloads leave the existing defaults reachable")
+        func testByteCountOverloadsDoNotShadowDefaults() throws {
+            #expect(
+                VarIntFrameDecoder(signedness: .signed()).maxMessageLength
+                    == VarIntFrameDecoder.defaultMaxMessageLength
+            )
+            #expect(
+                VarIntLengthFieldPrepender(signedness: .signed()).maxMessageLength
+                    == VarIntLengthFieldPrepender.defaultMaxMessageLength
+            )
+
+            // The provider factories take either spelling.
+            _ = Application.ChildChannelHandlers.Provider.varIntFramed(maxMessageLength: .mebibytes(2))
+            _ = Application.ChildChannelHandlers.Provider.varIntFramed(maxMessageLength: 4096)
+            _ = Application.ChildChannelHandlers.Provider.varIntFramed()
+            _ = Application.ChildChannelHandlers.Provider.varIntFramedDecoder(maxMessageLength: .kibibytes(64))
+            _ = Application.ChildChannelHandlers.Provider.varIntFramedEncoder(maxMessageLength: .megabytes(2))
         }
 
         /// The encoder honours the same ceiling as the decoder.
