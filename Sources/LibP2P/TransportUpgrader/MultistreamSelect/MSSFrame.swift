@@ -116,17 +116,18 @@ extension MSSFrame {
         }
     }
 
-    /// uvarint length prefix (payload + 1, for the newline), payload, then `\n`.
+    /// uVarInt length prefixed (payload + `\n`).
     private static func frame(_ message: String) throws -> [UInt8] {
         let payload = Array(message.utf8)
         return try MSSFrame.frame(payload)
     }
 
+    /// uVarInt length prefixed (payload + `\n`).
     private static func frame(_ bytes: [UInt8]) throws -> [UInt8] {
         guard bytes.count < Self.maxFrameLength - 2 else {
             throw Errors.frameTooLarge(bytes.count)
         }
-        return putUVarInt(UInt64(bytes.count + 1)) + bytes + [0x0A]
+        return (bytes + [0x0A]).uVarIntLengthPrefixed
     }
 }
 
