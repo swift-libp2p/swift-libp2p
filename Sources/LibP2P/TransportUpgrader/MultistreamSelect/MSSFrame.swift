@@ -55,6 +55,9 @@ internal enum MSSFrame: Equatable {
     /// The most bytes we will hold while still waiting for a single complete frame.
     internal static let maxBufferedBytes = maxFrameLength + maxLengthPrefixBytes
 
+    /// Newline encoded byte
+    internal static let newline: UInt8 = 0x0A
+
     internal enum Errors: Error, Equatable {
         /// The uvarint length prefix ran longer than a valid MSS frame length could ever require.
         case invalidLengthPrefix
@@ -127,7 +130,7 @@ extension MSSFrame {
         guard bytes.count < Self.maxFrameLength - 2 else {
             throw Errors.frameTooLarge(bytes.count)
         }
-        return (bytes + [0x0A]).uVarIntLengthPrefixed
+        return (bytes + [MSSFrame.newline]).uVarIntLengthPrefixed
     }
 }
 
@@ -162,7 +165,8 @@ extension MSSFrame {
         }
 
         // We hold the whole frame, so a missing delimiter is now a protocol error.
-        guard frame.getInteger(at: frame.readerIndex + frame.readableBytes - 1, as: UInt8.self) == 0x0A else {
+        guard frame.getInteger(at: frame.readerIndex + frame.readableBytes - 1, as: UInt8.self) == MSSFrame.newline
+        else {
             throw MSSFrame.Errors.missingNewlineDelimiter
         }
 
