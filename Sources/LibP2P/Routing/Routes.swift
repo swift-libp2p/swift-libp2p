@@ -66,7 +66,7 @@ public final class Routes: RoutesBuilder, CustomStringConvertible, Sendable {
     let sendableBox: NIOLockedValueBox<SendableBox>
 
     public init() {
-        let box = SendableBox(all: [], defaultMaxBodySize: "16kb", caseInsensitive: false)
+        let box = SendableBox(all: [], defaultMaxBodySize: .kibibytes(16), caseInsensitive: false)
         self.sendableBox = .init(box)
     }
 
