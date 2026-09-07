@@ -45,6 +45,11 @@ extension VarIntPrefixSignedness {
     }
 
     /// The number of bytes a minimally encoded prefix for `maxMessageLength` occupies.
+    func maxPrefixByteCount(for maxMessageLength: ByteCount) -> Int {
+        self.maxPrefixByteCount(for: maxMessageLength.value)
+    }
+
+    /// The number of bytes a minimally encoded prefix for `maxMessageLength` occupies.
     func maxPrefixByteCount(for maxMessageLength: Int) -> Int {
         switch self {
         case .unsigned:
@@ -184,6 +189,30 @@ extension Application.ChildChannelHandlers.Provider {
             ]
         }
     }
+
+    /// `varIntFramed(signedness:maxMessageLength:)` with the ceiling as a byte count.
+    public static func varIntFramed(
+        signedness: VarIntPrefixSignedness = .unsigned,
+        maxMessageLength: ByteCount
+    ) -> Self {
+        .varIntFramed(signedness: signedness, maxMessageLength: maxMessageLength.value)
+    }
+
+    /// `varIntFramedDecoder(signedness:maxMessageLength:)` with the ceiling as a byte count.
+    public static func varIntFramedDecoder(
+        signedness: VarIntPrefixSignedness = .unsigned,
+        maxMessageLength: ByteCount
+    ) -> Self {
+        .varIntFramedDecoder(signedness: signedness, maxMessageLength: maxMessageLength.value)
+    }
+
+    /// `varIntFramedEncoder(signedness:maxMessageLength:)` with the ceiling as a byte count.
+    public static func varIntFramedEncoder(
+        signedness: VarIntPrefixSignedness = .unsigned,
+        maxMessageLength: ByteCount
+    ) -> Self {
+        .varIntFramedEncoder(signedness: signedness, maxMessageLength: maxMessageLength.value)
+    }
 }
 
 @available(*, deprecated, renamed: "VarIntFrameDecoder", message: "renamed to VarIntFrameDecoder")
@@ -234,6 +263,16 @@ public class VarIntFrameDecoder: ByteToMessageDecoder {
         self.signedness = signedness
         self.maxMessageLength = maxMessageLength
         self.maxLengthPrefixBytes = signedness.maxPrefixByteCount(for: maxMessageLength)
+    }
+
+    /// - Parameters:
+    ///   - signedness: How the inbound length prefix is encoded. Defaults to `.unsigned`, libp2p's wire form.
+    ///   - maxMessageLength: The largest body to accept, as a `ByteCount`. Must be positive.
+    public convenience init(
+        signedness: VarIntPrefixSignedness = .unsigned,
+        maxMessageLength: ByteCount
+    ) {
+        self.init(signedness: signedness, maxMessageLength: maxMessageLength.value)
     }
 
     public func decode(context: ChannelHandlerContext, buffer: inout ByteBuffer) throws -> DecodingState {
@@ -344,6 +383,16 @@ public class VarIntLengthFieldPrepender: MessageToByteEncoder {
         precondition(maxMessageLength > 0, "maxMessageLength must be positive, got \(maxMessageLength)")
         self.signedness = signedness
         self.maxMessageLength = maxMessageLength
+    }
+
+    /// - Parameters:
+    ///   - signedness: How the outbound length prefix is encoded. Defaults to `.unsigned`, libp2p's wire form.
+    ///   - maxMessageLength: The largest body to frame, as a `ByteCount`. Must be positive.
+    public convenience init(
+        signedness: VarIntPrefixSignedness = .unsigned,
+        maxMessageLength: ByteCount
+    ) {
+        self.init(signedness: signedness, maxMessageLength: maxMessageLength.value)
     }
 
     public func encode(data: ByteBuffer, out: inout ByteBuffer) throws {
