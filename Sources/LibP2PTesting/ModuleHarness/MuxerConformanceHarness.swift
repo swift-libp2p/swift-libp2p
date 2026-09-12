@@ -117,9 +117,10 @@ public func runMuxerConformance(
             report.fail("Client connection present in ConnectionManager", "no connection found")
         }
 
-        // MARK: Payload round-trips over a single stream (various sizes)
-        for size in payloadSizes {
-            let payload = randomData(count: size)
+        // Build the payloads up front, so payload production doesn't have an impact on
+        // connection / stream timeouts during the actual test
+        let payloads = payloadSizes.map { (size: $0, bytes: randomData(count: $0)) }
+        for (size, payload) in payloads {
             do {
                 let response = try await client.newRequest(
                     to: addr,

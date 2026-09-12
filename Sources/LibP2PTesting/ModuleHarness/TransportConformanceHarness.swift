@@ -133,9 +133,10 @@ public func runTransportConformance(
             report.fail("Dialed connection present in ConnectionManager", "no connection found")
         }
 
-        // MARK: Payload round-trips (bytes of various sizes actually move)
-        for size in payloadSizes {
-            let payload = tptRandomData(count: size)
+        // Build the payloads up front, so payload production doesn't have an impact on
+        // connection / stream timeouts during the actual test
+        let payloads = payloadSizes.map { (size: $0, bytes: tptRandomData(count: $0)) }
+        for (size, payload) in payloads {
             do {
                 let response = try await client.newRequest(
                     to: addr,

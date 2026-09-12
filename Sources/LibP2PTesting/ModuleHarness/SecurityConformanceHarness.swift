@@ -157,9 +157,10 @@ public func runSecurityConformance(
             report.warn("Skipped plaintext-on-wire probe (no host connection to tap)")
         }
 
-        // MARK: Payload round-trips (various sizes)
-        for size in payloadSizes {
-            let payload = secRandomData(count: size)
+        // Build the payloads up front, so payload production doesn't have an impact on
+        // connection / stream timeouts during the actual test
+        let payloads = payloadSizes.map { (size: $0, bytes: secRandomData(count: $0)) }
+        for (size, payload) in payloads {
             do {
                 let response = try await client.newRequest(
                     to: addr,
