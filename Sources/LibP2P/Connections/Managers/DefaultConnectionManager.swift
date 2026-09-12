@@ -179,14 +179,15 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         self.eventLoop.execute {
             self.maxPeers = maxConnections
             self.buffer = Int(Double(maxConnections) * 0.2)
-            self.logger.info("Max Connections updated to \(maxConnections)")
+            self.logger.debug("Max Connections updated to \(maxConnections)")
         }
     }
 
+    /// Updates the window a Connection is allowed to sit idle for.
     func setIdleTimeout(_ timeout: TimeAmount) {
         self.eventLoop.execute {
             self.idleTimeout = timeout
-            self.logger.info("Idle Timeout updated to \(timeout.asSeconds) seconds")
+            self.logger.debug("Idle Timeout updated to \(timeout.asSeconds) seconds")
         }
     }
 
@@ -197,7 +198,7 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     func setUpgradeTimeout(_ timeout: TimeAmount) {
         self.eventLoop.execute {
             self.upgradeTimeout = timeout
-            self.logger.info("Upgrade Timeout updated to \(timeout.asSeconds) seconds")
+            self.logger.debug("Upgrade Timeout updated to \(timeout.asSeconds) seconds")
         }
     }
 

@@ -39,9 +39,37 @@ public protocol AppConnection: Connection, CustomStringConvertible {
         closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
     )
 
+    /// Attempts to open a new Stream but fails (without notifying the responder) when the Connection refused
+    /// the stream, so that the original caller can recover by attempting a new, cold, dial.
+    ///
+    /// - Returns: a future that succeeds once the request has been handed to the muxer, and fails with
+    ///  `Application.Connections.Errors.connectionUpgradeFailed` if we're already closing /
+    ///   closed. On that failure `closure` is never invoked, so the caller is free to retry it elsewhere.
+    ///   Every other failure still reaches `closure` as an `.error` event, as usual.
+    func tryNewStream(
+        forProtocol proto: String,
+        withHandlers: HandlerConfig,
+        andMiddleware: MiddlewareConfig,
+        closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
+    ) -> EventLoopFuture<Void>
+
+    /// Attempts to open a new Stream but fails (without notifying the registered responder) when the Connection
+    /// refused the stream, so that the original caller can recover by attempting a new, cold, dial.
+    ///
+    /// - Returns: a future that succeeds once the request has been handed to the muxer, and fails with
+    ///  `Application.Connections.Errors.connectionUpgradeFailed` if we're already closing /
+    ///   closed. On that failure the registered route handler is never invoked. Every other failure still
+    ///   reaches it as an `.error` event, as usual.
+    func tryNewStream(forProtocol proto: String) -> EventLoopFuture<Void>
+
     func lastActivity() -> Date
 
     var lastActive: TimeAmount { get }
+
+    /// Implementation specific teardown, performed at the start of ``close()``.
+    ///
+    /// - Note: Called on the Connection's `EventLoop`, before we transition to `.closing`.
+    func prepareForClose()
 }
 
 extension AppConnection {
@@ -171,37 +199,81 @@ extension AppConnection {
     }
 }
 
-//extension Connection {
-//    /// TODO: Actually implement this....
-//    public func close() -> EventLoopFuture<Void> {
-//        self.logger.trace("Close called, attempting to close all streams before shutting down the channel.")
-//        return channel.eventLoop.flatSubmit { () -> EventLoopFuture<Void> in
-//            //self.onClosing().flatMap { () -> EventLoopFuture<Void> in
-//                return self.streams.map { $0.close(gracefully: true) }.flatten(on: self.channel.eventLoop).flatMapAlways { result -> EventLoopFuture<Void> in
-//                    switch result {
-//                    case .failure(let err):
-//                        self.logger.error("Error encountered while attempting to close streams: \(err)")
-//                        //return self.channel.eventLoop.makeFailedFuture(Errors.failedToCloseAllStreams)
-//                        return self.channel.eventLoop.makeFailedFuture(NSError(domain: "Failed To Close All Streams", code: 0))
-//                    case .success:
-//                        return self.streams.compactMap {
-//                            switch $0.streamState {
-//                            case .closed, .reset:
-//                                return nil
-//                            default:
-//                                // Ensure we fire our close event before
-//                                // TODO: Silently force close the stream...
-//                                return $0.on?(.closed)
-//                            }
-//                        }.flatten(on: self.channel.eventLoop).flatMapAlways { result -> EventLoopFuture<Void> in
-//                            self.logger.trace("Streams closed")
-//                            // Do any additional clean up before closing / deiniting self...
-//                            self.logger.trace("Proceeding to close Connection")
-//                            return self.channel.close(mode: .all)
-//                        }
-//                    }
-//                }
-//            //}
-//        }
-//    }
-//}
+// MARK: - Connection Closing
+
+extension AppConnection {
+
+    /// How long we wait on our streams to close gracefully before we tear the channel down anyway.
+    internal var streamCloseTimeout: TimeAmount { .seconds(1) }
+
+    /// Closes this Connection, and every Stream muxed within it.
+    ///
+    /// 1. Calls `prepareForClose()` for implementation specific teardown
+    /// 2. Transition to `.closing` so we stop accepting / opening new Streams
+    /// 3. Ask every Stream to close gracefully (bounded by `streamCloseTimeout`)
+    /// 4. Fire a `.closed` event on any Stream that didn't close itself
+    /// 5. Transition to `.closed` and close the underlying channel
+    ///
+    /// - Note: Every step runs on the Connection's `EventLoop`.
+    public func close() -> EventLoopFuture<Void> {
+        self.logger.trace("Close called, attempting to close all streams before shutting down the channel.")
+        return self.channel.eventLoop.flatSubmit { () -> EventLoopFuture<Void> in
+            self.prepareForClose()
+            self.stats.status = .closing
+            self.logger.trace("Closing")
+
+            return self.closeStreams().flatMapAlways { result -> EventLoopFuture<Void> in
+                self.stats.status = .closed
+                switch result {
+                case .success:
+                    self.logger.trace("All Streams closed cleanly")
+                case .failure:
+                    self.logger.warning("Failed to close all Streams cleanly")
+                }
+                // Do any additional clean up before closing / deiniting self...
+                self.logger.trace("Proceeding to close Connection")
+                return self.channel.close(mode: .all)
+            }
+        }
+    }
+
+    /// Asks every Stream to close gracefully, then force fires a `.closed` event at whatever is left.
+    /// - Note: Must be called on the Connection's `EventLoop`.
+    private func closeStreams() -> EventLoopFuture<Void> {
+        let eventLoop = self.channel.eventLoop
+        let closePromise = eventLoop.makePromise(of: Void.self)
+        let timeout = eventLoop.scheduleTask(in: self.streamCloseTimeout) {
+            closePromise.fail(Application.Connections.Errors.failedToCloseAllStreams)
+        }
+
+        closePromise.completeWith(
+            self.streams.map { $0.close(gracefully: true) }.flatten(on: eventLoop).flatMapAlways {
+                result -> EventLoopFuture<Void> in
+                timeout.cancel()
+                switch result {
+                case .failure(let err):
+                    self.logger.error("Error encountered while attempting to close streams: \(err)")
+                    return eventLoop.makeFailedFuture(Application.Connections.Errors.failedToCloseAllStreams)
+                case .success:
+                    return self.streams.compactMap { stream -> EventLoopFuture<Void>? in
+                        switch stream.streamState {
+                        case .closed, .reset:
+                            return nil
+                        default:
+                            // Ensure we fire our close event before
+                            self.logger.warning(
+                                "Force Closing Stream[\(stream.id)][\(stream.protocolCodec)][\(stream.direction)]"
+                            )
+                            return stream.on?(.closed)
+                        }
+                    }.flatten(on: eventLoop)
+                }
+            }
+        )
+
+        return closePromise.futureResult
+    }
+
+    /// Nothing to tear down by default.
+    public func prepareForClose() {}
+}

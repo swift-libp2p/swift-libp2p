@@ -90,10 +90,14 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
     private var startTime: UInt64
 
     /// The IdleTimeout Task that gets set each time our connection gets to zero (0) open streams.
-    /// We wait `idleTimeoutMilliseconds` for a new Stream to be opened. If one isn't opened in that window, the connection shuts down and deinits itself.
+    /// We wait `idleTimeout` for a new Stream to be opened. If one isn't opened in that window, the connection tears itself down.
     private var idleTimeoutTask: Scheduled<Void>? = nil
-    /// The time in milliseconds that our connection will sit idle before terminating itself.
-    private var idleTimeoutMilliseconds: Int64 = 250
+
+    /// The amount of time our connection will sit idle before terminating itself.
+    ///
+    /// Resolved from `app.connectionManager` at init time, so it's configurable via
+    /// `app.connectionManager.setIdleTimeout(_:)`
+    private let idleTimeout: TimeAmount
 
     public required init(
         application: Application,
@@ -109,6 +113,7 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
         self.logger.logLevel = application.logger.logLevel
         self.channel = channel
         self.stateMachine = ConnectionStateMachine()
+        self.idleTimeout = application.connectionManager.idleTimeout
 
         // Addresses
         self.localAddr = try? channel.localAddress?.toMultiaddr()
@@ -233,7 +238,7 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
 
     private func armTimeoutTask() {
         guard self.idleTimeoutTask == nil else { return }
-        self.idleTimeoutTask = self.eventLoop.scheduleTask(in: .milliseconds(self.idleTimeoutMilliseconds)) {
+        self.idleTimeoutTask = self.eventLoop.scheduleTask(in: self.idleTimeout) {
             /// Ask our connection manager to terminate us...
             //self.application.connections.closeConnection(self)
 
@@ -665,16 +670,58 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
             responder: responder
         )
 
-        self.eventLoop.execute {
-            /// If the connection has already closed (e.g. a coalesced cold dial whose shared
-            /// connection failed to upgrade), fail fast instead of queueing a stream that will never
-            /// open and would otherwise only surface as a timeout.
+        // handle the potential failure by notifying the responder
+        self.queueNewStream(pendingStream).whenFailure { error in
+            self.fail(pendingStream, with: error)
+        }
+    }
+
+    /// Attempts to open an outbound stream delgating to the supplied closure, returning any
+    /// refusal to the caller rather than notifying the responder.
+    public func tryNewStream(
+        forProtocol proto: String,
+        withHandlers: HandlerConfig = .rawHandlers([]),
+        andMiddleware: MiddlewareConfig = .custom(nil),
+        closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
+    ) -> EventLoopFuture<Void> {
+        let pendingStream = StreamCache(
+            proto: proto,
+            responder: BasicResponder(
+                closure: closure,
+                handlers: withHandlers.handlers(application: self.application, connection: self, forProtocol: proto)
+            )
+        )
+
+        // return any potential failure without notifying the responder
+        return self.queueNewStream(pendingStream)
+    }
+
+    /// Attempts to open an outbound stream delegating to our registered Route handler, returning any
+    /// refusal to the caller rather than notifying the responder.
+    public func tryNewStream(forProtocol proto: String) -> EventLoopFuture<Void> {
+        let pendingStream = StreamCache(
+            proto: proto,
+            responder: self.application.responder.current
+        )
+
+        // return any potential failure without notifying the responder
+        return self.queueNewStream(pendingStream)
+    }
+
+    /// Queues `pendingStream` for opening.
+    ///
+    /// - Returns: a future that fails with `connectionUpgradeFailed` if we're no longer in a position
+    ///   to open streams.
+    private func queueNewStream(_ pendingStream: StreamCache) -> EventLoopFuture<Void> {
+        let proto = pendingStream.proto
+
+        return self.eventLoop.submit {
+            /// If the connection has already closed, fail fast.
             guard self.stats.status != .closed && self.stats.status != .closing else {
                 self.logger.debug("Refusing new `\(proto)` stream — connection is \(self.stats.status)")
-                self.fail(pendingStream, with: Application.Connections.Errors.connectionUpgradeFailed)
-                return
+                throw Application.Connections.Errors.connectionUpgradeFailed
             }
-            /// Cancel and clear our idleTimeoutTask if we have one
+            /// Cancel and clear our idleTimeoutTask if we have one.
             self.cancelTimeoutTask()
             /// Ask our muxer to open the stream...
             if self.isMuxed, let mux = self.muxer {
@@ -790,74 +837,10 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
         }
     }
 
-    /// Called as soon as there is a request to close the Connection (internally via the connection manager, or externally via the user)
-    internal func onClosing() -> EventLoopFuture<Void> {
-        eventLoop.submit {
-            self.stats.status = .closing
-            self.logger.trace("Closing")
-        }
-        //        .flatMap {
-        //            /// if we have a muxer, close all streams...
-        //            self.muxer?.streams.map { str in
-        //                str.reset()
-        //            }.flatten(on: self.channel.eventLoop) ?? self.eventLoop.makeSucceededVoidFuture()
-        //        }
-    }
-
-    public func close() -> EventLoopFuture<Void> {
-        //self.channel.close(mode: .all)
+    /// Implementation specific teardown, performed at the start of the shared `AppConnection.close()`.
+    public func prepareForClose() {
         self.registry = [:]
         self.cancelTimeoutTask()
-        self.logger.trace("Close called, attempting to close all streams before shutting down the channel.")
-        return eventLoop.flatSubmit { () -> EventLoopFuture<Void> in
-            self.onClosing().flatMap { () -> EventLoopFuture<Void> in
-                let closePromise = self.eventLoop.makePromise(of: Void.self)
-                let timeout = self.eventLoop.scheduleTask(in: .seconds(1)) {
-                    closePromise.fail(Application.Connections.Errors.failedToCloseAllStreams)
-                }
-
-                closePromise.completeWith(
-                    self.streams.map { $0.close(gracefully: true) }.flatten(on: self.eventLoop).flatMapAlways {
-                        result -> EventLoopFuture<Void> in
-                        timeout.cancel()
-                        switch result {
-                        case .failure(let err):
-                            self.logger.error("Error encountered while attempting to close streams: \(err)")
-                            return self.eventLoop.makeFailedFuture(
-                                Application.Connections.Errors.failedToCloseAllStreams
-                            )
-                        case .success:
-                            return self.streams.compactMap {
-                                switch $0.streamState {
-                                case .closed, .reset:
-                                    return nil
-                                default:
-                                    // Ensure we fire our close event before
-                                    // TODO: Silently force close the stream...
-                                    self.logger.warning(
-                                        "Force Closing Stream[\($0.id)][\($0.protocolCodec)][\($0.direction)]"
-                                    )
-                                    return $0.on?(.closed)
-                                }
-                            }.flatten(on: self.eventLoop)
-                        }
-                    }
-                )
-
-                return closePromise.futureResult.flatMapAlways { res in
-                    self.stats.status = .closed
-                    switch res {
-                    case .success:
-                        self.logger.trace("All Streams closed cleanly")
-                    case .failure:
-                        self.logger.warning("Failed to close all Streams cleanly")
-                    }
-                    // Do any additional clean up before closing / deiniting self...
-                    self.logger.trace("Proceeding to close Connection")
-                    return self.channel.close(mode: .all)
-                }
-            }
-        }
     }
 }
 
