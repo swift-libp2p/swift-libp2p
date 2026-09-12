@@ -90,11 +90,14 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
     private var startTime: UInt64
 
     /// The IdleTimeout Task that gets set each time our connection gets to zero (0) open streams.
-    /// We wait `idleTimeoutMilliseconds` for a new Stream to be opened. If one isn't opened in that window, the connection shuts down and deinits itself.
+    /// We wait `idleTimeout` for a new Stream to be opened. If one isn't opened in that window, the connection tears itself down.
     private var idleTimeoutTask: Scheduled<Void>? = nil
 
-    /// The time in milliseconds that our connection will sit idle before terminating itself.
-    private var idleTimeoutMilliseconds: Int64 = 3_000
+    /// The amount of time our connection will sit idle before terminating itself.
+    ///
+    /// Resolved from `app.connectionManager` at init time, so it's configurable via
+    /// `app.connectionManager.setIdleTimeout(_:)`
+    private let idleTimeout: TimeAmount
 
     public required init(
         application: Application,
@@ -110,6 +113,7 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
         self.logger.logLevel = application.logger.logLevel
         self.channel = channel
         self.stateMachine = ConnectionStateMachine()
+        self.idleTimeout = application.connectionManager.idleTimeout
 
         // Addresses
         self.localAddr = try? channel.localAddress?.toMultiaddr()
@@ -234,7 +238,7 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
 
     private func armTimeoutTask() {
         guard self.idleTimeoutTask == nil else { return }
-        self.idleTimeoutTask = self.eventLoop.scheduleTask(in: .milliseconds(self.idleTimeoutMilliseconds)) {
+        self.idleTimeoutTask = self.eventLoop.scheduleTask(in: self.idleTimeout) {
             /// Ask our connection manager to terminate us...
             //self.application.connections.closeConnection(self)
 

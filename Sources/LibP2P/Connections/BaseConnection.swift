@@ -114,14 +114,17 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
     private let startTime: UInt64
 
     /// The IdleTimeout Task that gets set each time our connection gets to zero open streams.
-    /// We wait `idleTimeoutMilliseconds` for a new Stream to be opened. If one isn't opened in that
-    /// window, the connection shuts down and deinits itself.
+    /// We wait `idleTimeout` for a new Stream to be opened. If one isn't opened in that
+    /// window, the connection tears itself down.
     ///
     /// - TODO: This belongs in the `ConnectionManager`
     private var idleTimeoutTask: Scheduled<Void>? = nil
 
-    /// The time in milliseconds that our connection will sit idle before terminating itself.
-    private var idleTimeoutMilliseconds: Int64 = 3_000
+    /// The amount of time our connection will sit idle before terminating itself.
+    ///
+    /// Resolved from `app.connectionManager` at init time, so it's configurable via
+    /// `app.connectionManager.setIdleTimeout(_:)`
+    private let idleTimeout: TimeAmount
 
     /// Pending / Unopened Stream Caches
     private var newStreamCache: [StreamCache] = []
@@ -160,13 +163,15 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
             remoteAddress: remoteAddress,
             expectedRemotePeer: expectedRemotePeer,
             streamGater: application.connectionManager.streamGater,
-            streamPruner: application.connectionManager.streamPruner
+            streamPruner: application.connectionManager.streamPruner,
+            idleTimeout: application.connectionManager.idleTimeout
         )
     }
 
-    /// Designated initializer, taking the gater and pruner explicitly.
+    /// Designated initializer, taking the gater, pruner and idle timeout explicitly.
     ///
     /// - Note: Designed to be used in Tests so we can explicitly install Gaters and Pruners
+    /// - Note: A `nil` `idleTimeout` resolves to the one configured on `app.connectionManager`
     internal init(
         application: Application,
         channel: Channel,
@@ -174,7 +179,8 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
         remoteAddress: Multiaddr,
         expectedRemotePeer: PeerID?,
         streamGater: StreamGater,
-        streamPruner: StreamPruner
+        streamPruner: StreamPruner,
+        idleTimeout: TimeAmount? = nil
     ) {
         let id = UUID()
         self.id = id
@@ -187,6 +193,7 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
         self.stateMachine = ConnectionStateMachine()
         self.streamGater = streamGater
         self.streamPruner = streamPruner
+        self.idleTimeout = idleTimeout ?? application.connectionManager.idleTimeout
 
         // Addresses
         self.localAddr = try? channel.localAddress?.toMultiaddr()
@@ -692,7 +699,7 @@ extension BaseConnection {
 
     private func armTimeoutTask() {
         guard self.idleTimeoutTask == nil else { return }
-        self.idleTimeoutTask = self.eventLoop.scheduleTask(in: .milliseconds(self.idleTimeoutMilliseconds)) {
+        self.idleTimeoutTask = self.eventLoop.scheduleTask(in: self.idleTimeout) {
             // Close ourself and notify our connection manager
             guard self.newStreamCache.isEmpty && self.pendingStreamCache.isEmpty else {
                 self.idleTimeoutTask = nil
