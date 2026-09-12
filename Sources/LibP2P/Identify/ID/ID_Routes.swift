@@ -37,15 +37,6 @@ func routes(_ app: Application) throws {
                 handleIDRequest(req)
             }
 
-            // Route Group: ipfs/id/delta/...
-            //            id.group("delta", announce: false) { delta in
-            //
-            //                // Route Endpoint: ipfs/id/delta/1.0.0
-            //                delta.on("1.0.0") { req -> Response<ByteBuffer> in
-            //                    return handleDeltaRequest(req)
-            //                }
-            //            }
-
             // Route Group: ipfs/id/push/...
             id.group("push") { push in
 
