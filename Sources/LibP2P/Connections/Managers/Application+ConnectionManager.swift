@@ -42,6 +42,9 @@ extension Application {
         /// The default time a new Connection is given to complete its upgrade before being closed
         public static let defaultUpgradeTimeout: TimeAmount = .seconds(15)
 
+        /// The default time a Connection is allowed to sit idle (with zero streams) before closing itself
+        public static let defaultIdleTimeout: TimeAmount = .seconds(3)
+
         public enum Errors: Error {
             case notImplementedYet
             case invalidProtocolNegotatied
@@ -81,12 +84,16 @@ extension Application {
             /// Decides which of a `BaseConnection`'s streams get evicted. Unused by `ARCConnection` and
             /// `BasicConnectionLight`, neither of which prunes streams.
             let streamPruner: NIOLockedValueBox<StreamPruner>
+            /// How long a Connection may sit idle (zero streams) before terminating itself. Read by
+            /// `BaseConnection` and `ARCConnection` at init time.
+            let idleTimeout: NIOLockedValueBox<TimeAmount>
             init() {
                 self.manager = .init(nil)
                 self.connType = .init(BaseConnection.self)
                 self.dialsInFlight = .init([:])
                 self.streamGater = .init(AllowAllStreamGater())
                 self.streamPruner = .init(IdleTimeoutStreamPruner())
+                self.idleTimeout = .init(Connections.defaultIdleTimeout)
             }
         }
 
@@ -137,6 +144,12 @@ extension Application {
             self.storage.streamPruner.withLockedValue { $0 }
         }
 
+        /// The currently configured idle timeout, resolved by `BaseConnection` and `ARCConnection`
+        /// at init time. Set it with ``setIdleTimeout(_:)``.
+        public var idleTimeout: TimeAmount {
+            self.storage.idleTimeout.withLockedValue { $0 }
+        }
+
         let application: Application
 
         var storage: Storage {
@@ -173,7 +186,9 @@ extension Application {
             }
         }
 
+        /// Sets the duration a Connection is allowed to sit idle for (with zero streams) before being closed.
         public func setIdleTimeout(_ timeout: TimeAmount) {
+            self.storage.idleTimeout.withLockedValue { $0 = timeout }
             self.storage.manager.withLockedValue { $0?.setIdleTimeout(timeout) }
         }
 
