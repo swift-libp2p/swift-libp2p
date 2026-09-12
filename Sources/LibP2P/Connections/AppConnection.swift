@@ -208,10 +208,10 @@ extension AppConnection {
 
     /// Closes this Connection, and every Stream muxed within it.
     ///
-    /// 1. `prepareForClose()` — implementation specific teardown
+    /// 1. Calls `prepareForClose()` for implementation specific teardown
     /// 2. Transition to `.closing` so we stop accepting / opening new Streams
     /// 3. Ask every Stream to close gracefully (bounded by `streamCloseTimeout`)
-    /// 4. Force fire a `.closed` event at any Stream that didn't close itself
+    /// 4. Fire a `.closed` event on any Stream that didn't close itself
     /// 5. Transition to `.closed` and close the underlying channel
     ///
     /// - Note: Every step runs on the Connection's `EventLoop`.
@@ -261,7 +261,6 @@ extension AppConnection {
                             return nil
                         default:
                             // Ensure we fire our close event before
-                            // TODO: Silently force close the stream...
                             self.logger.warning(
                                 "Force Closing Stream[\(stream.id)][\(stream.protocolCodec)][\(stream.direction)]"
                             )
