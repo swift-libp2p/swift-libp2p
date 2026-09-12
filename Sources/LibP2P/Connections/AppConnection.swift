@@ -65,6 +65,11 @@ public protocol AppConnection: Connection, CustomStringConvertible {
     func lastActivity() -> Date
 
     var lastActive: TimeAmount { get }
+
+    /// Implementation specific teardown, performed at the start of ``close()``.
+    ///
+    /// - Note: Called on the Connection's `EventLoop`, before we transition to `.closing`.
+    func prepareForClose()
 }
 
 extension AppConnection {
