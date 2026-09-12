@@ -39,6 +39,29 @@ public protocol AppConnection: Connection, CustomStringConvertible {
         closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
     )
 
+    /// Attempts to open a new Stream but fails (without notifying the responder) when the Connection refused
+    /// the stream, so that the original caller can recover by attempting a new, cold, dial.
+    ///
+    /// - Returns: a future that succeeds once the request has been handed to the muxer, and fails with
+    ///  `Application.Connections.Errors.connectionUpgradeFailed` if we're already closing /
+    ///   closed. On that failure `closure` is never invoked, so the caller is free to retry it elsewhere.
+    ///   Every other failure still reaches `closure` as an `.error` event, as usual.
+    func tryNewStream(
+        forProtocol proto: String,
+        withHandlers: HandlerConfig,
+        andMiddleware: MiddlewareConfig,
+        closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
+    ) -> EventLoopFuture<Void>
+
+    /// Attempts to open a new Stream but fails (without notifying the registered responder) when the Connection
+    /// refused the stream, so that the original caller can recover by attempting a new, cold, dial.
+    ///
+    /// - Returns: a future that succeeds once the request has been handed to the muxer, and fails with
+    ///  `Application.Connections.Errors.connectionUpgradeFailed` if we're already closing /
+    ///   closed. On that failure the registered route handler is never invoked. Every other failure still
+    ///   reaches it as an `.error` event, as usual.
+    func tryNewStream(forProtocol proto: String) -> EventLoopFuture<Void>
+
     func lastActivity() -> Date
 
     var lastActive: TimeAmount { get }
