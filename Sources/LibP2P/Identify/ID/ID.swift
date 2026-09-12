@@ -38,8 +38,20 @@ public final class Identify: IdentityManager, CustomStringConvertible {
     private let el: EventLoop
 
     public enum Errors: Error {
+        /// The ping request exceeded the timout window.
         case timedOut
+        
+        /// We lost reference to our Applications installed/registered IdentityManager.
         case unknownIdentityManager
+        
+        /// The ping stream closed or errored out before the remote peer echoed our payload.
+        case streamClosed
+        
+        /// The remote peer echoed something other than the payload we sent it.
+        case invalidPingResponse
+        
+        /// We couldn't generate a random ping payload.
+        case failedToGeneratePingPayload
     }
 
     internal struct PendingPing {
