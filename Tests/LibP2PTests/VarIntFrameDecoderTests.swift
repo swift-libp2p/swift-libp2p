@@ -258,7 +258,7 @@ extension LibP2PTests {
             case .twosComplement:
                 #expect(Array(framed.readableBytesView) == [0x03] + payloadBytes)
             }
-            
+
             let decoder = EmbeddedChannel(
                 handler: ByteToMessageHandler(VarIntFrameDecoder(signedness: .signed(encoding)))
             )
@@ -299,13 +299,17 @@ extension LibP2PTests {
             case .zigZag:
                 // 127 fits in one unsigned byte, but its zig-zag form (254) needs two.
                 #expect(VarIntFrameDecoder(maxMessageLength: 127).maxLengthPrefixBytes == 1)
-                #expect(VarIntFrameDecoder(signedness: .signed(encoding), maxMessageLength: 127).maxLengthPrefixBytes == 2)
+                #expect(
+                    VarIntFrameDecoder(signedness: .signed(encoding), maxMessageLength: 127).maxLengthPrefixBytes == 2
+                )
             case .twosComplement:
                 // 127 fits in one unsigned byte, along with two's complement.
                 #expect(VarIntFrameDecoder(maxMessageLength: 127).maxLengthPrefixBytes == 1)
-                #expect(VarIntFrameDecoder(signedness: .signed(encoding), maxMessageLength: 127).maxLengthPrefixBytes == 1)
+                #expect(
+                    VarIntFrameDecoder(signedness: .signed(encoding), maxMessageLength: 127).maxLengthPrefixBytes == 1
+                )
             }
-            
+
             // The buffering bound is a full prefix plus a maximally sized body.
             let decoder = VarIntFrameDecoder(maxMessageLength: 128)
             #expect(decoder.maxBufferedBytes == 130)

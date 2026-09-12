@@ -316,7 +316,7 @@ public class VarIntFrameDecoder: ByteToMessageDecoder {
     /// - Returns: `nil` when the buffer ends mid-prefix (a normal short read, nothing consumed) and the
     ///   decoded body length otherwise.
     private func readLengthPrefix(_ buffer: inout ByteBuffer) throws -> Int? {
-        
+
         let window = buffer.readableBytesView.prefix(self.maxLengthPrefixBytes)
         guard !window.isEmpty else { return nil }
 

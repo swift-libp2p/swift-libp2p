@@ -47,7 +47,7 @@ extension Application.ChildChannelHandlers.Provider {
             [ByteToMessageHandler(FixedLengthFrameDecoder(frameLength: frameLength))]
         }
     }
-    
+
     /// FixedLengthFramed installs an inbound frame decoder that only forwards messages
     /// of exactly `frameLength` bytes up the pipeline.
     ///
@@ -74,6 +74,6 @@ extension Application.ChildChannelHandlers.Provider {
     ///
     /// - Parameter frameLength: The exact size, in bytes, of a single frame.
     public static func fixedLengthFramed(frameLength: ByteCount) -> Self {
-        return .fixedLengthFramed(frameLength: frameLength.value)
+        .fixedLengthFramed(frameLength: frameLength.value)
     }
 }
