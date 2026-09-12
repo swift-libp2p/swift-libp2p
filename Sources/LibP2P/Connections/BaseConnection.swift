@@ -114,13 +114,17 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
     private let startTime: UInt64
 
     /// The IdleTimeout Task that gets set each time our connection gets to zero open streams.
-    /// We wait `idleTimeoutMilliseconds` for a new Stream to be opened. If one isn't opened in that
-    /// window, the connection shuts down and deinits itself.
+    /// We wait `idleTimeout` for a new Stream to be opened. If one isn't opened in that
+    /// window, the connection tears itself down.
     ///
     /// - TODO: This belongs in the `ConnectionManager`
     private var idleTimeoutTask: Scheduled<Void>? = nil
-    /// The time in milliseconds that our connection will sit idle before terminating itself.
-    private var idleTimeoutMilliseconds: Int64 = 250
+
+    /// The amount of time our connection will sit idle before terminating itself.
+    ///
+    /// Resolved from `app.connectionManager` at init time, so it's configurable via
+    /// `app.connectionManager.setIdleTimeout(_:)`
+    private let idleTimeout: TimeAmount
 
     /// Pending / Unopened Stream Caches
     private var newStreamCache: [StreamCache] = []
@@ -159,13 +163,15 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
             remoteAddress: remoteAddress,
             expectedRemotePeer: expectedRemotePeer,
             streamGater: application.connectionManager.streamGater,
-            streamPruner: application.connectionManager.streamPruner
+            streamPruner: application.connectionManager.streamPruner,
+            idleTimeout: application.connectionManager.idleTimeout
         )
     }
 
-    /// Designated initializer, taking the gater and pruner explicitly.
+    /// Designated initializer, taking the gater, pruner and idle timeout explicitly.
     ///
     /// - Note: Designed to be used in Tests so we can explicitly install Gaters and Pruners
+    /// - Note: A `nil` `idleTimeout` resolves to the one configured on `app.connectionManager`
     internal init(
         application: Application,
         channel: Channel,
@@ -173,7 +179,8 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
         remoteAddress: Multiaddr,
         expectedRemotePeer: PeerID?,
         streamGater: StreamGater,
-        streamPruner: StreamPruner
+        streamPruner: StreamPruner,
+        idleTimeout: TimeAmount? = nil
     ) {
         let id = UUID()
         self.id = id
@@ -186,6 +193,7 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
         self.stateMachine = ConnectionStateMachine()
         self.streamGater = streamGater
         self.streamPruner = streamPruner
+        self.idleTimeout = idleTimeout ?? application.connectionManager.idleTimeout
 
         // Addresses
         self.localAddr = try? channel.localAddress?.toMultiaddr()
@@ -451,14 +459,58 @@ extension BaseConnection {
             responder: responder
         )
 
-        self.eventLoop.execute {
+        // handle the potential failure by notifying the responder
+        self.queueNewStream(pendingStream).whenFailure { error in
+            self.fail(pendingStream, with: error)
+        }
+    }
+
+    /// Attempts to open an outbound stream delgating to the supplied closure, returning any
+    /// refusal to the caller rather than notifying the responder.
+    public func tryNewStream(
+        forProtocol proto: String,
+        withHandlers: HandlerConfig = .rawHandlers([]),
+        andMiddleware: MiddlewareConfig = .custom(nil),
+        closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
+    ) -> EventLoopFuture<Void> {
+        let pendingStream = StreamCache(
+            proto: proto,
+            responder: BasicResponder(
+                closure: closure,
+                handlers: withHandlers.handlers(application: self.application, connection: self, forProtocol: proto)
+            )
+        )
+
+        // return the potential failure without notifying the responder
+        return self.queueNewStream(pendingStream)
+    }
+
+    /// Attempts to open an outbound stream delegating to our registered Route handler, returning any
+    /// refusal to the caller rather than notifying the responder.
+    public func tryNewStream(forProtocol proto: String) -> EventLoopFuture<Void> {
+        let pendingStream = StreamCache(
+            proto: proto,
+            responder: self.application.responder.current
+        )
+
+        // return the potential failure without notifying the responder
+        return self.queueNewStream(pendingStream)
+    }
+
+    /// Queues `pendingStream` for opening.
+    ///
+    /// - Returns: a future that fails with `connectionUpgradeFailed` if we're no longer in a position
+    ///   to open streams.
+    private func queueNewStream(_ pendingStream: StreamCache) -> EventLoopFuture<Void> {
+        let proto = pendingStream.proto
+
+        return self.eventLoop.submit {
             // If the connection has already closed (e.g. a coalesced cold dial whose shared
             // connection failed to upgrade), fail fast instead of queueing a stream that will never
             // open and would otherwise only surface as a timeout.
             guard self.stats.status != .closed && self.stats.status != .closing else {
                 self.logger.debug("Refusing new `\(proto)` stream — connection is \(self.stats.status)")
-                self.fail(pendingStream, with: Application.Connections.Errors.connectionUpgradeFailed)
-                return
+                throw Application.Connections.Errors.connectionUpgradeFailed
             }
             // Cancel and clear our idleTimeoutTask if we have one
             self.cancelTimeoutTask()
@@ -647,7 +699,7 @@ extension BaseConnection {
 
     private func armTimeoutTask() {
         guard self.idleTimeoutTask == nil else { return }
-        self.idleTimeoutTask = self.eventLoop.scheduleTask(in: .milliseconds(self.idleTimeoutMilliseconds)) {
+        self.idleTimeoutTask = self.eventLoop.scheduleTask(in: self.idleTimeout) {
             // Close ourself and notify our connection manager
             guard self.newStreamCache.isEmpty && self.pendingStreamCache.isEmpty else {
                 self.idleTimeoutTask = nil

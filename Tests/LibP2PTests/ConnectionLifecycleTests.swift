@@ -34,6 +34,13 @@ extension LibP2PTests {
     @Suite("ConnectionLifecycleTests")
     struct ConnectionLifecycleTests {
 
+        /// Every `AppConnection` implementation the `Application` can be configured with.
+        static let connectionTypes: [AppConnection.Type] = [
+            ARCConnection.self,
+            BasicConnectionLight.self,
+            BaseConnection.self,
+        ]
+
         // MARK: - Connection creation
 
         @Test("A new connection starts raw, unmuxed, and stream-less")
@@ -192,6 +199,56 @@ extension LibP2PTests {
                 await #expect(throws: Application.Connections.Errors.self) {
                     try await connection.removeStream(id: 999).get()
                 }
+            }
+        }
+
+        /// `tryNewStream` is what lets `newStream(to:forProtocol:...)` recover from reusing a Connection
+        /// that retired underneath it: a refusal has to come back as a failed future, and it has to leave
+        /// the responder alone so the caller can retry the same request on a fresh Connection. If a
+        /// refusal instead reached the closure, a re-dial would settle the caller twice.
+        @Test(
+            "tryNewStream reports a refusal to the caller without invoking their responder",
+            arguments: connectionTypes
+        )
+        func testTryNewStreamRefusesWithoutNotifyingResponder(_ connectionType: AppConnection.Type) async throws {
+            try await withApp { app in
+                let channel = NIOAsyncTestingChannel()
+
+                let connection = connectionType.init(
+                    application: app,
+                    channel: channel,
+                    direction: .outbound,
+                    remoteAddress: try Multiaddr("/ip4/127.0.0.1/tcp/1234"),
+                    expectedRemotePeer: nil
+                )
+
+                try await connection.close().get()
+                #expect(connection.status == .closed)
+
+                let responderRan = NIOLockedValueBox(false)
+                var caught: Error?
+                do {
+                    try await connection.tryNewStream(
+                        forProtocol: "/refusal-probe/1.0.0",
+                        withHandlers: .rawHandlers([]),
+                        andMiddleware: .custom(nil)
+                    ) { req in
+                        responderRan.withLockedValue { $0 = true }
+                        return req.eventLoop.makeSucceededFuture(
+                            RawResponse(payload: req.allocator.buffer(bytes: []))
+                        )
+                    }.get()
+                } catch {
+                    caught = error
+                }
+
+                switch caught as? Application.Connections.Errors {
+                case .connectionUpgradeFailed:
+                    break
+                default:
+                    Issue.record("Expected connectionUpgradeFailed, got \(caught.map { "\($0)" } ?? "success")")
+                }
+                #expect(responderRan.withLockedValue { $0 } == false)
             }
         }
 
