@@ -119,8 +119,9 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
     ///
     /// - TODO: This belongs in the `ConnectionManager`
     private var idleTimeoutTask: Scheduled<Void>? = nil
+
     /// The time in milliseconds that our connection will sit idle before terminating itself.
-    private var idleTimeoutMilliseconds: Int64 = 250
+    private var idleTimeoutMilliseconds: Int64 = 3_000
 
     /// Pending / Unopened Stream Caches
     private var newStreamCache: [StreamCache] = []

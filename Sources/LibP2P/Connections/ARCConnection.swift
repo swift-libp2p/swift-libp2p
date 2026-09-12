@@ -92,8 +92,9 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
     /// The IdleTimeout Task that gets set each time our connection gets to zero (0) open streams.
     /// We wait `idleTimeoutMilliseconds` for a new Stream to be opened. If one isn't opened in that window, the connection shuts down and deinits itself.
     private var idleTimeoutTask: Scheduled<Void>? = nil
+
     /// The time in milliseconds that our connection will sit idle before terminating itself.
-    private var idleTimeoutMilliseconds: Int64 = 250
+    private var idleTimeoutMilliseconds: Int64 = 3_000
 
     public required init(
         application: Application,
