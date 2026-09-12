@@ -837,74 +837,10 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
         }
     }
 
-    /// Called as soon as there is a request to close the Connection (internally via the connection manager, or externally via the user)
-    internal func onClosing() -> EventLoopFuture<Void> {
-        eventLoop.submit {
-            self.stats.status = .closing
-            self.logger.trace("Closing")
-        }
-        //        .flatMap {
-        //            /// if we have a muxer, close all streams...
-        //            self.muxer?.streams.map { str in
-        //                str.reset()
-        //            }.flatten(on: self.channel.eventLoop) ?? self.eventLoop.makeSucceededVoidFuture()
-        //        }
-    }
-
-    public func close() -> EventLoopFuture<Void> {
-        //self.channel.close(mode: .all)
+    /// Implementation specific teardown, performed at the start of the shared `AppConnection.close()`.
+    public func prepareForClose() {
         self.registry = [:]
         self.cancelTimeoutTask()
-        self.logger.trace("Close called, attempting to close all streams before shutting down the channel.")
-        return eventLoop.flatSubmit { () -> EventLoopFuture<Void> in
-            self.onClosing().flatMap { () -> EventLoopFuture<Void> in
-                let closePromise = self.eventLoop.makePromise(of: Void.self)
-                let timeout = self.eventLoop.scheduleTask(in: .seconds(1)) {
-                    closePromise.fail(Application.Connections.Errors.failedToCloseAllStreams)
-                }
-
-                closePromise.completeWith(
-                    self.streams.map { $0.close(gracefully: true) }.flatten(on: self.eventLoop).flatMapAlways {
-                        result -> EventLoopFuture<Void> in
-                        timeout.cancel()
-                        switch result {
-                        case .failure(let err):
-                            self.logger.error("Error encountered while attempting to close streams: \(err)")
-                            return self.eventLoop.makeFailedFuture(
-                                Application.Connections.Errors.failedToCloseAllStreams
-                            )
-                        case .success:
-                            return self.streams.compactMap {
-                                switch $0.streamState {
-                                case .closed, .reset:
-                                    return nil
-                                default:
-                                    // Ensure we fire our close event before
-                                    // TODO: Silently force close the stream...
-                                    self.logger.warning(
-                                        "Force Closing Stream[\($0.id)][\($0.protocolCodec)][\($0.direction)]"
-                                    )
-                                    return $0.on?(.closed)
-                                }
-                            }.flatten(on: self.eventLoop)
-                        }
-                    }
-                )
-
-                return closePromise.futureResult.flatMapAlways { res in
-                    self.stats.status = .closed
-                    switch res {
-                    case .success:
-                        self.logger.trace("All Streams closed cleanly")
-                    case .failure:
-                        self.logger.warning("Failed to close all Streams cleanly")
-                    }
-                    // Do any additional clean up before closing / deiniting self...
-                    self.logger.trace("Proceeding to close Connection")
-                    return self.channel.close(mode: .all)
-                }
-            }
-        }
     }
 }
 
