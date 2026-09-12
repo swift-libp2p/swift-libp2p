@@ -28,8 +28,8 @@ func routes(_ app: Application) throws {
     app.group("ipfs") { ipfs in
 
         // Route group: ipfs/id/...
-        // Handlers: .varIntLengthPrefix is applied to all routes within `id`
-        ipfs.group("id", handlers: [.varIntLengthPrefixed]) { id in
+        // Handlers: .varIntFramed(maxMessageLength:) is applied to all routes within `id`
+        ipfs.group("id", handlers: [.varIntFramed(maxMessageLength: Identify.maxMessageSize)]) { id in
 
             // Route Endpoint: ipfs/id/1.0.0
             // Handlers: .partialIdentifyMessageHandler used to accumulate partial IdentifyMessages before triggering our handler
@@ -57,7 +57,10 @@ func routes(_ app: Application) throws {
         }
 
         // Route Group: /ipfs/ping/...
-        ipfs.group("ping") { ping in
+        // Handlers: ping payloads are raw, fixed size bytes with no length prefix to frame on, so
+        // `.fixedLengthFramed` is applied to guarantee our handler only ever sees a complete payload.
+        // Without it, a payload that arrives split across two reads would be echoed back truncated.
+        ipfs.group("ping", handlers: [.fixedLengthFramed(frameLength: Identify.pingPayloadSize)]) { ping in
 
             // Route Enpoint: /ipfs/ping/1.0.0
             ping.on("1.0.0") { req -> Response<ByteBuffer> in
@@ -69,8 +72,8 @@ func routes(_ app: Application) throws {
     app.group("p2p") { p2p in
 
         // Route group: p2p/id/...
-        // Handlers: .varIntLengthPrefix is applied to all routes within `id`
-        p2p.group("id", handlers: [.varIntLengthPrefixed]) { id in
+        // Handlers: .varIntFramed(maxMessageLength:) is applied to all routes within `id`
+        p2p.group("id", handlers: [.varIntFramed(maxMessageLength: Identify.maxMessageSize)]) { id in
 
             // Route Group: p2p/id/delta/...
             // NOTE: The delta message has been removed from current go-libp2p, so delta

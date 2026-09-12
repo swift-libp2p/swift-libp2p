@@ -19,6 +19,14 @@ internal func handlePingRequest(_ req: Request) -> Response<ByteBuffer> {
         case .ready:
             return .stayOpen
         case .data(let pingData):
+            // Our frame decoder only forwards complete payloads, but never echo anything that
+            // isn't exactly one ping frame (a truncated echo fails the remote peer's ping).
+            guard pingData.readableBytes == Identify.pingPayloadSize.value else {
+                req.logger.warning(
+                    "Identify::Discarding malformed Ping (\(pingData.readableBytes) bytes) from \(req.remotePeer?.description ?? "NIL")"
+                )
+                return .close
+            }
             req.logger.trace("Identify::Responding to Ping from \(req.remotePeer?.description ?? "NIL")")
             return .respondThenClose(pingData)
         default:

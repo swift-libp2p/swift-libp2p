@@ -23,10 +23,13 @@ public final class Identify: IdentityManager, CustomStringConvertible {
     static let protocolVersion: String = "ipfs/0.1.0"
 
     /// Maximum size (in bytes) we're willing to buffer/accept for a single Identify message.
-    static let maxMessageSize: Int = 8 * 1024
+    static let maxMessageSize: ByteCount = .kibibytes(8)
 
     /// Outbound Ping Timeout
     static let pingTimeout: TimeAmount = .seconds(3)
+
+    /// The exact size (in bytes) of a `/ipfs/ping/1.0.0` payload.
+    static let pingPayloadSize: ByteCount = .bytes(32)
 
     let application: Application?
     let localPeerID: PeerID
@@ -560,7 +563,7 @@ extension Identify {
             req.shouldClose()
             return nil
         }
-        guard let bytes: [UInt8] = try? LibP2PCrypto.randomBytes(length: 32) else {
+        guard let bytes: [UInt8] = try? LibP2PCrypto.randomBytes(length: Identify.pingPayloadSize.value) else {
             req.logger.error("Identify::Outbound Ping failed to generate a random payload")
             req.shouldClose()
             return nil
