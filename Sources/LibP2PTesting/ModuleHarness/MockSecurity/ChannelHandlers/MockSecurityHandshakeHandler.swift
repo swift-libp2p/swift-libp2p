@@ -51,11 +51,12 @@ internal final class MockSecurityHandshakeHandler: ChannelInboundHandler, Remova
     private let _remotePeerInfo: NIOLockedValueBox<PeerID?>
     private let expectedRemotePeerID: PeerID?
 
-    private var buffer: [UInt8] {
+    /// Bytes of a partially received handshake message, held until the rest arrives.
+    private var buffer: ByteBuffer {
         get { _buffer.withLockedValue { $0 } }
         set { _buffer.withLockedValue { $0 = newValue } }
     }
-    private let _buffer: NIOLockedValueBox<[UInt8]>
+    private let _buffer: NIOLockedValueBox<ByteBuffer>
 
     private var shouldWarn: Bool {
         get { _shouldWarn.withLockedValue { $0 } }
@@ -82,7 +83,7 @@ internal final class MockSecurityHandshakeHandler: ChannelInboundHandler, Remova
         self.expectedRemotePeerID = expectedRemotePeerID
         self._state = .init(.awaitingPeerID)
         self.channelSecuredCallback = secured
-        self._buffer = .init([])
+        self._buffer = .init(ByteBuffer())
     }
 
     /// We take this opportunity to send our PeerExchange protobuf
@@ -98,7 +99,7 @@ internal final class MockSecurityHandshakeHandler: ChannelInboundHandler, Remova
             //let peerInfo = try createExchangeMessage(localPeerInfo)
             /// ---------------------------
 
-            let payload = putUVarInt(UInt64(peerInfo.count)) + peerInfo
+            let payload = UInt64(peerInfo.count).varIntBytes + peerInfo
 
             self.logger.trace("\(payload.asString(base: .base16))")
             self.logger.trace("Count: \(payload.count)")
@@ -123,26 +124,32 @@ internal final class MockSecurityHandshakeHandler: ChannelInboundHandler, Remova
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch state {
         case .awaitingPeerID:
-            //We're expecting an Exchange Protobuf object thats uVarInt length Prefixed, if it's not that then we abort...
-            let buf = unwrapInboundIn(data)
+            // We're expecting an Exchange Protobuf object thats uVarInt length Prefixed, if it's not that then we abort...
+            var msg = self.buffer
+            msg.writeImmutableBuffer(unwrapInboundIn(data))
 
-            let msg = buffer + [UInt8](buf.readableBytesView)
-            let prefix = uVarInt(msg)
-            guard prefix.bytesRead > 0, prefix.value > 1 else {
+            let exchange: ByteBuffer
+            do {
+                guard let frame = try msg.readVarIntLengthPrefixedSlice() else {
+                    // partial read, store what we have and wait for more data...
+                    self.buffer = msg
+                    return
+                }
+                exchange = frame
+            } catch {
+                self.logger.error("Failed to parse inbound Plaintext/2.0.0 Handshake message")
+                self.logger.error("Error: \(error)")
+                channelSecuredCallback.fail(MockSecurityUpgrader.Error.invalidPeerIDExchange)
+                return context.close(mode: .all, promise: nil)
+            }
+
+            guard exchange.readableBytes > 1 else {
                 self.logger.error("Failed to parse inbound Plaintext/2.0.0 Handshake message")
                 channelSecuredCallback.fail(MockSecurityUpgrader.Error.invalidPeerIDExchange)
                 return context.close(mode: .all, promise: nil)
             }
 
-            if prefix.value > msg.count {
-                //Partial Read Detected, waiting for more info!
-                buffer = msg
-                return
-            }
-
-            //msg = Array(msg.dropFirst(prefix.bytesRead))
-            let peerInfo = Array(msg[prefix.bytesRead..<(prefix.bytesRead + Int(prefix.value))])
-            let leftoverData = msg[(prefix.bytesRead + Int(prefix.value))...]
+            let peerInfo = Array(exchange.readableBytesView)
 
             do {
                 logger.trace("\(peerInfo.asString(base: .base16))")
@@ -183,8 +190,11 @@ internal final class MockSecurityHandshakeHandler: ChannelInboundHandler, Remova
 
                 // Upgrade our state so that all future messages will be propogated through the pipeline
                 state = .verified
+                self.buffer = ByteBuffer()
 
-                let extraData = context.channel.allocator.buffer(bytes: leftoverData)
+                // The exchange message was consumed, so whatever is still readable in
+                // `msg` belongs to whoever comes after us in the pipeline.
+                let extraData = msg
 
                 // Now that our Handshake has completed successfully we
                 // - install our Encyrption & Decryption handlers

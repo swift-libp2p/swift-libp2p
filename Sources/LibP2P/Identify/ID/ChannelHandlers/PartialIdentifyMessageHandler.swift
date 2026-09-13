@@ -37,7 +37,7 @@ public class PartialIdentifyMessageDecoder: ByteToMessageDecoder {
         guard buffer.readableBytes > 0 else { return .needMoreData }
 
         // Backstop against unbounded buffering from a misbehaving / malicious peer.
-        guard buffer.readableBytes <= Identify.maxMessageSize else {
+        guard buffer.readableBytes <= Identify.maxMessageSize.value else {
             context.fireErrorCaught(Errors.invalidIdentifyMessage)
             buffer.moveReaderIndex(forwardBy: buffer.readableBytes)
             return .continue

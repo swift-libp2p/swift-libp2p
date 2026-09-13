@@ -332,8 +332,7 @@ extension LibP2PTests {
 
             // Manually encode our payload to bypass our encoding length check
             let longProtoBytes = Array(longProto.stringValue.utf8)
-            let payload =
-                try MSSFrame.mss.encodedBytes() + putUVarInt(UInt64(longProtoBytes.count + 1)) + longProtoBytes + [0x0A]
+            let payload = try MSSFrame.mss.encodedBytes() + (longProtoBytes + [0x0A]).uVarIntLengthPrefixed
             try Self.writeInbound(payload, to: channel)
 
             #expect(throws: MSSFrame.Errors.frameTooLarge(1026)) {

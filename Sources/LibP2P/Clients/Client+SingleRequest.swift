@@ -239,7 +239,9 @@ extension Application {
         var timeoutResets: Int { _timeoutResets.withLockedValue { $0 } }
         let _timeoutResets: NIOLockedValueBox<Int> = .init(3)
 
-        let lengthPrefixed: NIOLockedValueBox<UInt64?> = .init(nil)
+        /// The total size of the response we're accumulating, VarInt length prefix **included**, or
+        /// `nil` while we haven't decided the response is length prefixed.
+        let expectedResponseBytes: NIOLockedValueBox<Int?> = .init(nil)
         let buffer: NIOLockedValueBox<ByteBuffer?> = .init(nil)
         let chunks: NIOLockedValueBox<UInt8> = .init(0)
 
@@ -310,23 +312,20 @@ extension Application {
                     case .data(let response):
                         var chunks = self.chunks.withLockedValue { $0 }
                         if chunks == 0 {
-                            //Check if the response is uVarInt length prefixed....
-                            if let prefix = response.getBytes(at: response.readerIndex, length: 8) {
-                                let varInt = uVarInt(prefix)
-                                if varInt.value > 0 && varInt.value < 40960 && response.readableBytes > 2000 {
-                                    if Int(varInt.value) + varInt.bytesRead > response.readableBytes {
-                                        // We need to buffer...
-                                        self.lengthPrefixed.withLockedValue { $0 = varInt.value }
-                                        self.buffer.withLockedValue { $0 = response }
-                                        chunks += 1
-                                        self.chunks.withLockedValue { $0 = chunks }
-                                        // Stay Open...
-                                        self.resetTimeoutTask()
-                                        return req.eventLoop.makeSucceededFuture(
-                                            RawResponse(payload: req.allocator.buffer(bytes: []))
-                                        )
-                                    }
-                                }
+                            // Check if the response is uVarInt length prefixed...
+                            if let expected = Self.announcedResponseLength(of: response),
+                                expected > response.readableBytes
+                            {
+                                // We need to buffer...
+                                self.expectedResponseBytes.withLockedValue { $0 = expected }
+                                self.buffer.withLockedValue { $0 = response }
+                                chunks += 1
+                                self.chunks.withLockedValue { $0 = chunks }
+                                // Stay Open...
+                                self.resetTimeoutTask()
+                                return req.eventLoop.makeSucceededFuture(
+                                    RawResponse(payload: req.allocator.buffer(bytes: []))
+                                )
                             }
 
                             self._hasCompleted.withLockedValue { $0 = true }
@@ -338,8 +337,8 @@ extension Application {
                             chunks += 1
                             self.buffer.withLockedValue { buffer in
                                 buffer!.writeBytes(response.readableBytesView)
-                                let lengthPrefix = Int(self.lengthPrefixed.withLockedValue { $0! })
-                                if buffer!.readableBytes >= lengthPrefix {
+                                let expected = self.expectedResponseBytes.withLockedValue { $0! }
+                                if buffer!.readableBytes >= expected {
                                     self._hasCompleted.withLockedValue { $0 = true }
                                     self.cancelTimeoutTask()
                                     req.shouldClose()
@@ -382,6 +381,40 @@ extension Application {
             }
 
             return self.promise.futureResult
+        }
+
+        /// The total size `response` announces when its leading bytes look like a uVarInt length
+        /// prefix.
+        ///
+        /// This is a *heuristic*, not framing. A single request client doesn't know whether the
+        /// protocol it's buffering, length prefixes, its responses, so the bounds below are what keep
+        /// an ordinary complete response from being mistaken for a truncated length prefixed one,
+        /// which would leave us waiting for bytes that are never coming, until the timeout.
+        /// An announcement is only believed when:
+        ///
+        /// - the chunk in hand is already large enough to plausibly be a truncated large response,
+        ///   so small complete responses are never second guessed, and
+        /// - it decodes to a non-zero length no greater than `maxAnnouncedLength`.
+        ///
+        /// Install `.varIntLengthPrefixed` handlers instead when the protocol *is* known to be
+        /// length prefixed, `VarIntFrameDecoder` does real framing and needs none of this.
+        ///
+        /// - Returns: The expected total byte count, or `nil` when the leading bytes shouldn't be
+        ///   read as a length prefix.
+        private static func announcedResponseLength(of response: ByteBuffer) -> Int? {
+            /// Announcements above this are not believed to be length prefixes.
+            let maxAnnouncedLength: UInt64 = 40960
+            /// Chunks at or below this are taken as complete, prefix shaped leading bytes or not.
+            let minChunkToTreatAsTruncated = 2000
+
+            guard response.readableBytes > minChunkToTreatAsTruncated,
+                // A malformed or non-minimal prefix isn't a length prefix as far as we're concerned.
+                let prefix = try? response.getVarInt(at: response.readerIndex, limit: maxAnnouncedLength),
+                prefix.value > 0
+            else { return nil }
+
+            // `limit` bounds the value, so this can't trap.
+            return prefix.byteCount + Int(prefix.value)
         }
 
         private func resetTimeoutTask() {

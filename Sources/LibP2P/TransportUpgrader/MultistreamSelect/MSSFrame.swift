@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import LibP2PCore
 import NIOCore
 import VarInt
 
@@ -49,12 +50,13 @@ internal enum MSSFrame: Equatable {
     internal static let maxFrameLength = 1024
 
     /// A length prefix for a frame of at most `maxFrameLength` bytes fits in two uvarint bytes
-    /// (two bytes encode up to 16383). A third continuation byte means the peer isn't speaking MSS,
-    /// so we can reject it immediately instead of buffering indefinitely.
     internal static let maxLengthPrefixBytes = 2
 
     /// The most bytes we will hold while still waiting for a single complete frame.
     internal static let maxBufferedBytes = maxFrameLength + maxLengthPrefixBytes
+
+    /// Newline encoded byte
+    internal static let newline: UInt8 = 0x0A
 
     internal enum Errors: Error, Equatable {
         /// The uvarint length prefix ran longer than a valid MSS frame length could ever require.
@@ -117,93 +119,73 @@ extension MSSFrame {
         }
     }
 
-    /// uvarint length prefix (payload + 1, for the newline), payload, then `\n`.
+    /// uVarInt length prefixed (payload + `\n`).
     private static func frame(_ message: String) throws -> [UInt8] {
         let payload = Array(message.utf8)
         return try MSSFrame.frame(payload)
     }
 
+    /// uVarInt length prefixed (payload + `\n`).
     private static func frame(_ bytes: [UInt8]) throws -> [UInt8] {
         guard bytes.count < Self.maxFrameLength - 2 else {
             throw Errors.frameTooLarge(bytes.count)
         }
-        return putUVarInt(UInt64(bytes.count + 1)) + bytes + [0x0A]
+        return (bytes + [MSSFrame.newline]).uVarIntLengthPrefixed
     }
 }
 
 // MARK: - Decoding
 extension MSSFrame {
 
-    /// Splits a single frame off the front of `buffer`, returning its payload with the uvarint
+    /// Splits a single frame off the front of `buffer`, returning its payload with the uVarInt
     /// length prefix and trailing newline stripped.
     ///
-    /// - Returns: `nil` when the buffer does not yet hold a complete frame (a normal short read);
-    ///   `buffer` is left untouched in that case. On success the reader index is advanced past the
-    ///   whole frame and the payload slice is returned (which may be empty for a bare `\n`).
+    /// - Returns: `nil` when the buffer does not yet hold a complete frame. On success the reader index
+    ///   is advanced past the entire frame and the payload slice is returned.
     /// - Throws: `MSSFrame.Errors` when the bytes cannot form a valid MSS frame no matter how many
     ///   more arrive.
     internal static func decodeFramePayload(from buffer: inout ByteBuffer) throws -> ByteBuffer? {
-        guard let (length, prefixBytes) = try readLengthPrefix(buffer) else {
-            // Ran out of bytes mid-varint. Legal — the length prefix straddles a read boundary.
-            return .none
+        var frame: ByteBuffer
+        do {
+            guard let body = try buffer.readVarIntLengthPrefixedSlice(limit: UInt64(MSSFrame.maxFrameLength))
+            else {
+                // try again with more bytes later...
+                return .none
+            }
+            frame = body
+        } catch VarIntError.exceedsLimit {
+            throw MSSFrame.Errors.frameTooLarge(try announcedLength(of: buffer))
+        } catch {
+            throw MSSFrame.Errors.invalidLengthPrefix
         }
 
-        guard length >= 1 else { throw MSSFrame.Errors.invalidFrameLength(length) }
-        guard length <= MSSFrame.maxFrameLength else { throw MSSFrame.Errors.frameTooLarge(length) }
+        // Every frame carries at least the newline that terminates it.
+        guard frame.readableBytes >= 1 else {
+            throw MSSFrame.Errors.invalidFrameLength(frame.readableBytes)
+        }
 
-        // The prefix is complete but the body isn't fully here yet. Also a normal short read.
-        guard buffer.readableBytes >= prefixBytes + length else { return .none }
-
-        // We have the whole frame, so a missing delimiter is now unambiguously a protocol error and
-        // never "we just haven't received the newline yet".
-        let newlineIndex = buffer.readerIndex + prefixBytes + length - 1
-        guard buffer.getInteger(at: newlineIndex, as: UInt8.self) == 0x0A else {
+        // We hold the whole frame, so a missing delimiter is now a protocol error.
+        guard frame.getInteger(at: frame.readerIndex + frame.readableBytes - 1, as: UInt8.self) == MSSFrame.newline
+        else {
             throw MSSFrame.Errors.missingNewlineDelimiter
         }
 
-        buffer.moveReaderIndex(forwardBy: prefixBytes)
-        // Safe to force-unwrap: we verified `prefixBytes + length` bytes are readable above.
-        let payload = buffer.readSlice(length: length - 1)!
-        buffer.moveReaderIndex(forwardBy: 1)  // the trailing '\n'
-        return payload
+        // Safe to force-unwrap, the newline we just checked is the last of `readableBytes` bytes.
+        return frame.readSlice(length: frame.readableBytes - 1)!
     }
 
-    /// Reads the uvarint length prefix from the front of `buffer` without consuming it.
+    /// Re-decodes an over `limit` length prefix so `frameTooLarge` can provide the length.
     ///
-    /// Uses the `VarInt` package to decode the value, then layers the MSS-specific limits on top:
-    /// a valid length prefix is at most `maxLengthPrefixBytes` bytes, so anything longer means the
-    /// peer isn't speaking MSS.
+    /// The failed read consumed nothing, so the prefix is still sitting at the reader index.
     ///
-    /// - Returns: `nil` when the buffer ends mid-varint (a short read); the decoded `(length,
-    ///   prefixBytes)` otherwise.
-    private static func readLengthPrefix(_ buffer: ByteBuffer) throws -> (length: Int, prefixBytes: Int)? {
-        // One byte past the maximum lets us detect an over-long prefix as soon as it appears.
-        let prefix = Array(buffer.readableBytesView.prefix(MSSFrame.maxLengthPrefixBytes + 1))
-        guard let lastByte = prefix.last else { return .none }
-
-        let (value, bytesRead) = uVarInt(prefix)
-
-        if bytesRead == 0 {
-            // `uVarInt` couldn't terminate the varint within the bytes it was given.
-            if lastByte & 0x80 != 0 {
-                // The final available byte is a continuation byte. If we've already seen the most
-                // prefix bytes MSS ever needs, a further byte would push us over the limit — the
-                // peer isn't speaking MSS. Otherwise the varint simply straddles a read boundary.
-                guard prefix.count < MSSFrame.maxLengthPrefixBytes else {
-                    throw MSSFrame.Errors.invalidLengthPrefix
-                }
-                return .none
-            }
-            // A terminator byte that `uVarInt` still rejected (e.g. a non-minimal encoding) can
-            // never be a valid MSS length prefix.
+    /// - Throws: `invalidLengthPrefix` when we fail to read the VarInt prefix
+    private static func announcedLength(of buffer: ByteBuffer) throws -> Int {
+        guard
+            let prefix = try? buffer.getVarInt(at: buffer.readerIndex),
+            let length = Int(exactly: prefix.value)
+        else {
             throw MSSFrame.Errors.invalidLengthPrefix
         }
-
-        guard bytesRead <= MSSFrame.maxLengthPrefixBytes else {
-            throw MSSFrame.Errors.invalidLengthPrefix
-        }
-
-        return (Int(value), bytesRead)
+        return length
     }
-
 }

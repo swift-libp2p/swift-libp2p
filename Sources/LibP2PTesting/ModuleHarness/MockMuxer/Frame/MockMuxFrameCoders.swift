@@ -22,11 +22,8 @@ internal final class MockMuxFrameEncoder: MessageToByteEncoder {
     init() {}
 
     func encode(data: MockMuxFrame, out: inout ByteBuffer) throws {
-        let payload = data.messageBytes()
-        let length = putUVarInt(UInt64(payload.readableBytes))
-        let header = putUVarInt(data.streamID.id << 3 | data.flag.rawValue)
-        out.writeBytes(header + length)
-        out.writeBytes(payload.readableBytesView)
+        out.writeVarInt(data.streamID.id << 3 | data.flag.rawValue)
+        out.writeVarIntLengthPrefixed(data.messageBytes())
     }
 }
 
@@ -34,27 +31,20 @@ internal final class MockMuxFrameEncoder: MessageToByteEncoder {
 internal final class MockMuxFrameDecoder: ByteToMessageDecoder {
     typealias InboundOut = MockMuxFrame
 
+    /// The header of a partially received frame, held across `decode` calls once it's been consumed.
     private var headerValue: UInt64? = nil
-    private var msgLength: UInt64? = nil
 
     init() {}
 
     func decode(context: ChannelHandlerContext, buffer: inout ByteBuffer) throws -> DecodingState {
         if self.headerValue == nil {
-            self.headerValue = try buffer.readMockMuxVarint()
+            self.headerValue = try buffer.readVarInt()
         }
         guard let headerValue = self.headerValue else {
             return .needMoreData
         }
 
-        if self.msgLength == nil {
-            self.msgLength = try buffer.readMockMuxVarint()
-        }
-        guard let msgLength = self.msgLength else {
-            return .needMoreData
-        }
-
-        guard let messageBytes = buffer.readSlice(length: Int(msgLength)) else {
+        guard let messageBytes = try buffer.readVarIntLengthPrefixedSlice() else {
             return .needMoreData
         }
 
@@ -73,7 +63,6 @@ internal final class MockMuxFrameDecoder: ByteToMessageDecoder {
         }
 
         self.headerValue = nil
-        self.msgLength = nil
 
         context.fireChannelRead(self.wrapInboundOut(out))
         return .continue
@@ -85,34 +74,5 @@ internal final class MockMuxFrameDecoder: ByteToMessageDecoder {
 
     enum Errors: Error {
         case invalidFlag
-        case invalidVarInt
-    }
-}
-
-extension ByteBuffer {
-    /// Reads an unsigned LEB128 varint, restoring the reader index and returning nil if there aren't
-    /// yet enough bytes to decode a full value.
-    fileprivate mutating func readMockMuxVarint() throws -> UInt64? {
-        var value: UInt64 = 0
-        var shift: UInt64 = 0
-        let initialReadIndex = self.readerIndex
-
-        while true {
-            guard let c: UInt8 = self.readInteger() else {
-                self.moveReaderIndex(to: initialReadIndex)
-                return nil
-            }
-            value |= UInt64(c & 0x7F) << shift
-            if c & 0x80 == 0 {
-                return value
-            }
-            shift += 7
-            if shift > 63 {
-                // A varint that never terminates within 64 bits is malformed input. Throw (which the
-                // ByteToMessageHandler turns into errorCaught → connection teardown) rather than crashing
-                // the whole process with `fatalError` on hostile/garbage bytes.
-                throw MockMuxFrameDecoder.Errors.invalidVarInt
-            }
-        }
     }
 }
