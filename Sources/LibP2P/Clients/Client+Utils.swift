@@ -196,11 +196,12 @@ extension Application {
 
                     //self.logger.trace("Available addresses for Peer: \(to)")
                     //for address in addresses {
-                    //    self.logger.trace("- \(try? address.encapsulate(proto: .p2p, address: to.b58String))")
+                    //    self.logger.trace("- \(address.encapsulating(peer: to))")
                     //}
 
+                    /// `encapsulating(peer:)` is a no-op when the address already names a peer.
                     try! self.newStream(
-                        to: addresses.first!.encapsulate(proto: .p2p, address: to.b58String),
+                        to: addresses.first!.encapsulating(peer: to),
                         forProtocol: proto
                     )
 

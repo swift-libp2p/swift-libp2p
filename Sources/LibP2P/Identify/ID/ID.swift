@@ -341,8 +341,7 @@ extension Identify {
         id.agentVersion = req.application.agentVersion
         id.observedAddr = try req.remoteAddress?.toMultiaddr().binaryPacked() ?? Data()
         id.listenAddrs = try listenAddrs.map {
-            guard !$0.protocols().contains(.p2p) else { return try $0.binaryPacked() }
-            return try $0.encapsulate(proto: .p2p, address: self.localPeerID.b58String).binaryPacked()
+            try $0.encapsulating(peer: self.localPeerID).binaryPacked()
         }
 
         //Construct our PeerRecord and sign it with out PeerID private key
@@ -383,14 +382,8 @@ extension Identify {
         // For partial (push) updates an empty list means "no change", so we skip it
         if !identifyMessage.listenAddrs.isEmpty {
             let listeningAddresses = identifyMessage.listenAddrs.compactMap { multiaddrData -> Multiaddr? in
-                if let ma = try? Multiaddr(multiaddrData) {
-                    if !ma.protocols().contains(.p2p) {
-                        return try? ma.encapsulate(proto: .p2p, address: identifiedPeer.b58String)
-                    } else {
-                        return ma
-                    }
-                }
-                return nil
+                guard let ma = try? Multiaddr(multiaddrData) else { return nil }
+                return ma.encapsulating(peer: identifiedPeer)
             }
             tasks.append(
                 application.peers.add(
