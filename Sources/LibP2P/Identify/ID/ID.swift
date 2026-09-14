@@ -452,10 +452,9 @@ extension Identify {
 
         // TODO: Our Connection should do this when we complete our security handshake, also we should remove this here...
         tasks.append(
-            application.peers.add(
-                metaKey: .LastHandshake,
-                data: String(Date().timeIntervalSince1970).bytes,
-                toPeer: identifiedPeer,
+            application.peers.setLastHandshake(
+                Date(),
+                forPeer: identifiedPeer,
                 on: connection.channel.eventLoop
             )
         )
@@ -700,52 +699,18 @@ extension Identify {
             req.logger.trace("Identify::Ping updating \(isConnection ? "connection" : "stream") latency")
 
             /// Update our peers metadata
-            req.application.peers.getMetadata(forPeer: remotePeer).flatMap {
-                metadata -> EventLoopFuture<Void> in
-                let new: MetadataBook.LatencyMetadata
-                if let existingLatencyData = metadata[MetadataBook.Keys.Latency.rawValue],
-                    var latencyData = try? JSONDecoder().decode(
-                        MetadataBook.LatencyMetadata.self,
-                        from: Data(existingLatencyData)
-                    )
-                {
-                    if isConnection {
-                        latencyData.newConnectionLatencyValue(toc)
-                    } else {
-                        latencyData.newStreamLatencyValue(toc)
-                    }
-                    new = latencyData
+            req.application.peers.getLatency(forPeer: remotePeer).flatMap {
+                existing -> EventLoopFuture<Void> in
+                /// Fold this sample into the running average, starting a fresh entry when we
+                /// have no history for this peer.
+                var latency = existing ?? MetadataBook.LatencyMetadata()
+                if isConnection {
+                    latency.newConnectionLatencyValue(toc)
                 } else {
-                    /// No (or invalid) Latency data, lets start a new entry
-                    if isConnection {
-                        new = MetadataBook.LatencyMetadata(
-                            streamLatency: 0,
-                            connectionLatency: toc,
-                            streamCount: 0,
-                            connectionCount: 1
-                        )
-                    } else {
-                        new = MetadataBook.LatencyMetadata(
-                            streamLatency: toc,
-                            connectionLatency: 0,
-                            streamCount: 1,
-                            connectionCount: 0
-                        )
-                    }
+                    latency.newStreamLatencyValue(toc)
                 }
 
-                /// Encode New Latency Data and store it...
-                guard let newData = try? JSONEncoder().encode(new) else {
-                    req.logger.error("Identify::Failed to encode latency metadata")
-                    return req.eventLoop.makeSucceededVoidFuture()
-                }
-
-                /// Store it!
-                return req.application.peers.add(
-                    metaKey: MetadataBook.Keys.Latency,
-                    data: newData.byteArray,
-                    toPeer: remotePeer
-                )
+                return req.application.peers.setLatency(latency, forPeer: remotePeer, on: req.eventLoop)
             }.whenComplete({ _ in
                 req.logger.trace("Identify::Ping Time to Peer<\(pendingPing.peer.prefix(7))> == \(toc)ns")
             })
