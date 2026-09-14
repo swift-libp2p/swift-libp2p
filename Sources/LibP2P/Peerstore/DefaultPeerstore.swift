@@ -12,7 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+import Foundation
 import LibP2PCore
+import Logging
+import NIOConcurrencyHelpers
 import NIOCore
 
 extension Application.PeerStores.Provider {
@@ -23,17 +26,21 @@ extension Application.PeerStores.Provider {
             }
         }
     }
-}
 
-extension String {
-    fileprivate init?(bytes: [UInt8], encoding: String.Encoding = .utf8) {
-        self.init(data: Data(bytes), encoding: encoding)
-    }
-}
-
-extension Array where Element == UInt8 {
-    fileprivate func toString(encoding: String.Encoding = .utf8) -> String? {
-        String(bytes: self, encoding: encoding)
+    /// The in-memory peerstore with custom capacity limits.
+    ///
+    /// - Parameters:
+    ///   - maxPeers: How many peers to hold before evicting the oldest prunable ones.
+    ///   - maxRecordsPerPeer: How many signed `PeerRecord`s to retain per peer.
+    public static func `default`(maxPeers: Int = 5_000, maxRecordsPerPeer: Int = 3) -> Self {
+        .init { app in
+            app.peerstore.use {
+                BasicInMemoryPeerStore(
+                    application: $0,
+                    configuration: .init(maxPeers: maxPeers, maxRecordsPerPeer: maxRecordsPerPeer)
+                )
+            }
+        }
     }
 }
 
