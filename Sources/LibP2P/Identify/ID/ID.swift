@@ -149,6 +149,10 @@ public final class Identify: IdentityManager, CustomStringConvertible {
         connection.logger.trace("Identify::New Upgraded Connection, Attempting to Identify Remote Peer...")
         // Open a new stream requesting the remote peer send us an Identify message
         // Calling newStream() without a closure/handler defaults to our registered route responder
+        guard let connection = connection as? AppConnection else {
+            connection.logger.warning("Identify::Connection isn't an AppConnection, skipping Identify request")
+            return
+        }
         connection.newStream(forProtocol: "/ipfs/id/1.0.0")
     }
 
@@ -495,7 +499,7 @@ extension Identify {
                 guard !targets.isEmpty else { return }
                 self.logger.trace("Identify::Push::Pushing updated Identify to \(targets.count) peer(s)")
                 for connection in targets {
-                    connection.newStream(forProtocol: Identify.Multicodecs.PUSH)
+                    (connection as? AppConnection)?.newStream(forProtocol: Identify.Multicodecs.PUSH)
                 }
             }
         }
