@@ -112,8 +112,8 @@ var swiftSettings: [SwiftSetting] {
         //.enableUpcomingFeature("ExistentialAny"),
         //.enableUpcomingFeature("InternalImportsByDefault"),
         //.enableUpcomingFeature("MemberImportVisibility"),
-        .enableUpcomingFeature("InferIsolatedConformances"),
         //.enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+        .enableUpcomingFeature("InferIsolatedConformances"),
         .enableUpcomingFeature("ImmutableWeakCaptures"),
     ]
 }
