@@ -123,24 +123,24 @@ extension Application {
         /// Specify the `StreamGater` a `BaseConnection` consults before accepting a stream.
         ///
         /// - Note: Only observed by Connections created *after* this call
-        func use(streamGater: StreamGater) {
+        public func use(streamGater: StreamGater) {
             self.storage.streamGater.withLockedValue { $0 = streamGater }
         }
 
         /// Specify the `StreamPruner` a `BaseConnection` uses to evict dead streams.
         ///
         /// - Note: Only observed by Connections created *after* this call
-        func use(streamPruner: StreamPruner) {
+        public func use(streamPruner: StreamPruner) {
             self.storage.streamPruner.withLockedValue { $0 = streamPruner }
         }
 
         /// The currently configured `StreamGater`, resolved by `BaseConnection` at init time.
-        var streamGater: StreamGater {
+        public var streamGater: StreamGater {
             self.storage.streamGater.withLockedValue { $0 }
         }
 
         /// The currently configured `StreamPruner`, resolved by `BaseConnection` at init time.
-        var streamPruner: StreamPruner {
+        public var streamPruner: StreamPruner {
             self.storage.streamPruner.withLockedValue { $0 }
         }
 
