@@ -31,6 +31,13 @@ public protocol AppConnection: Connection, CustomStringConvertible {
 
     func initializeChannel() -> EventLoopFuture<Void>
 
+    /// Opens a new outbound stream for `proto`, delegating to the application's registered
+    /// route handlers.
+    ///
+    /// - Note: This used to be a `LibP2PCore.Connection` requirement (pre 0.6.0), it was moved
+    ///   here because responding through the application's routes is an application-layer concern.
+    func newStream(forProtocol proto: String)
+
     //func newStream(forProtocol proto:String, withResponder responder:Responder)
     func newStream(
         forProtocol proto: String,
