@@ -212,10 +212,13 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         connectionsInvolvingPeer(peer: peer).hop(to: loop ?? eventLoop)
     }
 
-    func getBestConnectionForPeer(peer: PeerID, on loop: EventLoop?) -> EventLoopFuture<Connection?> {
-        connectionsInvolvingPeer(peer: peer).map { connections -> Connection? in
+    func getBestConnectionForPeer(peer: PeerID, on loop: EventLoop?) -> EventLoopFuture<Connection> {
+        connectionsInvolvingPeer(peer: peer).flatMapThrowing { connections -> Connection in
             //Or some other check like ping / latency / last seen / etc...
-            connections.first(where: { $0.status == .upgraded })
+            guard let best = connections.first(where: { $0.status == .upgraded }) else {
+                throw ConnectionManagerError.noConnectionToPeer
+            }
+            return best
         }.hop(to: loop ?? eventLoop)
     }
 
