@@ -415,7 +415,7 @@ extension Identify {
         if identifyMessage.hasAgentVersion, let agentVersion = identifyMessage.agentVersion.data(using: .utf8) {
             tasks.append(
                 application.peers.add(
-                    metaKey: .AgentVersion,
+                    metaKey: .agentVersion,
                     data: agentVersion.byteArray,
                     toPeer: identifiedPeer,
                     on: connection.channel.eventLoop
@@ -427,7 +427,7 @@ extension Identify {
         {
             tasks.append(
                 application.peers.add(
-                    metaKey: .ProtocolVersion,
+                    metaKey: .protocolVersion,
                     data: protocolVersion.byteArray,
                     toPeer: identifiedPeer,
                     on: connection.channel.eventLoop
@@ -442,7 +442,7 @@ extension Identify {
         {
             tasks.append(
                 application.peers.add(
-                    metaKey: .ObservedAddress,
+                    metaKey: .observedAddress,
                     data: ma.byteArray,
                     toPeer: identifiedPeer,
                     on: connection.channel.eventLoop

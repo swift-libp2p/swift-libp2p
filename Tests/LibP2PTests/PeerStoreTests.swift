@@ -283,7 +283,7 @@ extension LibP2PTests {
 
                 // The typed accessor must use the same wire format the byte-level API writes.
                 let raw = try await store.getMetadata(forPeer: peer)
-                #expect(raw[MetadataBook.Keys.LastHandshake.rawValue] != nil)
+                #expect(raw[MetadataBook.Keys.lastHandshake.rawValue] != nil)
 
                 var latency = MetadataBook.LatencyMetadata()
                 latency.newStreamLatencyValue(2_000)
@@ -359,7 +359,7 @@ extension LibP2PTests {
                     try await store.add(key: peer)
                     // Half the peers lose their discovery timestamp entirely.
                     if index.isMultiple(of: 2) {
-                        try await store.remove(metaKey: MetadataBook.Keys.Discovered, fromPeer: peer)
+                        try await store.remove(metaKey: MetadataBook.Keys.discovered, fromPeer: peer)
                     }
                 }
                 // 5 added, capacity 4, prune 50% of capacity => 2 evicted.
@@ -427,7 +427,7 @@ extension LibP2PTests {
                 try await store.add(protocol: Self.echo, toPeer: peer)
                 try await store.add(protocols: [Self.echo], toPeer: peer)
                 try await store.add(metaKey: "k", data: [1], toPeer: peer)
-                try await store.add(metaKey: .AgentVersion, data: [1], toPeer: peer)
+                try await store.add(metaKey: .agentVersion, data: [1], toPeer: peer)
                 try await store.add(record: PeerRecord(peerID: peer, multiaddrs: [], sequenceNumber: 1))
 
                 _ = try await store.all()

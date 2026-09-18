@@ -462,7 +462,7 @@ extension LibP2PTests {
                 #expect(try await manager.getConnections(on: loop).get().count == 1)
 
                 let connectedness = try await manager.connectedness(peer: remotePeer, on: loop).get()
-                #expect(connectedness != .Connected)
+                #expect(connectedness != .connected)
             }
         }
 

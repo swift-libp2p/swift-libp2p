@@ -183,12 +183,12 @@ internal final class BasicInMemoryPeerStore: PeerStore {
 
     /// The `Date` at which this peer was `discovered`, if recorded.
     private func discovered(_ peer: ComprehensivePeer) -> Date? {
-        peer.metadata(forKey: MetadataBook.Keys.Discovered.rawValue).flatMap(Self.decodeTimestamp)
+        peer.metadata(forKey: MetadataBook.Keys.discovered.rawValue).flatMap(Self.decodeTimestamp)
     }
 
     /// The most recent `Date` at which we established a handshake with this peer, if recorded.
     private func lastHandshake(_ peer: ComprehensivePeer) -> Date? {
-        peer.metadata(forKey: MetadataBook.Keys.LastHandshake.rawValue).flatMap(Self.decodeTimestamp)
+        peer.metadata(forKey: MetadataBook.Keys.lastHandshake.rawValue).flatMap(Self.decodeTimestamp)
     }
 
     /// The last time we have any evidence of contact with this peer.
@@ -198,7 +198,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
 
     /// How willing we are to evict this peer. Peers with no explicit marking are prunable.
     private func prunability(_ peer: ComprehensivePeer) -> MetadataBook.PrunableMetadata.Prunable {
-        guard let raw = peer.metadata(forKey: MetadataBook.Keys.Prunable.rawValue),
+        guard let raw = peer.metadata(forKey: MetadataBook.Keys.prunable.rawValue),
             let decoded = try? JSONDecoder().decode(MetadataBook.PrunableMetadata.self, from: Data(raw))
         else { return .prunable }
         return decoded.prunable
@@ -338,7 +338,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
 
     private func dump(compPeer: ComprehensivePeer) {
         let latency =
-            compPeer.metadata(forKey: MetadataBook.Keys.Latency.rawValue)
+            compPeer.metadata(forKey: MetadataBook.Keys.latency.rawValue)
             .flatMap { try? JSONDecoder().decode(MetadataBook.LatencyMetadata.self, from: Data($0)) }
             .map { $0.description.replacingOccurrences(of: "\n", with: "\n\t") } ?? "NIL"
 
@@ -466,7 +466,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
                 /// Set the peers discovered metadata
                 compPeer.setMetadata(
                     Self.encodeTimestamp(Date()),
-                    forKey: MetadataBook.Keys.Discovered.rawValue
+                    forKey: MetadataBook.Keys.discovered.rawValue
                 )
                 state.store[key] = compPeer
                 /// Check if we need to prune
@@ -601,7 +601,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
                 compPeer = ComprehensivePeer(id: peer)
                 compPeer.setMetadata(
                     Self.encodeTimestamp(Date()),
-                    forKey: MetadataBook.Keys.Discovered.rawValue
+                    forKey: MetadataBook.Keys.discovered.rawValue
                 )
                 state.store[peer] = compPeer
             }
