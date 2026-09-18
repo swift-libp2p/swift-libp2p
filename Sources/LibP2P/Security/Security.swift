@@ -16,20 +16,8 @@ import LibP2PCore
 import NIO
 import PeerID
 
-public protocol SecurityUpgrader {
-
-    static var key: String { get }
-    func upgradeConnection(
-        _ conn: Connection,
-        position: ChannelPipeline.Position,
-        securedPromise: EventLoopPromise<Connection.SecuredResult>
-    ) -> EventLoopFuture<Void>
-    func printSelf()
-
-    //static var installer:SecurityProtocolInstaller { get }
-    //func securityInstaller() -> SecurityProtocolInstaller
-
-}
+// `SecurityUpgrader` now lives in LibP2PCore (re-exported here), so security modules can depend
+// on core alone.
 
 extension Application {
     public var security: SecurityUpgraders {
