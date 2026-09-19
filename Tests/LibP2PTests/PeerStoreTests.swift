@@ -92,7 +92,7 @@ extension LibP2PTests {
                 }
             }
         }
-        
+
         @Test("An existing peer reports peerAlreadyExists", .disabled())
         func existingPeerThrows() async throws {
             try await Self.withStore { store in
@@ -293,14 +293,14 @@ extension LibP2PTests {
                 #expect(try await store.getPrunability(forPeer: peer) == .prunable)
                 try await store.setPrunability(.necessary, forPeer: peer)
                 #expect(try await store.getPrunability(forPeer: peer) == .necessary)
-                
+
                 let observedAddress = try Multiaddr("/ip4/1.1.1.1/tcp/4001")
                 await #expect(throws: Never.self) {
                     try await store.setObservedAddress(observedAddress, forPeer: peer)
                 }
                 let getObservedAddress = try await store.getObservedAddress(forPeer: peer)
                 #expect(observedAddress == getObservedAddress)
-                
+
                 let agentVersion = "swift-libp2p/0.4.0"
                 await #expect(throws: Never.self) {
                     try await store.setAgentVersion(agentVersion, forPeer: peer)
@@ -466,7 +466,7 @@ extension LibP2PTests {
                 #expect(try await store.count() == 0)
             }
         }
-        
+
         // MARK: - Helpers
 
         /// Runs `body` against a freshly built `BasicInMemoryPeerStore`, tearing the host

@@ -690,7 +690,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
     public enum Errors: Error, Hashable, Sendable, CustomStringConvertible {
         case peerAlreadyExists
         case peerNotFound
-        
+
         public var description: String {
             switch self {
             case .peerAlreadyExists:
