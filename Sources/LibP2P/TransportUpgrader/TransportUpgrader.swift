@@ -15,22 +15,8 @@
 import NIOConcurrencyHelpers
 import NIOCore
 
-public protocol TransportUpgrader {
-    func installHandlers(on channel: Channel)
-
-    func negotiate(
-        protocols: [String],
-        mode: LibP2P.Mode,
-        logger: Logger,
-        promise: EventLoopPromise<(`protocol`: String, leftoverBytes: ByteBuffer?)>
-    ) -> [ChannelHandler]
-
-    func printSelf()
-}
-
-extension TransportUpgrader {
-    public func printSelf() { print(self) }
-}
+// `TransportUpgrader` now lives in LibP2PCore (re-exported here), so upgrader modules can
+// depend on core alone.
 
 extension Application {
     public var transportUpgraders: TransportUpgraders {

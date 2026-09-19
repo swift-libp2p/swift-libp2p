@@ -130,10 +130,6 @@ public struct TCP: Transport, Sendable {
         return true
     }
 
-    public func listen(address: Multiaddr) -> EventLoopFuture<Listener> {
-        application.eventLoopGroup.any().makeFailedFuture(Errors.notYetImplemented)
-    }
-
     struct Key: StorageKey, LockKey {
         typealias Value = SharedDialBootstrap
     }

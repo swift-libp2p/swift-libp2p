@@ -16,13 +16,8 @@ import LibP2PCore
 import NIO
 import PeerID
 
-public protocol MuxerUpgrader {
-
-    static var key: String { get }
-    func upgradeConnection(_ conn: Connection, muxedPromise: EventLoopPromise<Muxer>) -> EventLoopFuture<Void>
-    func printSelf()
-
-}
+// `MuxerUpgrader` now lives in LibP2PCore (re-exported here), so muxer modules can depend on
+// core alone.
 
 extension Application {
     public var muxers: MuxerUpgraders {

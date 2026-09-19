@@ -26,29 +26,28 @@ extension Application {
 
         return self.connections.getBestConnectionForPeer(peer: to, on: el).flatMap {
             connection -> EventLoopFuture<Void> in
-            if let connection = connection {
+            try! self.newStream(
+                to: connection.remoteAddr!,
+                forProtocol: proto,
+                withHandlers: handlers,
+                andMiddleware: middleware,
+                closure: closure
+            )
+            return el.makeSucceededVoidFuture()
+        }.flatMapError { _ -> EventLoopFuture<Void> in
+            // No reusable connection, fall back to the addresses in our peerstore.
+            self.peers.getAddresses(forPeer: to, on: el).flatMap { addresses -> EventLoopFuture<Void> in
+                guard !addresses.isEmpty else { return el.makeFailedFuture(Errors.unknownPeer) }
+
                 try! self.newStream(
-                    to: connection.remoteAddr!,
+                    to: addresses.first!,
                     forProtocol: proto,
                     withHandlers: handlers,
                     andMiddleware: middleware,
                     closure: closure
                 )
+
                 return el.makeSucceededVoidFuture()
-            } else {
-                return self.peers.getAddresses(forPeer: to, on: el).flatMap { addresses -> EventLoopFuture<Void> in
-                    guard !addresses.isEmpty else { return el.makeFailedFuture(Errors.unknownPeer) }
-
-                    try! self.newStream(
-                        to: addresses.first!,
-                        forProtocol: proto,
-                        withHandlers: handlers,
-                        andMiddleware: middleware,
-                        closure: closure
-                    )
-
-                    return el.makeSucceededVoidFuture()
-                }
             }
         }.whenComplete { result in
             self.logger.trace("NewStream(toPeer)[\(proto)] result => \(result)")
@@ -183,29 +182,28 @@ extension Application {
         // Search the connection manager for potential existing connections
         return self.connections.getBestConnectionForPeer(peer: to, on: el).flatMap {
             connection -> EventLoopFuture<Void> in
-            if let connection = connection {
-                try! self.newStream(to: connection.remoteAddr!, forProtocol: proto)
-                return el.makeSucceededVoidFuture()
-            } else {
-                // Otherwise search the PeerStore for addresses associated with the provided PeerID
-                return self.peers.getAddresses(forPeer: to, on: el).flatMap { addresses -> EventLoopFuture<Void> in
-                    guard !addresses.isEmpty else {
-                        self.logger.warning("No Addresses Associated with \(to)")
-                        return el.makeFailedFuture(Errors.unknownPeer)
-                    }
-
-                    //self.logger.trace("Available addresses for Peer: \(to)")
-                    //for address in addresses {
-                    //    self.logger.trace("- \(try? address.encapsulate(proto: .p2p, address: to.b58String))")
-                    //}
-
-                    try! self.newStream(
-                        to: addresses.first!.encapsulate(proto: .p2p, address: to.b58String),
-                        forProtocol: proto
-                    )
-
-                    return el.makeSucceededVoidFuture()
+            try! self.newStream(to: connection.remoteAddr!, forProtocol: proto)
+            return el.makeSucceededVoidFuture()
+        }.flatMapError { _ -> EventLoopFuture<Void> in
+            // No reusable connection, search the PeerStore for addresses associated with the provided PeerID
+            self.peers.getAddresses(forPeer: to, on: el).flatMap { addresses -> EventLoopFuture<Void> in
+                guard !addresses.isEmpty else {
+                    self.logger.warning("No Addresses Associated with \(to)")
+                    return el.makeFailedFuture(Errors.unknownPeer)
                 }
+
+                //self.logger.trace("Available addresses for Peer: \(to)")
+                //for address in addresses {
+                //    self.logger.trace("- \(address.encapsulating(peer: to))")
+                //}
+
+                /// `encapsulating(peer:)` is a no-op when the address already names a peer.
+                try! self.newStream(
+                    to: addresses.first!.encapsulating(peer: to),
+                    forProtocol: proto
+                )
+
+                return el.makeSucceededVoidFuture()
             }
         }.whenComplete { result in
             self.logger.trace("NewStream(toPeer, forProtocol)[\(proto)] result => \(result)")
@@ -266,13 +264,16 @@ extension Application {
                 }).first {
                     return self.connections.getBestConnectionForPeer(peer: peer, on: loop).flatMap {
                         conn -> EventLoopFuture<Multiaddr> in
-                        if let conn = conn, let addy = conn.remoteAddr {
+                        if let addy = conn.remoteAddr {
                             self.logger.trace("Found existing connection to peer, attempting to reuse address: \(addy)")
                             return loop.makeSucceededFuture(addy)
                         }
 
                         // Otherwise see if we can dial any of the resolved addresses...
                         return self.transports.canDialAny(resolvedAddresses, on: loop)
+                    }.flatMapError { _ -> EventLoopFuture<Multiaddr> in
+                        // No existing connection, see if we can dial any of the resolved addresses...
+                        self.transports.canDialAny(resolvedAddresses, on: loop)
                     }
                 }
 

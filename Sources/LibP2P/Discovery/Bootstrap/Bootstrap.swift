@@ -60,7 +60,7 @@ public class BootstrapPeerDiscovery: Discovery, LifecycleHandler, @unchecked Sen
         }
     }
 
-    public func findPeers(supportingService: String, options: Options? = nil) -> EventLoopFuture<DiscoverdPeers> {
+    public func findPeers(supportingService: String, options: Options? = nil) -> EventLoopFuture<DiscoveredPeers> {
         self.eventLoop.makeFailedFuture(Errors.notSupported)
     }
 
