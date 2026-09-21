@@ -21,13 +21,16 @@ import Logging
 /// Handles upgrading the Connection (installing the negotiated security and muxer) and once
 /// upgraded, handles the creation and lifecycle of multiplexed streams.
 ///
-/// BaseConnection leverages the new StreamGater and StreamPruner protocols to offload
-/// the management of Streams into plugable/configurable async actors.
+/// BaseConnection leverages the StreamGater / StreamPruner and ConnectionGater / ConnectionPruner
+/// protocols to offload the management of Streams and Connections into plugable/configurable
+/// async actors.
 ///
-/// To install / register a StreamGater or StreamPruner, use the app...
+/// To install / register a Gater or Pruner, use the app...
 ///  ```
 ///  app.connectionManager.use(streamGater: )
 ///  app.connectionManager.use(streamPruner: )
+///  app.connectionManager.use(connectionGater: )
+///  app.connectionManager.use(connectionPruner: )
 ///  ```
 public final class BaseConnection: AppConnection, @unchecked Sendable {
 
