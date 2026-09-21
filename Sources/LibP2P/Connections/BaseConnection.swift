@@ -342,8 +342,11 @@ extension BaseConnection {
                     securityCodec: security.securityCodec
                 )
                 let gater = self.connectionGater
+                let ask: (@Sendable () async -> ConnectionGateDecision) = {
+                    await gater.shouldAllowSecuredConnection(context)
+                }
                 // Ask the connection gater
-                self.consultGater({ await gater.shouldAllowSecuredConnection(context) }) { [weak self] decision in
+                self.consultGater(ask) { [weak self] decision in
                     guard let self = self else { return }
                     guard case .deny(let reason) = decision else {
                         // The connection was approved, continue the upgrade
