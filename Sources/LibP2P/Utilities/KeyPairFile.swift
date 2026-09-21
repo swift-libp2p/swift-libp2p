@@ -300,15 +300,16 @@ public enum KeyPairFile {
         using encryption: Encryption,
         for env: Environment
     ) async throws -> PeerID {
-        try await FileSystem.shared.withFileHandle(forReadingAt: .init(path)) { handle in
+        let pem = try await FileSystem.shared.withFileHandle(forReadingAt: .init(path)) { handle -> String in
             var buffer = try await handle.readToEnd(maximumSizeAllowed: .kilobytes(16))
             guard let pem = buffer.readString(length: buffer.readableBytes), !pem.isEmpty else {
                 throw KeyPairFile.Error.unableToReadKeyPairFile
             }
-            let password = try await encryption.password(for: env)
-            let keyPair = try LibP2PCrypto.Keys.KeyPair(pem: pem, password: password)
-            return try PeerID(keyPair: keyPair)
+            return pem
         }
+        let password = try await encryption.password(for: env)
+        let keyPair = try LibP2PCrypto.Keys.KeyPair(pem: pem, password: password)
+        return try PeerID(keyPair: keyPair)
     }
 
     /// Stores a `PeerID`'s key pair to the specified file system location, encrypting the private key
