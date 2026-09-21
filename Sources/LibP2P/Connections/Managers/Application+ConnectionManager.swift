@@ -92,6 +92,9 @@ extension Application {
             let streamPruner: NIOLockedValueBox<StreamPruner>
             /// Decides which connections this host will dial and accept.
             let connectionGater: NIOLockedValueBox<ConnectionGater>
+            /// Decides which of the ConnectionManager's connections get evicted, and how often to
+            /// proactively sweep for them.
+            let connectionPruner: NIOLockedValueBox<ConnectionPruner>
             /// How long a Connection may sit idle (zero streams) before terminating itself. Read by
             /// `BaseConnection` and `ARCConnection` at init time.
             let idleTimeout: NIOLockedValueBox<TimeAmount>
@@ -102,6 +105,7 @@ extension Application {
                 self.streamGater = .init(AllowAllStreamGater())
                 self.streamPruner = .init(IdleTimeoutStreamPruner())
                 self.connectionGater = .init(AllowAllConnectionGater())
+                self.connectionPruner = .init(LoadScaledConnectionPruner())
                 self.idleTimeout = .init(Connections.defaultIdleTimeout)
             }
         }
@@ -165,6 +169,22 @@ extension Application {
         /// The currently configured `ConnectionGater`.
         public var connectionGater: ConnectionGater {
             self.storage.connectionGater.withLockedValue { $0 }
+        }
+
+        /// Specify the `ConnectionPruner` the ConnectionManager consults when evicting connections.
+        ///
+        /// - Note: Applied to a live `BasicInMemoryConnectionManager` immediately; a custom
+        ///   `ConnectionManager` resolves it at its own discretion (typically at init).
+        public func use(connectionPruner: ConnectionPruner) {
+            self.storage.connectionPruner.withLockedValue { $0 = connectionPruner }
+            self.storage.manager.withLockedValue { manager in
+                (manager as? BasicInMemoryConnectionManager)?.setConnectionPruner(connectionPruner)
+            }
+        }
+
+        /// The currently configured `ConnectionPruner`.
+        public var connectionPruner: ConnectionPruner {
+            self.storage.connectionPruner.withLockedValue { $0 }
         }
 
         /// The currently configured idle timeout, resolved by `BaseConnection` and `ARCConnection`
