@@ -2,7 +2,7 @@
 //
 // This source file is part of the swift-libp2p open source project
 //
-// Copyright (c) 2022-2025 swift-libp2p project authors
+// Copyright (c) 2022-2026 swift-libp2p project authors
 // Licensed under MIT
 //
 // See LICENSE for license information
@@ -59,6 +59,12 @@ extension Application {
             /// upgrading (e.g. a security or muxer negotiation failure). Lets coalesced/queued requests
             /// fail fast instead of waiting for their own timeouts.
             case connectionUpgradeFailed
+            /// Thrown when the configured `ConnectionGater` denies a dial before it starts. Every
+            /// dial coalesced onto the denied address observes this failure.
+            case dialRejectedByGater(reason: String)
+            /// Thrown when the configured `ConnectionGater` refuses to admit an inbound connection
+            /// (or fails to answer in time), closing the channel before any handshake bytes move.
+            case connectionRejectedByGater(reason: String)
         }
 
         public struct Provider {
@@ -71,8 +77,8 @@ extension Application {
 
         final class Storage: Sendable {
             let manager: NIOLockedValueBox<ConnectionManager?>
-            // Allow the user to specify the Connection class to use (default to ARCConnection)
-            let connType: NIOLockedValueBox<AppConnection.Type>
+            /// Allows the user to specify the Connection class to use (default to BaseConnection)
+            let connectionType: NIOLockedValueBox<AppConnection.Type>
             /// Tracks cold dials that are currently in flight, keyed by the resolved dial MultiAddress
             /// (e.g. `/ip4/…/tcp/…/p2p/…`). Because the multiaddress encapsulates both the target
             /// peer and the network stack, concurrent dials to the same ma coalesce onto a single pending
@@ -84,15 +90,22 @@ extension Application {
             /// Decides which of a `BaseConnection`'s streams get evicted. Unused by `ARCConnection` and
             /// `BasicConnectionLight`, neither of which prunes streams.
             let streamPruner: NIOLockedValueBox<StreamPruner>
+            /// Decides which connections this host will dial and accept.
+            let connectionGater: NIOLockedValueBox<ConnectionGater>
+            /// Decides which of the ConnectionManager's connections get evicted, and how often to
+            /// proactively sweep for them.
+            let connectionPruner: NIOLockedValueBox<ConnectionPruner>
             /// How long a Connection may sit idle (zero streams) before terminating itself. Read by
             /// `BaseConnection` and `ARCConnection` at init time.
             let idleTimeout: NIOLockedValueBox<TimeAmount>
             init() {
                 self.manager = .init(nil)
-                self.connType = .init(BaseConnection.self)
+                self.connectionType = .init(BaseConnection.self)
                 self.dialsInFlight = .init([:])
                 self.streamGater = .init(AllowAllStreamGater())
                 self.streamPruner = .init(IdleTimeoutStreamPruner())
+                self.connectionGater = .init(AllowAllConnectionGater())
+                self.connectionPruner = .init(LoadScaledConnectionPruner())
                 self.idleTimeout = .init(Connections.defaultIdleTimeout)
             }
         }
@@ -117,7 +130,7 @@ extension Application {
         /// Note: The built in options are `BaseConnection`, `BasicConnectionLight` and `ARCConnection`
         /// Note: There's also a `DummyConnection` available for embedded testing.
         public func use(connectionType: AppConnection.Type) {
-            self.storage.connType.withLockedValue { $0 = connectionType }
+            self.storage.connectionType.withLockedValue { $0 = connectionType }
         }
 
         /// Specify the `StreamGater` a `BaseConnection` consults before accepting a stream.
@@ -142,6 +155,36 @@ extension Application {
         /// The currently configured `StreamPruner`, resolved by `BaseConnection` at init time.
         public var streamPruner: StreamPruner {
             self.storage.streamPruner.withLockedValue { $0 }
+        }
+
+        /// Register the `ConnectionGater` that will  be consulted before dialing and accepting
+        /// connections.
+        ///
+        /// - Note: The dial and accept hooks are read at consult time, so they observe this call
+        ///   immediately, the secured hook is only observed by Connections created after this call.
+        public func use(connectionGater: ConnectionGater) {
+            self.storage.connectionGater.withLockedValue { $0 = connectionGater }
+        }
+
+        /// The currently configured `ConnectionGater`.
+        public var connectionGater: ConnectionGater {
+            self.storage.connectionGater.withLockedValue { $0 }
+        }
+
+        /// Specify the `ConnectionPruner` the ConnectionManager consults when evicting connections.
+        ///
+        /// - Note: Applied to a live `BasicInMemoryConnectionManager` immediately; a custom
+        ///   `ConnectionManager` resolves it at its own discretion (typically at init).
+        public func use(connectionPruner: ConnectionPruner) {
+            self.storage.connectionPruner.withLockedValue { $0 = connectionPruner }
+            self.storage.manager.withLockedValue { manager in
+                (manager as? BasicInMemoryConnectionManager)?.setConnectionPruner(connectionPruner)
+            }
+        }
+
+        /// The currently configured `ConnectionPruner`.
+        public var connectionPruner: ConnectionPruner {
+            self.storage.connectionPruner.withLockedValue { $0 }
         }
 
         /// The currently configured idle timeout, resolved by `BaseConnection` and `ARCConnection`
@@ -175,7 +218,7 @@ extension Application {
             remoteAddress: Multiaddr,
             expectedRemotePeer: PeerID?
         ) -> AppConnection {
-            self.storage.connType.withLockedValue {
+            self.storage.connectionType.withLockedValue {
                 $0.init(
                     application: application,
                     channel: channel,
@@ -213,7 +256,7 @@ extension Application {
         /// to a different stack (a different address) remain independent.
         func dial(
             to ma: Multiaddr,
-            startDial: () -> EventLoopFuture<AppConnection>
+            startDial: @escaping @Sendable () -> EventLoopFuture<AppConnection>
         ) -> EventLoopFuture<AppConnection> {
             let key = ma.description
             let storage = self.storage
@@ -231,19 +274,84 @@ extension Application {
                     return (promise.futureResult, promise)
                 }
 
-            // Only the reserving caller starts the real dial (outside the lock so `startDial`, which
-            // kicks off async I/O, never runs while the registry is locked).
+            // If the above call returned a promise, we're the reserving caller, so let's consult
+            // the gater and start the real dial if approved (other coalesced dialers will observe
+            // the result either way).
             if let promise {
-                startDial().whenComplete { result in
+                let gater = self.connectionGater
+                let logger = self.application.logger
+                let eventLoop = promise.futureResult.eventLoop
+                // Create the context
+                let context = DialGateContext(remoteAddress: ma, expectedRemotePeer: try? ma.getPeerID())
+                // Ask the connection gater
+                GaterConsultation.consult(on: eventLoop) {
+                    await gater.shouldDial(context)
+                }.flatMap { decision -> EventLoopFuture<AppConnection> in
+                    guard case .deny(let reason) = decision else { return startDial() }
+                    logger.notice("ConnectionGater denied dial to \(ma): \(reason)")
+                    return eventLoop.makeFailedFuture(Errors.dialRejectedByGater(reason: reason))
+                }.whenComplete { result in
                     // Drop the entry as soon as the dial settles. By this point a successful connection
                     // is already registered with the manager, so later cold dials find it via
-                    // `getConnectionsTo` — there's no coverage gap between the two mechanisms.
-                    storage.dialsInFlight.withLockedValue { $0.removeValue(forKey: key) }
+                    // `getConnectionsTo`.
+                    // A denied dial is dropped just the same, so a later dial re-consults the gater.
+                    let _ = storage.dialsInFlight.withLockedValue { $0.removeValue(forKey: key) }
                     promise.completeWith(result)
                 }
             }
 
             return future
+        }
+
+        /// Consults the `ConnectionGater`'s accept hook and, if approved, registers the connection
+        /// with the ConnectionManager.
+        ///
+        /// - Note: Transports should route new connections through here rather
+        ///   than calling `addConnection` directly.
+        ///
+        /// - Inbound connections are gated before registration, so a pending / denied connection
+        ///   doesn't count towards our max connections. This approval / rejectection is bound to
+        ///   ``defaultUpgradeTimeout``, at which point the connection is failed.
+        /// - Outbound connections were already gated pre-dial (with `shouldDial`) and go
+        ///   straight to the manager.
+        func admitConnection(
+            _ conn: AppConnection,
+            gaterTimeout: TimeAmount = Connections.defaultUpgradeTimeout
+        ) -> EventLoopFuture<Void> {
+            // If this is an outbound connection we've already consulted the `shouldDial`
+            // hook, so lets just pass it through to the connection manager.
+            guard conn.direction == .inbound, let remoteAddress = conn.remoteAddr else {
+                return application.connections.addConnection(conn, on: nil)
+            }
+            let application = self.application
+            let gater = self.connectionGater
+            let eventLoop = conn.channel.eventLoop
+            return application.connections.getConnections(on: eventLoop).flatMap { existing in
+                // Prepare our context
+                let context = RawConnectionGateContext(
+                    connectionID: conn.id,
+                    direction: .inbound,
+                    remoteAddress: remoteAddress,
+                    localAddress: conn.localAddr,
+                    currentConnectionCount: existing.count
+                )
+                // Ask the connection gater
+                return GaterConsultation.consult(
+                    on: eventLoop,
+                    failingAfter: gaterTimeout,
+                    orThrow: Errors.connectionRejectedByGater(reason: "connection gater timed out")
+                ) {
+                    await gater.shouldAcceptRawConnection(context)
+                }.flatMap { decision -> EventLoopFuture<Void> in
+                    guard case .deny(let reason) = decision else {
+                        return application.connections.addConnection(conn, on: eventLoop)
+                    }
+                    application.logger.notice(
+                        "ConnectionGater denied inbound connection from \(remoteAddress): \(reason)"
+                    )
+                    return eventLoop.makeFailedFuture(Errors.connectionRejectedByGater(reason: reason))
+                }
+            }
         }
 
         public func getTotalConnectionCount() -> EventLoopFuture<UInt64> {

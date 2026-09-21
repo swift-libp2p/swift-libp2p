@@ -2,7 +2,7 @@
 //
 // This source file is part of the swift-libp2p open source project
 //
-// Copyright (c) 2022-2025 swift-libp2p project authors
+// Copyright (c) 2022-2026 swift-libp2p project authors
 // Licensed under MIT
 //
 // See LICENSE for license information
@@ -21,13 +21,16 @@ import Logging
 /// Handles upgrading the Connection (installing the negotiated security and muxer) and once
 /// upgraded, handles the creation and lifecycle of multiplexed streams.
 ///
-/// BaseConnection leverages the new StreamGater and StreamPruner protocols to offload
-/// the management of Streams into plugable/configurable async actors.
+/// BaseConnection leverages the StreamGater / StreamPruner and ConnectionGater / ConnectionPruner
+/// protocols to offload the management of Streams and Connections into plugable/configurable
+/// async actors.
 ///
-/// To install / register a StreamGater or StreamPruner, use the app...
+/// To install / register a Gater or Pruner, use the app...
 ///  ```
 ///  app.connectionManager.use(streamGater: )
 ///  app.connectionManager.use(streamPruner: )
+///  app.connectionManager.use(connectionGater: )
+///  app.connectionManager.use(connectionPruner: )
 ///  ```
 public final class BaseConnection: AppConnection, @unchecked Sendable {
 
@@ -86,6 +89,9 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
 
     /// Decides which of our streams get evicted.
     private let streamPruner: StreamPruner
+
+    /// We consult the connection gater post security handshake
+    private let connectionGater: ConnectionGater
 
     struct StreamStateEntry {
         let proto: String
@@ -164,14 +170,16 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
             expectedRemotePeer: expectedRemotePeer,
             streamGater: application.connectionManager.streamGater,
             streamPruner: application.connectionManager.streamPruner,
+            connectionGater: application.connectionManager.connectionGater,
             idleTimeout: application.connectionManager.idleTimeout
         )
     }
 
-    /// Designated initializer, taking the gater, pruner and idle timeout explicitly.
+    /// Designated initializer, taking the gaters, pruner and idle timeout explicitly.
     ///
     /// - Note: Designed to be used in Tests so we can explicitly install Gaters and Pruners
-    /// - Note: A `nil` `idleTimeout` resolves to the one configured on `app.connectionManager`
+    /// - Note: A `nil` `connectionGater` or `idleTimeout` resolves to the one configured on
+    ///   `app.connectionManager`
     internal init(
         application: Application,
         channel: Channel,
@@ -180,6 +188,7 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
         expectedRemotePeer: PeerID?,
         streamGater: StreamGater,
         streamPruner: StreamPruner,
+        connectionGater: ConnectionGater? = nil,
         idleTimeout: TimeAmount? = nil
     ) {
         let id = UUID()
@@ -193,6 +202,7 @@ public final class BaseConnection: AppConnection, @unchecked Sendable {
         self.stateMachine = ConnectionStateMachine()
         self.streamGater = streamGater
         self.streamPruner = streamPruner
+        self.connectionGater = connectionGater ?? application.connectionManager.connectionGater
         self.idleTimeout = idleTimeout ?? application.connectionManager.idleTimeout
 
         // Addresses
@@ -314,24 +324,63 @@ extension BaseConnection {
                 try self.stateMachine.secureConnection(remotePeer: remotePeer)
                 self.stats.encryption = security.securityCodec
 
-                let pInfo = PeerInfo(peer: remotePeer, addresses: [])
-                self.application.events.post(.remotePeer(pInfo))
+                guard let remoteAddress = self.remoteAddr else {
+                    self.logger.error("Secured a connection with no remote address; closing")
+                    self.channel.close(mode: .all, promise: nil)
+                    return
+                }
 
-                // Kick off Muxer upgrade
-                self.muxConnection(promise: self.muxedPromise).whenComplete { res in
-                    switch res {
-                    case .failure(let error):
-                        self.logger.error("Failed to negotiate muxer: \(error)")
-                        self.channel.close(mode: .all, promise: nil)
+                // Now that we have a remote peer, run the connection by the Gater one last time.
+                //
+                // Deferring the muxer upgrade while waiting for a response from the gater is okay
+                // because the security gate handler is still in the pipeline buffering bytes.
+                let context = SecuredConnectionGateContext(
+                    connectionID: self.id,
+                    direction: self.direction,
+                    remoteAddress: remoteAddress,
+                    remotePeer: remotePeer,
+                    securityCodec: security.securityCodec
+                )
+                let gater = self.connectionGater
+                let ask: (@Sendable () async -> ConnectionGateDecision) = {
+                    await gater.shouldAllowSecuredConnection(context)
+                }
+                // Ask the connection gater
+                self.consultGater(ask) { [weak self] decision in
+                    guard let self = self else { return }
+                    guard case .deny(let reason) = decision else {
+                        // The connection was approved, continue the upgrade
+                        self.finishSecuring(remotePeer: remotePeer)
                         return
-                    case .success:
-                        self.logger.trace("Attempting to negotiate and install Muxer")
                     }
+                    self.logger.notice(
+                        "ConnectionGater denied secured connection to \(remotePeer) (\(reason)); closing"
+                    )
+                    self.channel.close(mode: .all, promise: nil)
                 }
             } catch {
                 self.logger.error("Failed to secure channel: \(error)")
                 self.channel.close(mode: .all, promise: nil)
                 return
+            }
+        }
+    }
+
+    /// The secured connection has been approved, announce the remote peer
+    /// and continue with the muxer upgrade.
+    private func finishSecuring(remotePeer: PeerID) {
+        let pInfo = PeerInfo(peer: remotePeer, addresses: [])
+        self.application.events.post(.remotePeer(pInfo))
+
+        // Kick off Muxer upgrade
+        self.muxConnection(promise: self.muxedPromise).whenComplete { res in
+            switch res {
+            case .failure(let error):
+                self.logger.error("Failed to negotiate muxer: \(error)")
+                self.channel.close(mode: .all, promise: nil)
+                return
+            case .success:
+                self.logger.trace("Attempting to negotiate and install Muxer")
             }
         }
     }
@@ -1097,11 +1146,7 @@ extension BaseConnection {
         _ ask: @escaping @Sendable () async -> Decision,
         then apply: @escaping @Sendable (Decision) -> Void
     ) {
-        let eventLoop = self.eventLoop
-        Task {
-            let decision = await ask()
-            eventLoop.execute { apply(decision) }
-        }
+        GaterConsultation.consult(on: self.eventLoop, ask).whenSuccess(apply)
     }
 
     /// Narrows our supported protocols down to what the gater approved.
@@ -1415,6 +1460,13 @@ extension BaseConnection {
     internal func markSecuredForTesting(remotePeer: PeerID) throws {
         try self.stateMachine.secureConnection(remotePeer: remotePeer)
         try self.stateMachine.muxConnection()
+    }
+
+    /// Hands `onSecured` a security result directly, without running a real handshake, so a test
+    /// can exercise the secured connection gate.
+    /// - Note: `internal` only so tests can stand a connection up directly.
+    internal func deliverSecurityResultForTesting(_ result: SecuredResult) {
+        self.onSecured(.success(result))
     }
 }
 

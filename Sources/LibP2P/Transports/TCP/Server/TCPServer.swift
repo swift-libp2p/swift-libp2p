@@ -2,7 +2,7 @@
 //
 // This source file is part of the swift-libp2p open source project
 //
-// Copyright (c) 2022-2025 swift-libp2p project authors
+// Copyright (c) 2022-2026 swift-libp2p project authors
 // Licensed under MIT
 //
 // See LICENSE for license information
@@ -403,8 +403,10 @@ private final class TCPServerConnection: Sendable {
                     expectedRemotePeer: nil
                 )
 
-                // Add the new inbound connection to our ConnectionManager
-                return application.connections.addConnection(conn, on: nil).flatMap {
+                // Consult the ConnectionGater and add the new inbound connection to our
+                // ConnectionManager. A rejection fails this future and the channel closes
+                // before any handshake bytes move.
+                return application.connectionManager.admitConnection(conn).flatMap {
                     // `QuiesceOnShutdownHandler` sits at the head so that when the
                     // server begins quiescing it closes this accepted channel — see
                     // its doc comment. `BackPressureHandler` follows it.
