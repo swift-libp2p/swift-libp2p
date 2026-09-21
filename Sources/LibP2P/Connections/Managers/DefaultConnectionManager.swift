@@ -78,11 +78,18 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     /// This Logger
     private var logger: Logger
 
-    // These params are used for Connection Pruning under heavy loads
-    /// The minimum Idle connection time
-    private let minExpiration: Int = 3
-    /// The maximum Idle connection time
-    private let maxExpiration: Int = 30
+    /// Decides which of our managed Connections get evicted during a prune.
+    ///
+    /// Resolved from `app.connectionManager` at init time; swappable while live via
+    /// ``setConnectionPruner(_:)``.
+    private var connectionPruner: ConnectionPruner
+
+    /// If the ConnectionPruner requests a sweep interval, this task is used to initiate and track the
+    /// sweep.
+    ///
+    /// Its body just joins the debounced prune, so sweep-triggered and
+    /// event-triggered prunes share one chain and one cancellation point.
+    private var pruneSweepTask: RepeatedTask? = nil
 
     /// Idle Connection Timeout
     private var idleTimeout: TimeAmount = .seconds(3)
@@ -148,6 +155,7 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         self.maxPeers = maxPeers
         self.buffer = Int(Double(maxPeers) * 0.2)
         self.upgradeTimeout = upgradeTimeout
+        self.connectionPruner = application.connectionManager.connectionPruner
 
         // Every subscription captures `self` weakly to avoid retain cycles
         self.eventBus.on(
@@ -165,6 +173,10 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         }
         self.eventBusOwner = ObjectIdentifier(self)
         self.logger.trace("Initialized \(ASCEnabled ? "with" : "without") Automatic Stream Counting")
+
+        // Start the sweep timer if the pruner wants one (the default pruner doesn't, keeping
+        // pruning purely event-driven).
+        self.eventLoop.execute { self.armPruneSweep() }
     }
 
     deinit {
@@ -188,6 +200,15 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         self.eventLoop.execute {
             self.idleTimeout = timeout
             self.logger.debug("Idle Timeout updated to \(timeout.asSeconds) seconds")
+        }
+    }
+
+    /// Swaps the connection pruner and restarts the sweep timer to match its `sweepInterval`.
+    func setConnectionPruner(_ pruner: ConnectionPruner) {
+        self.eventLoop.execute {
+            self.connectionPruner = pruner
+            self.armPruneSweep()
+            self.logger.debug("Connection Pruner updated")
         }
     }
 
@@ -401,25 +422,79 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
         }
     }
 
-    private func pruneOldConnections() -> EventLoopFuture<Void> {
+    /// Asks the registered `ConnectionPruner` for a list of connections to prune, then prunes them.
+    ///
+    /// - Note: We create a snapshot of the connection, pass it to the pruner's actor for processing,
+    ///   then apply the results / prune actions back on our eventloop, the same shape as
+    ///   `BaseConnection`'s stream pruner.
+    private func getPrunableConnections() -> EventLoopFuture<Void> {
         eventLoop.flatSubmit {
-            let factor = max(
-                0.0,
-                min(1.0, 1.0 - (Double(self.connections.count + self.buffer) / Double(self.maxPeers)))
+            guard !self.connections.isEmpty else { return self.eventLoop.makeSucceededVoidFuture() }
+
+            let now = Date()
+            let context = ConnectionPruneContext(
+                maxConnections: self.maxPeers,
+                currentConnectionCount: self.connections.count,
+                inboundBuffer: self.buffer
             )
-            let expiration = (factor * Double(self.maxExpiration - self.minExpiration)) + Double(self.minExpiration)
-            let expirationDate = Date().addingTimeInterval(-expiration)
-            let bcl: [AppConnection] = self.connections.values.compactMap { $0 as? AppConnection }.filter {
-                $0.lastActivity() < expirationDate
+            let snapshots = self.connections.values.map { conn in
+                ConnectionLivenessSnapshot(
+                    id: conn.id,
+                    remotePeer: conn.remotePeer,
+                    remoteAddress: conn.remoteAddr,
+                    direction: conn.direction,
+                    status: conn.status,
+                    openedAt: conn.timeline[.open] ?? conn.timeline[.opening] ?? now,
+                    upgradedAt: conn.timeline[.upgraded],
+                    streamCount: self.connectionStreamCount[conn.id.uuidString] ?? 0,
+                    lastActivityAt: (conn as? AppConnection)?.lastActivity()
+                )
             }
-            guard !bcl.isEmpty else { return self.eventLoop.makeSucceededVoidFuture() }
-            self.logger.debug("Pruning \(bcl.count) Connections that are older than \(Int(expiration)) seconds")
-            return bcl.map { conn in
-                self.closeAndUnregister(id: conn.id)
-            }.flatten(on: self.eventLoop).always { _ in
-                if bcl.count > 1 { self.dumpConnectionManagerStats() }
+
+            let pruner = self.connectionPruner
+            return GaterConsultation.consult(on: self.eventLoop) {
+                await pruner.prune(snapshots, context: context, now: now)
+            }.flatMap { actions in
+                self.pruneConnections(actions)
             }
         }
+    }
+
+    /// Prunes connections based on the results of the ConnectionPruner
+    /// - Note: Must be called on `self.eventLoop`.
+    private func pruneConnections(_ actions: [UUID: ConnectionPruneAction]) -> EventLoopFuture<Void> {
+        let survivors = actions.filter { self.connections[$0.key.uuidString] != nil }
+        guard !survivors.isEmpty else { return self.eventLoop.makeSucceededVoidFuture() }
+        self.logger.debug("Pruning \(survivors.count) Connections")
+        return survivors.map { id, action in
+            switch action {
+            case .unregister:
+                return self.removeConnectionFromList(id: id)
+            case .close:
+                return self.closeAndUnregister(id: id)
+            }
+        }.flatten(on: self.eventLoop).always { _ in
+            if survivors.count > 1 { self.dumpConnectionManagerStats() }
+        }
+    }
+
+    /// Arms the interval based prune sweep to `sweepInterval`.
+    /// - Note: A `nil` interval leaves pruning purely event-driven.
+    /// - Note: Must be called on `self.eventLoop`.
+    private func armPruneSweep() {
+        self.pruneSweepTask?.cancel()
+        self.pruneSweepTask = nil
+        guard let interval = self.connectionPruner.sweepInterval else { return }
+        self.pruneSweepTask = self.eventLoop.scheduleRepeatedTask(initialDelay: interval, delay: interval) {
+            [weak self] _ in
+            guard let self = self else { return }
+            let _ = self.debouncedPrune()
+        }
+    }
+
+    /// Whether the interval based prune sweep is currently armed.
+    internal func hasConnectionPruneSweepScheduled() -> EventLoopFuture<Bool> {
+        self.eventLoop.submit { self.pruneSweepTask != nil }
     }
 
     /// Closes a Connection and unregisters it.
@@ -486,6 +561,8 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     /// - Note: Must be called on `self.eventLoop`.
     private func cancelAllScheduledTasks() {
         self.cancelPruneTask()
+        self.pruneSweepTask?.cancel()
+        self.pruneSweepTask = nil
         for task in self.upgradeTimeouts.values { task.cancel() }
         self.upgradeTimeouts = [:]
         for task in self.connectionTimeouts.values { task.cancel() }
@@ -546,7 +623,7 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
                     return
                 }
                 self.pruneClosedConnections().flatMap {
-                    self.pruneOldConnections()
+                    self.getPrunableConnections()
                 }.flatMap {
                     self.pruneConnectionHistory(maxEntries: self.maxConnectionHistoryCount)
                 }.whenComplete { result in
