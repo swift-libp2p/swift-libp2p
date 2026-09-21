@@ -106,7 +106,7 @@ extension LibP2PTests {
                 #expect(startDialCount.withLockedValue { $0 } == 2)
             }
         }
-        
+
         @Test("Outbound connections skip the accept hook (they were gated pre-dial)")
         func testOutboundConnectionSkipsTheAcceptHook() async throws {
             try await withApp { app in

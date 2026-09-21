@@ -58,7 +58,7 @@ enum GaterConsultation {
         // Return the future result.
         return promise.futureResult
     }
-    
+
     private static func shouldCompletePromise(completed: NIOLockedValueBox<Bool>) -> Bool {
         !completed.withLockedValue({
             let original = $0
