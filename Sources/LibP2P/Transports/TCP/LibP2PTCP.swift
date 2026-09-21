@@ -99,10 +99,14 @@ public struct TCP: Transport, Sendable {
             /// The connection installs the necessary channel handlers here
             self.application.logger.trace("Asking BasicConnectionLight to instantiate new outbound channel")
 
-            /// Add the connection to our ConnectionManager
-            return self.application.connections.addConnection(conn, on: nil).flatMap {
-                /// install the backpressure handler
-                channel.pipeline.addHandler(BackPressureHandler(), position: .first).flatMap {
+            /// Add the connection to our ConnectionManager (outbound dials were already gated
+            /// pre-dial, so admission goes straight to the manager)
+            return self.application.connectionManager.admitConnection(conn).flatMap {
+                // Install the quiesce and backpressure handlers
+                channel.pipeline.addHandlers(
+                    [QuiesceOnShutdownHandler(), BackPressureHandler()],
+                    position: .first
+                ).flatMap {
                     conn.initializeChannel().map {
                         //self.onNewOutboundConnection(conn, address).map { _ -> Connection in
                         conn
