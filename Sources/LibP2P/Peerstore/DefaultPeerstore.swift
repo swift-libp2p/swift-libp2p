@@ -112,7 +112,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
         (on ?? self.eventLoop).makeSucceededVoidFuture()
     }
 
-    private func succeed<T>(_ value: T, on: EventLoop?) -> EventLoopFuture<T> {
+    private func succeed<T: Sendable>(_ value: T, on: EventLoop?) -> EventLoopFuture<T> {
         (on ?? self.eventLoop).makeSucceededFuture(value)
     }
 
@@ -121,7 +121,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
     }
 
     /// Runs `body` against the locked state and turns its `Result` into a future.
-    private func withStore<T>(
+    private func withStore<T: Sendable>(
         on: EventLoop?,
         _ body: (inout State) -> Result<T, Error>
     ) -> EventLoopFuture<T> {
@@ -489,7 +489,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
 
     /// Removes a Key (PeerID) from our KeyBook
     func remove(key: PeerID, on: EventLoop? = nil) -> EventLoopFuture<Void> {
-        self.state.withLockedValue { $0.store.removeValue(forKey: key) }
+        let _ = self.state.withLockedValue { $0.store.removeValue(forKey: key) }
         return self.succeed(on: on)
     }
 
