@@ -71,8 +71,8 @@ extension Application {
 
         final class Storage: Sendable {
             let manager: NIOLockedValueBox<ConnectionManager?>
-            // Allow the user to specify the Connection class to use (default to ARCConnection)
-            let connType: NIOLockedValueBox<AppConnection.Type>
+            /// Allows the user to specify the Connection class to use (default to BaseConnection)
+            let connectionType: NIOLockedValueBox<AppConnection.Type>
             /// Tracks cold dials that are currently in flight, keyed by the resolved dial MultiAddress
             /// (e.g. `/ip4/…/tcp/…/p2p/…`). Because the multiaddress encapsulates both the target
             /// peer and the network stack, concurrent dials to the same ma coalesce onto a single pending
@@ -89,7 +89,7 @@ extension Application {
             let idleTimeout: NIOLockedValueBox<TimeAmount>
             init() {
                 self.manager = .init(nil)
-                self.connType = .init(BaseConnection.self)
+                self.connectionType = .init(BaseConnection.self)
                 self.dialsInFlight = .init([:])
                 self.streamGater = .init(AllowAllStreamGater())
                 self.streamPruner = .init(IdleTimeoutStreamPruner())
@@ -117,7 +117,7 @@ extension Application {
         /// Note: The built in options are `BaseConnection`, `BasicConnectionLight` and `ARCConnection`
         /// Note: There's also a `DummyConnection` available for embedded testing.
         public func use(connectionType: AppConnection.Type) {
-            self.storage.connType.withLockedValue { $0 = connectionType }
+            self.storage.connectionType.withLockedValue { $0 = connectionType }
         }
 
         /// Specify the `StreamGater` a `BaseConnection` consults before accepting a stream.
