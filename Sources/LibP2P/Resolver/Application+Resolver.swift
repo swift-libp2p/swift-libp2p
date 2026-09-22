@@ -16,7 +16,7 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import LibP2PCore
+public import LibP2PCore
 import NIOConcurrencyHelpers
 
 public protocol AddressResolver: Sendable {

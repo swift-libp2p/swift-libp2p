@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2PCore
+public import LibP2PCore
 import NIO
-import VarInt
+public import VarInt
 
 /// Whether a length prefix is encoded as an unsigned varint or as a zig-zag encoded signed varint.
 public enum VarIntPrefixSignedness: Sendable, Hashable {

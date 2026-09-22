@@ -18,7 +18,7 @@
 
 public import LibP2P
 import NIOConcurrencyHelpers
-import NIOCore
+public import NIOCore
 
 public struct TestingRequest: Sendable {
     public var ma: Multiaddr

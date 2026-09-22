@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
-import LibP2PCore
-import Logging
+public import Foundation
+public import LibP2PCore
+public import Logging
 
 /// Esentially a BasicConnectionLight but adds support for Automatic Reference (Stream) Counting and closes / deinits itself when the connection is idle and empty for a given amount of time.
 public class ARCConnection: AppConnection, @unchecked Sendable {

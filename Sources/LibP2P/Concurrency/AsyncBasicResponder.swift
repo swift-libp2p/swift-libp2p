@@ -16,7 +16,7 @@
 //  Modified by Brandon Toms on 11/10/25.
 //
 
-import NIOCore
+public import NIOCore
 
 /// A basic, async closure-based `Responder`.
 public struct AsyncBasicResponder: AsyncResponder {

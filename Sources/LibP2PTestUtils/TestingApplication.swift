@@ -16,7 +16,7 @@
 //  Modified by LibP2P on 1/29/26.
 //
 
-import LibP2PCrypto
+public import LibP2PCrypto
 
 @testable public import LibP2P
 

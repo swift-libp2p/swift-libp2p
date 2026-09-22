@@ -20,7 +20,7 @@ import Foundation
 import Metrics
 import Multiaddr
 import NIO
-@preconcurrency import RoutingKit
+@preconcurrency public import RoutingKit
 
 /// LibP2P's main `Responder` type. Combines configured channel handlers + middleware + router to create a responder.
 internal struct DefaultResponder: Responder {

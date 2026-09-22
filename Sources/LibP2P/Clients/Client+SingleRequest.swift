@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
+public import Foundation
 import NIOConcurrencyHelpers
-import NIOCore
+public import NIOCore
 import VarInt
 
 extension Application {

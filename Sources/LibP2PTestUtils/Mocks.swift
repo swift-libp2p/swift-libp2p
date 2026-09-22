@@ -15,9 +15,9 @@
 public import LibP2P
 public import LibP2PCore
 public import NIOConcurrencyHelpers
-import NIOCore
+public import NIOCore
 import NIOEmbedded
-import PeerID
+public import PeerID
 
 // MARK: - MockStream
 

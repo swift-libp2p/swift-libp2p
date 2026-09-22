@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2PCrypto
+public import LibP2PCrypto
 
 internal class DummyConnection: Connection, @unchecked Sendable {
     public var channel: Channel

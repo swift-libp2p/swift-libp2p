@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2P
+public import LibP2P
 
 extension Application.SecurityUpgraders.Provider {
     public static var mockSecurity: Self {

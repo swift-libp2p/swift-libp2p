@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
-import LibP2P
+public import LibP2P
 import NIOConcurrencyHelpers
 import NIOCore
 import RoutingKit

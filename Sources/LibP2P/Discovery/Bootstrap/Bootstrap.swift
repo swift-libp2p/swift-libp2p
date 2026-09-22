@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2PCore
+public import LibP2PCore
 
 public class BootstrapPeerDiscovery: Discovery, LifecycleHandler, @unchecked Sendable {
     public static let key: String = "bootstrap"

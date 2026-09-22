@@ -17,11 +17,11 @@
 //
 
 import Foundation
-import LibP2PCore
-import Logging
-import Multiaddr
+public import LibP2PCore
+public import Logging
+public import Multiaddr
 import NIOConcurrencyHelpers
-import NIOCore
+public import NIOCore
 public import RoutingKit
 
 public final class Request: CustomStringConvertible, Sendable {

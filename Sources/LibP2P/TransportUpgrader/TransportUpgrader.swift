@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import NIOConcurrencyHelpers
-import NIOCore
+public import NIOCore
 
 // `TransportUpgrader` now lives in LibP2PCore (re-exported here), so upgrader modules can
 // depend on core alone.

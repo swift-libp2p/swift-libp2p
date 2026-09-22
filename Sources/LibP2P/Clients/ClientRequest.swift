@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Multiaddr
+public import Multiaddr
 
 public struct ClientRequest {
     public var addr: Multiaddr

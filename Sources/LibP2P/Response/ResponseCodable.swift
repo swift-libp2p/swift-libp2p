@@ -16,7 +16,7 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import NIO
+public import NIO
 
 /// Can convert `self` to a `RawResponse`.
 ///

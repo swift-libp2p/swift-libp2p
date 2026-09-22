@@ -15,8 +15,8 @@
 // Portions of this file are derived from the SwiftNIO HTTP/2 multiplexer (Apache License v2.0),
 // adapted for the swift-libp2p mock muxer.
 
-import LibP2P
-import NIOCore
+public import LibP2P
+public import NIOCore
 
 /// A channel handler that spawns a child `Channel` per mux stream (mplex-shaped framing). Installed by
 /// `MockMuxUpgrader`, it fulfils the connection's `muxedPromise` with itself and thereafter demultiplexes

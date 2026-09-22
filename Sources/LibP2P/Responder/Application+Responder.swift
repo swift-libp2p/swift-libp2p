@@ -16,9 +16,9 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import LibP2PCore
+public import LibP2PCore
 import NIOConcurrencyHelpers
-import NIOCore
+public import NIOCore
 
 public protocol Responder: Sendable {
     func respond(to request: Request) -> EventLoopFuture<RawResponse>

@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import NIO
+public import NIO
 
 extension Application.ChildChannelHandlers.Provider {
 

@@ -16,9 +16,9 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import Logging
-import NIOCore
-import NIOPosix
+public import Logging
+public import NIOCore
+public import NIOPosix
 import _NIOFileSystem
 
 #if os(Linux)

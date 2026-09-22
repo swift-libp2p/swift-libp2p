@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2P
+public import LibP2P
 
 /// Encodes a `MockMuxFrame` onto the wire as `uVarInt(header) || uVarInt(length) || payload`, where
 /// `header = streamID << 3 | flag`.

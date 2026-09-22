@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
-import LibP2PCore
-import Logging
+public import Foundation
+public import LibP2PCore
+public import Logging
 
 /// BaseConnection
 ///

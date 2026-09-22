@@ -16,9 +16,9 @@
 //  Modified by swift-libp2p
 //
 
-import Foundation
+public import Foundation
 import NIOConcurrencyHelpers
-import NIOCore
+public import NIOCore
 
 /// Simple in-memory sessions implementation.
 public struct MemorySessions: SessionDriver, Sendable {

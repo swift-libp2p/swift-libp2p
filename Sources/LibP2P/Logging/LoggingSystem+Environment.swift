@@ -16,8 +16,8 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import ConsoleKit
-import Logging
+public import ConsoleKit
+public import Logging
 
 extension LoggingSystem {
     @preconcurrency

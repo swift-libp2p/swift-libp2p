@@ -16,7 +16,7 @@
 //  Modified by Brandon Toms on 11/10/25.
 //
 
-import NIOCore
+public import NIOCore
 
 /// `AsyncMiddleware` is placed between the server and your router. It is capable of
 /// mutating both incoming requests and outgoing responses. `AsyncMiddleware` can choose

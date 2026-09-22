@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import NIO
+public import NIO
 import NIOConcurrencyHelpers
 
 final class RequestEncoderChannelHandler: ChannelInboundHandler, RemovableChannelHandler {

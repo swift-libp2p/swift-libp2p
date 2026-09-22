@@ -16,10 +16,10 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import ConsoleKit
+public import ConsoleKit
 import NIOConcurrencyHelpers
-import NIOCore
-import NIOPosix
+public import NIOCore
+public import NIOPosix
 
 extension Application {
 

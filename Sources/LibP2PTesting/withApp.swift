@@ -16,7 +16,7 @@
 //  Modified by LibP2P on 1/29/26.
 //
 
-import LibP2P
+public import LibP2P
 
 /// Perform a test while handling lifecycle of the application.
 /// Feel free to create a custom function like this, tailored to your project.

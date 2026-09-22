@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
-import NIOCore
+public import NIOCore
 
 /// A passive, connection-owned buffer installed at the pipeline tail during the security→muxer upgrade transition.
 internal final class SecurityUpgradeGate: ChannelInboundHandler, RemovableChannelHandler {

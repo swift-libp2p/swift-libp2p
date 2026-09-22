@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2PCore
+public import LibP2PCore
 import NIOConcurrencyHelpers
 
 //public struct TopologyRegistration {

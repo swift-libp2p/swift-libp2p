@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Multiaddr
+public import Multiaddr
 import Multicodec
-import NIOPosix
+public import NIOPosix
 
 // Install our TCP Tranport on the LibP2P Application
 public struct TCP: Transport, Sendable {

@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import NIO
+public import NIO
 
 final class ResponderChannelHandler: ChannelInboundHandler, RemovableChannelHandler {
     typealias InboundIn = Request

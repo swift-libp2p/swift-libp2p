@@ -16,8 +16,8 @@
 //  Modified by Brandon Toms on 11/10/25.
 //
 
-import NIOCore
-import NIOHTTP1
+public import NIOCore
+public import NIOHTTP1
 
 /// Can convert `self` to a `Response`.
 ///

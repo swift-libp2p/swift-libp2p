@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2P
+public import LibP2P
 
 // Version 2.0.0 (PeerID Exchange)
 internal final class OutboundMockSecurityEncryptHandler: ChannelOutboundHandler, Sendable {

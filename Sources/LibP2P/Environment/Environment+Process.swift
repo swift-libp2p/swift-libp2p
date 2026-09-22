@@ -18,7 +18,7 @@
 
 import COperatingSystem
 import ConsoleKit
-import Foundation
+public import Foundation
 
 extension Environment {
     /// The process information of an environment. Wraps `ProcessInto.processInfo`.

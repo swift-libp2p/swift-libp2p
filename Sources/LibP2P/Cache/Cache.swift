@@ -16,7 +16,7 @@
 //  Modified by swift-libp2p
 //
 
-import NIOCore
+public import NIOCore
 
 /// Codable key-value pair cache.
 public protocol Cache {

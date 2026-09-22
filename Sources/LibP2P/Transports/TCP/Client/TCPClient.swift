@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Logging
-import NIO
-import NIOConcurrencyHelpers
+public import Logging
+public import NIO
+public import NIOConcurrencyHelpers
 
 public struct TCPClient: Client, @unchecked Sendable {
     public static let key: String = "TCPClient"

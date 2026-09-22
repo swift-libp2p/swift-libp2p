@@ -16,17 +16,17 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-@_exported import AsyncKit
-@_exported import ConsoleKit
-@_exported import Foundation
-@_exported import LibP2PCore
+@_exported public import AsyncKit
+@_exported public import ConsoleKit
+@_exported public import Foundation
+@_exported public import LibP2PCore
 public import LibP2PCrypto
-@_exported import Logging
-@_exported import Multiaddr
-@_exported import NIO
-@_exported import NIOConcurrencyHelpers
-@_exported import PeerID
-@_exported import SwiftProtobuf
+@_exported public import Logging
+@_exported public import Multiaddr
+@_exported public import NIO
+@_exported public import NIOConcurrencyHelpers
+@_exported public import PeerID
+@_exported public import SwiftProtobuf
 
 /// Core type representing a Libp2p application.
 /// Storage / Lifecycle Abstraction Idea

@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2PCore
+public import LibP2PCore
 
 extension Application {
     public var clients: Clients {

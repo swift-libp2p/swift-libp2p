@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
-import LibP2PCore
+public import LibP2PCore
 import Logging
 import NIOConcurrencyHelpers
 import NIOCore

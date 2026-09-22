@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2PCore
-import Multiaddr
-import NIOCore
+public import LibP2PCore
+public import Multiaddr
+public import NIOCore
 
 public protocol Client: Sendable {
     //static var transport:Transport { get }

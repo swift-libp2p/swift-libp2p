@@ -12,10 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2PCore
-import Multiaddr
+public import LibP2PCore
+public import Multiaddr
 import NIOConcurrencyHelpers
-import NIOCore
+public import NIOCore
 
 extension Application {
     public var connectionManager: Connections {
