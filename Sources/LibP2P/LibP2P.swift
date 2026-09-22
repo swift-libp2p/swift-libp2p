@@ -142,13 +142,6 @@ public final class Application: Sendable {
 
     public enum EventLoopGroupProvider: Sendable {
         case shared(EventLoopGroup)
-        @available(
-            *,
-            deprecated,
-            renamed: "singleton",
-            message: "Use '.singleton' for a shared 'EventLoopGroup', for better performance"
-        )
-        case createNew
 
         public static var singleton: EventLoopGroupProvider {
             .shared(MultiThreadedEventLoopGroup.singleton)
@@ -221,33 +214,6 @@ public final class Application: Sendable {
         return app
     }
 
-    @available(
-        *,
-        deprecated,
-        message: "Migrate to using the Application.make(_: peerID:KeyPairFile) initializer instead"
-    )
-    public static func make(
-        _ environment: Environment = .development,
-        peerID: PeerID = try! PeerID(.Ed25519),
-        maxConcurrentConnections: Int = 50,
-        enableAutomaticStreamCounting: Bool = false,
-        eventLoopGroupProvider: EventLoopGroupProvider = .singleton,
-        logger: Logger? = nil
-    ) async throws -> Application {
-        let app = Application(
-            environment,
-            peerID: peerID,
-            maxConcurrentConnections: maxConcurrentConnections,
-            enableAutomaticStreamCounting: enableAutomaticStreamCounting,
-            eventLoopGroupProvider: eventLoopGroupProvider,
-            async: true,
-            logger: logger
-        )
-        await app.asyncCommands.use(app.servers.asyncCommand, as: "serve", isDefault: true)
-        await DotEnvFile.load(for: app.environment, fileio: app.fileio, logger: app.logger)
-        return app
-    }
-
     private init(
         _ environment: Environment = .development,
         peerID: PeerID = try! PeerID(.Ed25519),
@@ -265,8 +231,6 @@ public final class Application: Sendable {
         switch eventLoopGroupProvider {
         case .shared(let group):
             self.eventLoopGroup = group
-        case .createNew:
-            self.eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
         }
         self._locks = .init(.init())
         self._didShutdown = .init(false)
@@ -494,17 +458,7 @@ public final class Application: Sendable {
         self.logger.trace("Clearing Application storage")
         self.storage.clear()
 
-        switch self.eventLoopGroupProvider {
-        case .shared:
-            self.logger.trace("Running on shared EventLoopGroup. Not shutting down EventLoopGroup.")
-        case .createNew:
-            self.logger.trace("Shutting down EventLoopGroup")
-            do {
-                try self.eventLoopGroup.syncShutdownGracefully()
-            } catch {
-                self.logger.warning("Shutting down EventLoopGroup failed: \(error)")
-            }
-        }
+        self.logger.trace("Running on shared EventLoopGroup. Not shutting down EventLoopGroup.")
 
         self.logger.trace("Clearing Application storage")
         self.storage.clear()
@@ -537,17 +491,7 @@ public final class Application: Sendable {
         self.logger.trace("Clearing Application storage")
         self.storage.clear()
 
-        switch self.eventLoopGroupProvider {
-        case .shared:
-            self.logger.trace("Running on shared EventLoopGroup. Not shutting down EventLoopGroup.")
-        case .createNew:
-            self.logger.trace("Shutting down EventLoopGroup")
-            do {
-                try await self.eventLoopGroup.shutdownGracefully()
-            } catch {
-                self.logger.warning("Shutting down EventLoopGroup failed: \(error)")
-            }
-        }
+        self.logger.trace("Running on shared EventLoopGroup. Not shutting down EventLoopGroup.")
 
         self._didShutdown.withLockedValue { $0 = true }
         self.logger.trace("Application shutdown complete")
