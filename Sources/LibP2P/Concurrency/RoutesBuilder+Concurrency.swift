@@ -18,7 +18,7 @@
 
 import NIOCore
 import NIOHTTP1
-import RoutingKit
+public import RoutingKit
 
 extension RoutesBuilder {
     @discardableResult

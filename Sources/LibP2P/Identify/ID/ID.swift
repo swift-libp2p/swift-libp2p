@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import CoreFoundation
+import CryptoSwift
 import LibP2PCore
 import LibP2PCrypto
 import NIOConcurrencyHelpers
@@ -214,7 +215,7 @@ extension Identify {
             /// Publish the identifiedPeer event
             self.application?.events.post(
                 .identifiedPeer(
-                    IdentifiedPeer(peer: identifiedPeer, identity: try remoteIdentify.serializedData().byteArray)
+                    IdentifiedPeer(peer: identifiedPeer, identity: try Array(remoteIdentify.serializedData()))
                 )
             )
 
@@ -247,8 +248,8 @@ extension Identify {
         }
         do {
             let signedEnvelope = try SealedEnvelope(
-                marshaledEnvelope: remoteIdentify.signedPeerRecord.byteArray,
-                verifiedWithPublicKey: remoteIdentify.publicKey.byteArray
+                marshaledEnvelope: Array(remoteIdentify.signedPeerRecord),
+                verifiedWithPublicKey: Array(remoteIdentify.publicKey)
             )
             let peerRecord = try PeerRecord(
                 marshaledData: Data(signedEnvelope.rawPayload),
@@ -357,7 +358,7 @@ extension Identify {
         // Marshal the Identify message and prepare for sending..
         let marshalledPeerRecord = try id.serializedData()
 
-        return marshalledPeerRecord.byteArray
+        return Array(marshalledPeerRecord)
     }
 }
 
@@ -420,7 +421,7 @@ extension Identify {
             tasks.append(
                 application.peers.add(
                     metaKey: .agentVersion,
-                    data: agentVersion.byteArray,
+                    data: Array(agentVersion),
                     toPeer: identifiedPeer,
                     on: connection.channel.eventLoop
                 )
@@ -432,7 +433,7 @@ extension Identify {
             tasks.append(
                 application.peers.add(
                     metaKey: .protocolVersion,
-                    data: protocolVersion.byteArray,
+                    data: Array(protocolVersion),
                     toPeer: identifiedPeer,
                     on: connection.channel.eventLoop
                 )
@@ -447,7 +448,7 @@ extension Identify {
             tasks.append(
                 application.peers.add(
                     metaKey: .observedAddress,
-                    data: ma.byteArray,
+                    data: Array(ma),
                     toPeer: identifiedPeer,
                     on: connection.channel.eventLoop
                 )

@@ -20,7 +20,7 @@
 @_exported import ConsoleKit
 @_exported import Foundation
 @_exported import LibP2PCore
-import LibP2PCrypto
+public import LibP2PCrypto
 @_exported import Logging
 @_exported import Multiaddr
 @_exported import NIO

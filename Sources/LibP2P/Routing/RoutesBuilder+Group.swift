@@ -16,7 +16,7 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import RoutingKit
+public import RoutingKit
 
 extension RoutesBuilder {
     // MARK: Path

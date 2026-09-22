@@ -22,7 +22,7 @@ import Logging
 import Multiaddr
 import NIOConcurrencyHelpers
 import NIOCore
-import RoutingKit
+public import RoutingKit
 
 public final class Request: CustomStringConvertible, Sendable {
     public let application: Application

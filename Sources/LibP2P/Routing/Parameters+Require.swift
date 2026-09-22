@@ -16,7 +16,7 @@
 //  Modified by swift-libp2p in 2026
 //
 
-import RoutingKit
+public import RoutingKit
 
 extension Parameters {
     /// Grabs the named parameter from the parameter bag.

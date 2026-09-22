@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2PCrypto
+public import LibP2PCrypto
 import Logging
 import NIOCore
 import NIOPosix
