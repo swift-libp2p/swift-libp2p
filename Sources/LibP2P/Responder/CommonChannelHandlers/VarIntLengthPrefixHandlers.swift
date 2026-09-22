@@ -215,9 +215,6 @@ extension Application.ChildChannelHandlers.Provider {
     }
 }
 
-@available(*, deprecated, renamed: "VarIntFrameDecoder", message: "renamed to VarIntFrameDecoder")
-typealias VarintFrameDecoder = VarIntFrameDecoder
-
 /// Splits an inbound byte stream into frames, each preceded by a VarInt length prefix.
 ///
 /// The decoder never buffers an unbounded amount of data on behalf of a peer:
@@ -350,9 +347,6 @@ public class VarIntFrameDecoder: ByteToMessageDecoder {
         return Int(prefix.announced)
     }
 }
-
-@available(*, deprecated, renamed: "VarIntLengthFieldPrepender", message: "renamed to VarIntLengthFieldPrepender")
-typealias VarintLengthFieldPrepender = VarIntLengthFieldPrepender
 
 /// Prepends a VarInt length prefix to each outbound frame.
 ///
