@@ -110,9 +110,9 @@ let package = Package(
 var swiftSettings: [SwiftSetting] {
     [
         //.enableUpcomingFeature("ExistentialAny"),
-        //.enableUpcomingFeature("InternalImportsByDefault"),
-        //.enableUpcomingFeature("MemberImportVisibility"),
-        //.enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+        .enableUpcomingFeature("InternalImportsByDefault"),
+        .enableUpcomingFeature("MemberImportVisibility"),
+        .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
         .enableUpcomingFeature("InferIsolatedConformances"),
         .enableUpcomingFeature("ImmutableWeakCaptures"),
     ]
