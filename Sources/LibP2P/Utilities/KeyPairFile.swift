@@ -28,6 +28,11 @@ public enum KeyPairFile {
     /// A new PeerID will be generated and stored in memory only it will be destoyed when the application stops and will be unrecoverable
     case ephemeral(type: LibP2PCrypto.Keys.KeyPairType = .Ed25519)
 
+    /// An existing `PeerID` will be used as-is. Nothing is read from, or persisted to, disk.
+    ///
+    /// - Note: The `PeerID` must contain a private key (be fully authenticated) for the application to be able to secure connections with it.
+    case existing(PeerID)
+
     /// Either a new PeerID will be created and securely stored at the path specified.
     /// Or an existing PeerID will be read in from the path specified if one exists.
     ///
@@ -186,6 +191,13 @@ public enum KeyPairFile {
         case .ephemeral(let type):
             logger.notice("Generating Ephemeral PeerID")
             return try PeerID(type)
+        case .existing(let peerID):
+            guard peerID.type == .isPrivate else {
+                logger.error("PeerID must include a private key")
+                throw KeyPairFile.Error.unsupportedPeerID
+            }
+            logger.notice("Using existing PeerID \(peerID.shortDescription)")
+            return peerID
         case .persistent(let type, let encryption, let path):
             // Try to load an existing key if one exists at the path for the current environment
             do {
