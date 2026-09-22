@@ -89,6 +89,14 @@ extension Application {
         message: "'SingleBufferingRequest' has been renamed to 'SingleRequest'. This alias will be removed in swift-libp2p 0.5.0"
     )
     public typealias SingleBufferingRequest = SingleRequest
+
+    /// The errors a `newRequest` / `SingleRequest` can fail with.
+    public enum SingleRequestError: Error, Sendable, Equatable {
+        /// The stream could not be opened, or it closed before a response was received.
+        case failedToOpenStream
+        /// The request did not complete within the timeout.
+        case timedOut
+    }
     
     public final class SingleRequest: Sendable {
         let eventloop: EventLoop
@@ -117,12 +125,6 @@ extension Application {
         let expectedResponseBytes: NIOLockedValueBox<Int?> = .init(nil)
         let buffer: NIOLockedValueBox<ByteBuffer?> = .init(nil)
         let chunks: NIOLockedValueBox<UInt8> = .init(0)
-
-        enum Errors: Error {
-            case noHost
-            case failedToOpenStream
-            case timedOut
-        }
 
         public enum Style: Sendable {
             case responseExpected
@@ -158,7 +160,7 @@ extension Application {
         //}
 
         func resume(style: Style = .responseExpected) -> EventLoopFuture<Data> {
-            guard !self.hasBegun else { return self.eventloop.makeFailedFuture(Errors.noHost) }
+            guard !self.hasBegun else { return self.eventloop.makeFailedFuture(SingleRequestError.failedToOpenStream) }
             self._hasBegun.withLockedValue { $0 = true }
 
             do {
@@ -228,7 +230,7 @@ extension Application {
                         if !self.hasCompleted {
                             self._hasCompleted.withLockedValue { $0 = true }
                             req.logger.error("Stream Closed before we got our response")
-                            self.promise.fail(Errors.failedToOpenStream)
+                            self.promise.fail(SingleRequestError.failedToOpenStream)
                         }
                         self.cancelTimeoutTask()
                         req.shouldClose()
@@ -316,7 +318,7 @@ extension Application {
                             //if we have something in the buffer at this point, send it along...
                             self.promise.succeed(Data(buffer.readableBytesView))
                         } else {
-                            self.promise.fail(Errors.timedOut)
+                            self.promise.fail(SingleRequestError.timedOut)
                         }
                     }
                 }
