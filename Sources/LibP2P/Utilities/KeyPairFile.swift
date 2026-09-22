@@ -19,7 +19,7 @@ import NIOPosix
 import _NIOFileSystem
 
 public enum KeyPairFile {
-    public static let ENV_PEERID_PASSWORD_KEY = "PEERID_PASSWORD"
+    public static let envPeerIDPasswordKey = "PEERID_PASSWORD"
 
     public static var ephemeral: KeyPairFile {
         .ephemeral(type: .Ed25519)
@@ -110,7 +110,7 @@ public enum KeyPairFile {
                 } catch {
                     throw KeyPairFile.Error.noEnvironmentFile
                 }
-                guard let entry = envFile.lines.first(where: { $0.key == KeyPairFile.ENV_PEERID_PASSWORD_KEY }),
+                guard let entry = envFile.lines.first(where: { $0.key == KeyPairFile.envPeerIDPasswordKey }),
                     !entry.value.isEmpty
                 else {
                     throw KeyPairFile.Error.noEnvironmentVariableForPasswordKey
@@ -151,7 +151,7 @@ public enum KeyPairFile {
                 return """
                     You've elected to persist your PeerID to disk using a password stored in a .env file
                     Libp2p failed to load the this file at `.env.\(environment.name)`
-                    Create a `.env.\(environment.name)` file in your projects root directory with the `\(KeyPairFile.ENV_PEERID_PASSWORD_KEY)` variable set to the password of your choosing and re-launch the app
+                    Create a `.env.\(environment.name)` file in your projects root directory with the `\(KeyPairFile.envPeerIDPasswordKey)` variable set to the password of your choosing and re-launch the app
                     """
             default:
                 return "\(self)"

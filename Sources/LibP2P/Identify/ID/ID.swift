@@ -86,10 +86,10 @@ public final class Identify: IdentityManager, CustomStringConvertible {
     internal let pingCache: NIOLockedValueBox<[[UInt8]: PendingPing]>
 
     public struct Multicodecs {
-        static let PING = "/ipfs/ping/1.0.0"
-        static let DELTA = "/p2p/id/delta/1.0.0"
-        static let PUSH = "/ipfs/id/push/1.0.0"
-        static let ID = "/ipfs/id/1.0.0"
+        static let ping = "/ipfs/ping/1.0.0"
+        static let delta = "/p2p/id/delta/1.0.0"
+        static let push = "/ipfs/id/push/1.0.0"
+        static let id = "/ipfs/id/1.0.0"
     }
 
     public var description: String {
@@ -340,7 +340,7 @@ extension Identify {
         // TODO: We need a way to filter out protocols we don't want to advertise
         // (like local only protocols, outbound only protocols, or protocols for certain peers only, deprecated protocols (like Delta)
         let registeredProtos = req.application.routes.all.compactMap { $0.description }
-            .filter { $0 != Identify.Multicodecs.DELTA }
+            .filter { $0 != Identify.Multicodecs.delta }
         id.protocols = registeredProtos
         id.protocolVersion = Identify.protocolVersion
         id.agentVersion = req.application.agentVersion
@@ -500,7 +500,7 @@ extension Identify {
                 guard !targets.isEmpty else { return }
                 self.logger.trace("Identify::Push::Pushing updated Identify to \(targets.count) peer(s)")
                 for connection in targets {
-                    (connection as? AppConnection)?.newStream(forProtocol: Identify.Multicodecs.PUSH)
+                    (connection as? AppConnection)?.newStream(forProtocol: Identify.Multicodecs.push)
                 }
             }
         }
@@ -513,7 +513,7 @@ extension Identify {
     func initiateOutboundPingTo(peer: PeerID) -> EventLoopFuture<TimeAmount> {
         self.el.flatSubmit {
             self.startOutboundPing(to: peer) {
-                try self.application!.newStream(to: peer, forProtocol: Identify.Multicodecs.PING)
+                try self.application!.newStream(to: peer, forProtocol: Identify.Multicodecs.ping)
             }
         }
     }
@@ -525,7 +525,7 @@ extension Identify {
                 return self.el.makeFailedFuture(Errors.timedOut)
             }
             return self.startOutboundPing(to: peer) {
-                try self.application!.newStream(to: addr, forProtocol: Identify.Multicodecs.PING)
+                try self.application!.newStream(to: addr, forProtocol: Identify.Multicodecs.ping)
             }
         }
     }

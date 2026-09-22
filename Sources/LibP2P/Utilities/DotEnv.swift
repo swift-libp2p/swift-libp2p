@@ -282,7 +282,7 @@ public struct DotEnvFile: Sendable {
         fileio: NonBlockingFileIO,
         overwrite: Bool = false
     ) async throws {
-        let file = try await self.read(path: path, fileio: fileio, sanitizeKeys: [KeyPairFile.ENV_PEERID_PASSWORD_KEY])
+        let file = try await self.read(path: path, fileio: fileio, sanitizeKeys: [KeyPairFile.envPeerIDPasswordKey])
         file.load(overwrite: overwrite)
     }
 

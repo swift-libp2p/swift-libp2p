@@ -89,7 +89,7 @@ internal class LineBasedFrameDecoder: ByteToMessageDecoder {
     ) throws -> DecodingState {
         while try self.decode(context: context, buffer: &buffer) == .continue {}
         if buffer.readableBytes > 0 {
-            context.fireErrorCaught(Errors.LeftOverBytesError(leftOverBytes: buffer))
+            context.fireErrorCaught(Errors.leftOverBytesError(leftOverBytes: buffer))
         }
         return .needMoreData
     }
@@ -115,7 +115,7 @@ internal class LineBasedFrameDecoder: ByteToMessageDecoder {
     }
 
     public enum Errors: Error {
-        case LeftOverBytesError(leftOverBytes: ByteBuffer)
+        case leftOverBytesError(leftOverBytes: ByteBuffer)
     }
 }
 

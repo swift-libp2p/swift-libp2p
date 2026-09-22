@@ -103,9 +103,9 @@ extension Application {
         let timeoutTask: NIOLockedValueBox<Scheduled<Void>?>
 
         enum Errors: Error {
-            case NoHost
-            case FailedToOpenStream
-            case TimedOut
+            case noHost
+            case failedToOpenStream
+            case timedOut
         }
 
         public enum Style: Sendable {
@@ -142,7 +142,7 @@ extension Application {
         //}
 
         func resume(style: Style = .responseExpected) -> EventLoopFuture<Data> {
-            guard !self.hasBegun else { return self.eventloop.makeFailedFuture(Errors.NoHost) }
+            guard !self.hasBegun else { return self.eventloop.makeFailedFuture(Errors.noHost) }
             self._hasBegun.withLockedValue { $0 = true }
 
             do {
@@ -176,7 +176,7 @@ extension Application {
                         if !self.hasCompleted {
                             self._hasCompleted.withLockedValue { $0 = true }
                             req.logger.error("Stream Closed before we got our response")
-                            self.promise.fail(Errors.FailedToOpenStream)
+                            self.promise.fail(Errors.failedToOpenStream)
                         }
                         self.timeoutTask.withLockedValue { $0?.cancel() }
                         req.shouldClose()
@@ -204,7 +204,7 @@ extension Application {
                     task = self.eventloop.scheduleTask(in: self.timeout) {
                         guard self.hasBegun && !self.hasCompleted else { return }
                         self._hasCompleted.withLockedValue { $0 = true }
-                        self.promise.fail(Errors.TimedOut)
+                        self.promise.fail(Errors.timedOut)
                     }
                 }
             } catch {
@@ -246,9 +246,9 @@ extension Application {
         let chunks: NIOLockedValueBox<UInt8> = .init(0)
 
         enum Errors: Error {
-            case NoHost
-            case FailedToOpenStream
-            case TimedOut
+            case noHost
+            case failedToOpenStream
+            case timedOut
         }
 
         public enum Style: Sendable {
@@ -285,7 +285,7 @@ extension Application {
         //}
 
         func resume(style: Style = .responseExpected) -> EventLoopFuture<Data> {
-            guard !self.hasBegun else { return self.eventloop.makeFailedFuture(Errors.NoHost) }
+            guard !self.hasBegun else { return self.eventloop.makeFailedFuture(Errors.noHost) }
             self._hasBegun.withLockedValue { $0 = true }
 
             do {
@@ -355,7 +355,7 @@ extension Application {
                         if !self.hasCompleted {
                             self._hasCompleted.withLockedValue { $0 = true }
                             req.logger.error("Stream Closed before we got our response")
-                            self.promise.fail(Errors.FailedToOpenStream)
+                            self.promise.fail(Errors.failedToOpenStream)
                         }
                         self.cancelTimeoutTask()
                         req.shouldClose()
@@ -443,7 +443,7 @@ extension Application {
                             //if we have something in the buffer at this point, send it along...
                             self.promise.succeed(Data(buffer.readableBytesView))
                         } else {
-                            self.promise.fail(Errors.TimedOut)
+                            self.promise.fail(Errors.timedOut)
                         }
                     }
                 }
