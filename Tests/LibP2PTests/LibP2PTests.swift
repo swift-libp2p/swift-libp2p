@@ -12,10 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+import LibP2PCrypto
 import LibP2PTesting
+import RoutingKit
 import Testing
 
-@Suite("Libp2p Tests", .serialized)
+@Suite("LibP2P Tests", .serialized)
 struct LibP2PTests {
 
     @available(*, deprecated, message: "Transition to async tests")

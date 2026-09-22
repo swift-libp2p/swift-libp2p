@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import LibP2P
+import LibP2PCrypto
 import NIOConcurrencyHelpers
 
 /// Plaintext V2
@@ -163,7 +164,7 @@ internal final class MockSecurityHandshakeHandler: ChannelInboundHandler, Remova
                     remotePeerInfo = try PeerID(marshaledPublicKey: exchangeMessage.pubkey.data)  //.serializedData())
                 }
 
-                guard remotePeerInfo!.id == exchangeMessage.id.byteArray else {
+                guard remotePeerInfo!.id == Array(exchangeMessage.id) else {
                     logger.error("Remote Peer ID isn't derived from their PublicKey. Closing connection.")
                     self.channelSecuredCallback.fail(MockSecurityUpgrader.Error.invalidPeerIDExchange)
                     return context.close(mode: .all, promise: nil)

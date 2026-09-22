@@ -16,7 +16,7 @@
 //  Modified by LibP2P on 1/29/26.
 //
 
-import NIOCore
+public import NIOCore
 
 extension ByteBuffer {
     public var string: String {

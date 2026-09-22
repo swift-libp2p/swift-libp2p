@@ -14,6 +14,7 @@
 
 import Foundation
 import LibP2P
+import LibP2PCrypto
 import NIOConcurrencyHelpers
 import NIOCore
 import RoutingKit

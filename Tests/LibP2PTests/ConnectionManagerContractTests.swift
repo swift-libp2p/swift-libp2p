@@ -14,6 +14,7 @@
 
 import Foundation
 import LibP2PCore
+import LibP2PCrypto
 import LibP2PTesting
 import Logging
 import NIOConcurrencyHelpers

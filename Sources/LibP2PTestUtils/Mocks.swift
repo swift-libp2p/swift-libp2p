@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2P
-import LibP2PCore
-import NIOConcurrencyHelpers
+public import LibP2P
+public import LibP2PCore
+public import NIOConcurrencyHelpers
 import NIOCore
 import NIOEmbedded
 import PeerID

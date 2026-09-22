@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import LibP2PTesting
+import RoutingKit
 import Testing
 
 extension LibP2PTests {

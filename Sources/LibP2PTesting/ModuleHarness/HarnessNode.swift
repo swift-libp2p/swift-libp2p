@@ -18,6 +18,7 @@
 // and keeping these internal avoids clashing with the (identically named) helpers in integration-tests.
 
 import LibP2P
+import LibP2PCrypto
 import NIOConcurrencyHelpers
 import NIOCore
 
