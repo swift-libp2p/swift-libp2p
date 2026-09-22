@@ -146,9 +146,6 @@ public struct TCP: Transport, Sendable {
         case notYetImplemented
         case invalidMultiaddr
         case inboundConnectionAfterApplicationShutdown
-
-        @available(*, deprecated, renamed: "notYetImplemented")
-        public static var notYetImplemeted: Errors { .notYetImplemented }
     }
 }
 
