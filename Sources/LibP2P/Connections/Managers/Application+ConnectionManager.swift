@@ -67,7 +67,7 @@ extension Application {
             case connectionRejectedByGater(reason: String)
         }
 
-        public struct Provider {
+        public struct Provider: Sendable {
             let run: @Sendable (Application) -> Void
 
             @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {
