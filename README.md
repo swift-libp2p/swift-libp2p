@@ -52,7 +52,7 @@ let package = Package(
     ...
     dependencies: [
         ...
-        .package(name: "LibP2P", url: "https://github.com/swift-libp2p/swift-libp2p.git", .upToNextMinor(from: "0.3.0"))
+        .package(name: "LibP2P", url: "https://github.com/swift-libp2p/swift-libp2p.git", .upToNextMinor(from: "0.4.0"))
     ],
         ...
         .target(
@@ -74,16 +74,25 @@ import LibP2PNoise
 import LibP2PYAMUX
 
 /// Configure your Libp2p networking stack...
-let lib = try await Application.make(.detect(), peerID: .ephemeral(.Ed25519))
+let lib = try await Application.make(.detect(), peerID: .ephemeral(type: .Ed25519))
 // Configure the libp2p instance with the modules of your choosing
 lib.security.use(.noise)
 lib.muxers.use(.yamux)
 // Start a TCP server listening on localhost:10000
 lib.servers.use(.tcp(host: "127.0.0.1", port: 10_000))
 
-/// Register your routes handlers...
+/// Register your route handlers...
 /// - Note: Uses the same syntax as swift-vapor
-try lib.routes()
+lib.on("echo", "1.0.0") { req -> Response<ByteBuffer> in
+    switch req.event {
+    case .ready:
+        return .stayOpen
+    case .data(let payload):
+        return .respondThenClose(payload)
+    case .closed, .error:
+        return .close
+    }
+}
 
 /// Start libp2p
 try await lib.startup()
@@ -150,7 +159,7 @@ try await lib.asyncShutdown()
 | [`swift-libp2p-queues-redis-driver`](//github.com/swift-libp2p/swift-libp2p-queues-redis-driver) | 🟢 | A [Queues](https://docs.vapor.codes/advanced/queues/) driver powered by Redis | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-queues-redis-driver/actions/workflows/build+test.yml/badge.svg) |
 | [`swift-libp2p-fluent`](//github.com/swift-libp2p/swift-libp2p-fluent) | 🟢 | [Fluent](https://docs.vapor.codes/fluent/overview/), a Database Abstraction Layer | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-fluent/actions/workflows/build+test.yml/badge.svg) |
 | **Testing and examples** |
-| `swift-libp2p-testing` | 🔴 | TODO: A collection of testing utilities for libp2p | N/A |
+| [`LibP2PTesting`](https://github.com/swift-libp2p/swift-libp2p/tree/main/Sources/LibP2PTesting) | 🟢 | A collection of testing utilities for libp2p (embedded) | N/A |
 
 
 ## Dependencies
@@ -174,9 +183,36 @@ try await lib.asyncShutdown()
 
 ## API
 
+Register a protocol handler and respond to inbound streams:
+
 ``` swift
-/// TODO
+/// Route handlers respond to stream events (the same handler is invoked as the
+/// stream progresses through its lifecycle)
+lib.on("echo", "1.0.0") { req -> Response<ByteBuffer> in
+    switch req.event {
+    case .ready:
+        return .stayOpen
+    case .data(let payload):
+        return .respondThenClose(payload)
+    case .closed, .error:
+        return .close
+    }
+}
 ```
+
+Open an outbound stream and perform a request / response exchange:
+
+``` swift
+/// Sends the request over a new stream for the given protocol, buffers the
+/// response, then closes the stream
+let response = try await lib.newRequest(
+    to: peerAddress,  // a Multiaddr or PeerID
+    forProtocol: "/echo/1.0.0",
+    withRequest: Data("Hello, libp2p!".utf8)
+).get()
+```
+
+> Note: swift-libp2p 0.4.0 is async-first for application lifecycle (`Application.make`, `startup`, `asyncShutdown`). The remaining `EventLoopFuture`-returning client APIs gain `async` variants over the 0.4.x cycle and the future-based forms will be removed in 0.5.0.
 
 ## Contributing
 
