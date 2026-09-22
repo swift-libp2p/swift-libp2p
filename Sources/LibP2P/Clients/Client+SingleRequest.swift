@@ -86,7 +86,8 @@ extension Application {
         *,
         deprecated,
         renamed: "SingleRequest",
-        message: "'SingleBufferingRequest' has been renamed to 'SingleRequest'. This alias will be removed in swift-libp2p 0.5.0"
+        message:
+            "'SingleBufferingRequest' has been renamed to 'SingleRequest'. This alias will be removed in swift-libp2p 0.5.0"
     )
     public typealias SingleBufferingRequest = SingleRequest
 
@@ -97,7 +98,7 @@ extension Application {
         /// The request did not complete within the timeout.
         case timedOut
     }
-    
+
     public final class SingleRequest: Sendable {
         let eventloop: EventLoop
         let promise: EventLoopPromise<Data>
