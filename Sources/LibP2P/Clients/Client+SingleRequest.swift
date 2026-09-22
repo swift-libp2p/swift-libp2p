@@ -25,7 +25,7 @@ extension Application {
         to ma: Multiaddr,
         forProtocol proto: String,
         withRequest request: Data,
-        style: SingleBufferingRequest.Style = .responseExpected,
+        style: SingleRequest.Style = .responseExpected,
         withHandlers handlers: HandlerConfig = .rawHandlers([]),
         andMiddleware middleware: MiddlewareConfig = .custom(nil),
         withTimeout timeout: TimeAmount = .seconds(3)
@@ -33,7 +33,7 @@ extension Application {
         let promise = self.eventLoopGroup.next().makePromise(of: Data.self)
         //let singleRequest =
         promise.completeWith(
-            SingleBufferingRequest(
+            SingleRequest(
                 to: ma,
                 overProtocol: proto,
                 withRequest: request,
@@ -54,7 +54,7 @@ extension Application {
         to peer: PeerID,
         forProtocol proto: String,
         withRequest request: Data,
-        style: SingleBufferingRequest.Style = .responseExpected,
+        style: SingleRequest.Style = .responseExpected,
         withHandlers handlers: HandlerConfig = .rawHandlers([]),
         andMiddleware middleware: MiddlewareConfig = .custom(nil),
         withTimeout timeout: TimeAmount = .seconds(3)
@@ -67,7 +67,7 @@ extension Application {
             // Check to see if we have a transport thats capable of dialing any of these addresses...
             // - TODO: Maybe instead of just returning the first transport found, we return the best transport (like one that's already muxed, or with low latency, or recently interacted with)
             return self.transports.canDialAny(addresses, on: el).flatMap { match -> EventLoopFuture<Data> in
-                let singleRequest = SingleBufferingRequest(
+                let singleRequest = SingleRequest(
                     to: match,
                     overProtocol: proto,
                     withRequest: request,
@@ -82,142 +82,15 @@ extension Application {
         }
     }
 
+    @available(
+        *,
+        deprecated,
+        renamed: "SingleRequest",
+        message: "'SingleBufferingRequest' has been renamed to 'SingleRequest'. This alias will be removed in swift-libp2p 0.5.0"
+    )
+    public typealias SingleBufferingRequest = SingleRequest
+    
     public final class SingleRequest: Sendable {
-        let eventloop: EventLoop
-        let promise: EventLoopPromise<Data>
-        let multiaddr: Multiaddr
-        let proto: String
-        let request: Data
-        let handlers: HandlerConfig
-        let middleware: MiddlewareConfig
-
-        let host: Application
-
-        var hasBegun: Bool { _hasBegun.withLockedValue { $0 } }
-        let _hasBegun: NIOLockedValueBox<Bool>
-
-        var hasCompleted: Bool { _hasCompleted.withLockedValue { $0 } }
-        let _hasCompleted: NIOLockedValueBox<Bool>
-
-        let timeout: TimeAmount
-        let timeoutTask: NIOLockedValueBox<Scheduled<Void>?>
-
-        enum Errors: Error {
-            case noHost
-            case failedToOpenStream
-            case timedOut
-        }
-
-        public enum Style: Sendable {
-            case responseExpected
-            case noResponseExpected
-        }
-
-        init(
-            to ma: Multiaddr,
-            overProtocol proto: String,
-            withRequest request: Data,
-            withHandlers handlers: HandlerConfig = .rawHandlers([]),
-            andMiddleware middleware: MiddlewareConfig = .custom(nil),
-            on el: EventLoop,
-            host: Application,
-            withTimeout timeout: TimeAmount = .seconds(3)
-        ) {
-            self.eventloop = el
-            self.host = host
-            self.multiaddr = ma
-            self.proto = proto
-            self.request = request
-            self.handlers = handlers
-            self.middleware = middleware
-            self.timeout = timeout
-            self.promise = self.eventloop.makePromise(of: Data.self)
-            self._hasBegun = .init(false)
-            self._hasCompleted = .init(false)
-            self.timeoutTask = .init(nil)
-        }
-
-        //deinit {
-        //    print("Single Request Deinitialized")
-        //}
-
-        func resume(style: Style = .responseExpected) -> EventLoopFuture<Data> {
-            guard !self.hasBegun else { return self.eventloop.makeFailedFuture(Errors.noHost) }
-            self._hasBegun.withLockedValue { $0 = true }
-
-            do {
-                try host.newStream(
-                    to: self.multiaddr,
-                    forProtocol: self.proto,
-                    withHandlers: self.handlers,
-                    andMiddleware: self.middleware
-                ) { req -> EventLoopFuture<RawResponse> in
-                    switch req.event {
-                    case .ready:
-                        // If the stream is ready and we have data to send... let's send it...
-                        return req.eventLoop.makeSucceededFuture(
-                            RawResponse(payload: req.allocator.buffer(bytes: Array(self.request)))
-                        ).always { _ in
-                            if style == .noResponseExpected {
-                                self._hasCompleted.withLockedValue { $0 = true }
-                                req.shouldClose()
-                                self.timeoutTask.withLockedValue { $0?.cancel() }
-                                self.promise.succeed(Data())
-                            }
-                        }
-
-                    case .data(let response):
-                        self._hasCompleted.withLockedValue { $0 = true }
-                        req.shouldClose()
-                        self.timeoutTask.withLockedValue { $0?.cancel() }
-                        self.promise.succeed(Data(response.readableBytesView))
-
-                    case .closed:
-                        if !self.hasCompleted {
-                            self._hasCompleted.withLockedValue { $0 = true }
-                            req.logger.error("Stream Closed before we got our response")
-                            self.promise.fail(Errors.failedToOpenStream)
-                        }
-                        self.timeoutTask.withLockedValue { $0?.cancel() }
-                        req.shouldClose()
-
-                    case .error(let error):
-                        self._hasCompleted.withLockedValue { $0 = true }
-                        req.logger.error("Stream Error - \(error)")
-                        self.promise.fail(error)
-                        self.timeoutTask.withLockedValue { $0?.cancel() }
-                        req.shouldClose()
-                    }
-
-                    return req.eventLoop.makeSucceededFuture(RawResponse(payload: req.allocator.buffer(bytes: [])))
-                }
-
-                /// Enforce a timeout on the request.
-                /// - Note: capture `self` STRONGLY. This scheduled task is the request's guaranteed
-                ///   settlement path. If a dial fails *before* a stream is established, the cached
-                ///   stream-event closure — the only other strong reference to this request — is released
-                ///   during connection teardown. A `[weak self]` here would then find `self` already
-                ///   deallocated and silently no-op, leaking the promise forever (callers of `.get()` wait forever).
-                ///   Holding `self` keeps the request alive until this fires or is cancelled on completion,
-                ///   breaking the temporary retain cycle either way.
-                self.timeoutTask.withLockedValue { task in
-                    task = self.eventloop.scheduleTask(in: self.timeout) {
-                        guard self.hasBegun && !self.hasCompleted else { return }
-                        self._hasCompleted.withLockedValue { $0 = true }
-                        self.promise.fail(Errors.timedOut)
-                    }
-                }
-            } catch {
-                self.eventloop.execute {
-                    self.promise.fail(error)
-                }
-            }
-
-            return self.promise.futureResult
-        }
-    }
-
-    public final class SingleBufferingRequest: Sendable {
         let eventloop: EventLoop
         let promise: EventLoopPromise<Data>
         let multiaddr: Multiaddr
