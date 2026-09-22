@@ -16,7 +16,7 @@
 //  Modified by swift-libp2p
 //
 
-import NIOCore
+public import NIOCore
 
 /// Capable of managing CRUD operations for `Session`s.
 public protocol SessionDriver: Sendable {

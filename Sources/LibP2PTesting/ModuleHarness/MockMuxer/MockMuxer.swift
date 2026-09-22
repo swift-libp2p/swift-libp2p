@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2P
+public import LibP2P
 
 /// A wire-capable, single-stream-focused muxer used by the module-conformance harnesses.
 ///

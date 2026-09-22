@@ -16,7 +16,7 @@
 //  Modified by Brandon Toms on 11/10/25.
 //
 
-import NIOCore
+public import NIOCore
 
 public protocol AsyncResponder: Responder {
     func respond(to request: Request) async throws -> RawResponse

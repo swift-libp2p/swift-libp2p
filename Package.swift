@@ -18,8 +18,8 @@ import PackageDescription
 let package = Package(
     name: "swift-libp2p",
     platforms: [
-        .macOS(.v10_15),
-        .iOS(.v13),
+        .macOS(.v13),
+        .iOS(.v16),
     ],
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
@@ -110,9 +110,9 @@ let package = Package(
 var swiftSettings: [SwiftSetting] {
     [
         //.enableUpcomingFeature("ExistentialAny"),
-        //.enableUpcomingFeature("InternalImportsByDefault"),
-        //.enableUpcomingFeature("MemberImportVisibility"),
-        //.enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+        .enableUpcomingFeature("InternalImportsByDefault"),
+        .enableUpcomingFeature("MemberImportVisibility"),
+        .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
         .enableUpcomingFeature("InferIsolatedConformances"),
         .enableUpcomingFeature("ImmutableWeakCaptures"),
     ]

@@ -20,7 +20,7 @@ import Foundation
 import Metrics
 import Multiaddr
 import NIO
-@preconcurrency import RoutingKit
+@preconcurrency public import RoutingKit
 
 /// LibP2P's main `Responder` type. Combines configured channel handlers + middleware + router to create a responder.
 internal struct DefaultResponder: Responder {
@@ -125,7 +125,6 @@ internal struct DefaultResponder: Responder {
 
     /// Gets a `Route` from the underlying `TrieRouter`.
     private func getRoute(for request: Request) -> CachedRoute2? {
-        //        let pathComponents = request.addr.pathComponents
         let pathComponents = request.protocol
             .split(separator: "/")
             .map(String.init)
@@ -185,17 +184,6 @@ internal struct DefaultResponder: Responder {
             dimensions: dimensions,
             preferredDisplayUnit: .seconds
         ).recordNanoseconds(DispatchTime.now().uptimeNanoseconds - startTime)
-    }
-}
-
-extension Multiaddr {
-
-    /// Multiaddr don't even support custom protocols at the moment (it check `echo` against the Codecs list, doesn't find it, and fails)
-    /// "ip4/1.1.1.1/tcp/10000/p2p/Qm..123/echo/1.0.0"
-    public var pathComponents: [String] {
-        // TODO: Implement me
-        print("Extracting Path Components from Multiaddr: \(self.description)")
-        return [self.addresses.last!.description]
     }
 }
 

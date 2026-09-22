@@ -16,7 +16,7 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import Foundation
+public import Foundation
 
 public protocol RoutesBuilder {
     func add(_ route: Route)

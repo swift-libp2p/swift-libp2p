@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2PCore
+public import LibP2PCore
 import NIOConcurrencyHelpers
 
 //public struct TopologyRegistration {
@@ -166,14 +166,19 @@ public final class BasicMulticodecTopology: Sendable {
         application.events.unregister(self)
     }
 
+    /// Setting peers directly is not supported: this topology tracks peers automatically via
+    /// `remotePeerProtocolChange` / `disconnected` events, so there is nothing to set here.
+    /// Kept as a documented no-op while the core `Topology` shape requires it.
+    /// - Returns: `nil`, always. // core cleanup deferred to 0.5
     public func set(id: String, peer: PeerID) -> EventLoopFuture<Bool>? {
-        logger.info("TODO")
+        logger.debug("BasicMulticodecTopology tracks peers via events; set(id:peer:) is a no-op")
         return nil
     }
 
+    /// Closes every connection to `peer`. The resulting `disconnected` event then removes the peer
+    /// from this topology and notifies `handlers.onDisconnect`.
     public func disconnect(peer: PeerID) -> EventLoopFuture<Void>? {
-        logger.info("TODO")
-        return nil
+        application.connections.closeConnectionsToPeer(peer: peer, on: nil).map { _ in }
     }
 }
 

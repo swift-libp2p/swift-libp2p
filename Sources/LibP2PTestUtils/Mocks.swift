@@ -12,12 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2P
-import LibP2PCore
-import NIOConcurrencyHelpers
-import NIOCore
+public import LibP2P
+public import LibP2PCore
+public import NIOConcurrencyHelpers
+public import NIOCore
 import NIOEmbedded
-import PeerID
+public import PeerID
 
 // MARK: - MockStream
 

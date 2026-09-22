@@ -16,7 +16,7 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import ConsoleKit
+public import ConsoleKit
 
 /// Boots the `Application` then exits successfully.
 ///

@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Logging
-import NIO
+public import Logging
+public import NIO
 import NIOConcurrencyHelpers
 import NIOExtras
 

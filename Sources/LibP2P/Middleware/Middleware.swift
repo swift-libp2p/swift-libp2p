@@ -16,7 +16,7 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import NIOCore
+public import NIOCore
 
 /// `Middleware` is placed between the server and your router. It is capable of
 /// mutating both incoming requests and outgoing responses. `Middleware` can choose

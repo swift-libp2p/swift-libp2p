@@ -12,14 +12,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2PCrypto
+public import LibP2PCrypto
 import Logging
 import NIOCore
 import NIOPosix
 import _NIOFileSystem
 
 public enum KeyPairFile {
-    public static let ENV_PEERID_PASSWORD_KEY = "PEERID_PASSWORD"
+    public static let envPeerIDPasswordKey = "PEERID_PASSWORD"
 
     public static var ephemeral: KeyPairFile {
         .ephemeral(type: .Ed25519)
@@ -27,6 +27,11 @@ public enum KeyPairFile {
 
     /// A new PeerID will be generated and stored in memory only it will be destoyed when the application stops and will be unrecoverable
     case ephemeral(type: LibP2PCrypto.Keys.KeyPairType = .Ed25519)
+
+    /// An existing `PeerID` will be used as-is. Nothing is read from, or persisted to, disk.
+    ///
+    /// - Note: The `PeerID` must contain a private key (be fully authenticated) for the application to be able to secure connections with it.
+    case existing(PeerID)
 
     /// Either a new PeerID will be created and securely stored at the path specified.
     /// Or an existing PeerID will be read in from the path specified if one exists.
@@ -110,7 +115,7 @@ public enum KeyPairFile {
                 } catch {
                     throw KeyPairFile.Error.noEnvironmentFile
                 }
-                guard let entry = envFile.lines.first(where: { $0.key == KeyPairFile.ENV_PEERID_PASSWORD_KEY }),
+                guard let entry = envFile.lines.first(where: { $0.key == KeyPairFile.envPeerIDPasswordKey }),
                     !entry.value.isEmpty
                 else {
                     throw KeyPairFile.Error.noEnvironmentVariableForPasswordKey
@@ -151,7 +156,7 @@ public enum KeyPairFile {
                 return """
                     You've elected to persist your PeerID to disk using a password stored in a .env file
                     Libp2p failed to load the this file at `.env.\(environment.name)`
-                    Create a `.env.\(environment.name)` file in your projects root directory with the `\(KeyPairFile.ENV_PEERID_PASSWORD_KEY)` variable set to the password of your choosing and re-launch the app
+                    Create a `.env.\(environment.name)` file in your projects root directory with the `\(KeyPairFile.envPeerIDPasswordKey)` variable set to the password of your choosing and re-launch the app
                     """
             default:
                 return "\(self)"
@@ -186,6 +191,13 @@ public enum KeyPairFile {
         case .ephemeral(let type):
             logger.notice("Generating Ephemeral PeerID")
             return try PeerID(type)
+        case .existing(let peerID):
+            guard peerID.type == .isPrivate else {
+                logger.error("PeerID must include a private key")
+                throw KeyPairFile.Error.unsupportedPeerID
+            }
+            logger.notice("Using existing PeerID \(peerID.shortDescription)")
+            return peerID
         case .persistent(let type, let encryption, let path):
             // Try to load an existing key if one exists at the path for the current environment
             do {
@@ -300,15 +312,16 @@ public enum KeyPairFile {
         using encryption: Encryption,
         for env: Environment
     ) async throws -> PeerID {
-        try await FileSystem.shared.withFileHandle(forReadingAt: .init(path)) { handle in
+        let pem = try await FileSystem.shared.withFileHandle(forReadingAt: .init(path)) { handle -> String in
             var buffer = try await handle.readToEnd(maximumSizeAllowed: .kilobytes(16))
             guard let pem = buffer.readString(length: buffer.readableBytes), !pem.isEmpty else {
                 throw KeyPairFile.Error.unableToReadKeyPairFile
             }
-            let password = try await encryption.password(for: env)
-            let keyPair = try LibP2PCrypto.Keys.KeyPair(pem: pem, password: password)
-            return try PeerID(keyPair: keyPair)
+            return pem
         }
+        let password = try await encryption.password(for: env)
+        let keyPair = try LibP2PCrypto.Keys.KeyPair(pem: pem, password: password)
+        return try PeerID(keyPair: keyPair)
     }
 
     /// Stores a `PeerID`'s key pair to the specified file system location, encrypting the private key

@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2PCore
+public import LibP2PCore
 
 public class BootstrapPeerDiscovery: Discovery, LifecycleHandler, @unchecked Sendable {
     public static let key: String = "bootstrap"
@@ -25,7 +25,7 @@ public class BootstrapPeerDiscovery: Discovery, LifecycleHandler, @unchecked Sen
     private let bootstrapped: [PeerInfo]
     private let eventLoop: EventLoop
 
-    init(on loop: EventLoop, withPeers peers: [PeerInfo] = BootstrapPeerDiscovery.IPFSBootNodes) {
+    init(on loop: EventLoop, withPeers peers: [PeerInfo] = BootstrapPeerDiscovery.ipfsBootNodes) {
         self.eventLoop = loop
         self.bootstrapped = peers
         //self.state = .stopped
@@ -88,7 +88,7 @@ extension BootstrapPeerDiscovery {
     /// The default IPFS Bootstrap Nodes
     ///
     /// - Warning: Use these with caution
-    public static let IPFSBootNodes: [PeerInfo] = [
+    public static let ipfsBootNodes: [PeerInfo] = [
         PeerInfo(
             peer: try! PeerID(cid: "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN"),
             addresses: [

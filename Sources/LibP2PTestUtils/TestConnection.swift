@@ -12,7 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2P
+public import LibP2P
+public import LibP2PCrypto
 
 /// A minimal `Connection` for wiring a MUXER handler onto an `EmbeddedChannel`.
 ///

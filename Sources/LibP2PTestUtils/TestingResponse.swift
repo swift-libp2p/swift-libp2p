@@ -16,9 +16,9 @@
 //  Modified by LibP2P on 1/29/26.
 //
 
-import LibP2P
+public import LibP2P
 import NIOConcurrencyHelpers
-import NIOCore
+public import NIOCore
 
 public struct TestingResponse: Sendable {
     public var payload: ByteBuffer

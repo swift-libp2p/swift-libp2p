@@ -17,8 +17,8 @@
 //
 
 import NIOCore
-import NIOHTTP1
-import RoutingKit
+public import NIOHTTP1
+public import RoutingKit
 
 extension RoutesBuilder {
     @discardableResult

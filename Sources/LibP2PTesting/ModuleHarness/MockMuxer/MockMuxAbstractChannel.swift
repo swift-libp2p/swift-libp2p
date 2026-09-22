@@ -15,7 +15,7 @@
 // Portions of this file are derived from the SwiftNIO HTTP/2 multiplexer (Apache License v2.0),
 // adapted for the swift-libp2p mock muxer.
 
-import NIOCore
+public import NIOCore
 
 /// An abstraction over `MockMuxStreamChannel` used by `MockMuxStreamMultiplexer`, reducing the
 /// coupling between the two. Note: while a `struct`, this type has *reference semantics* (it wraps a

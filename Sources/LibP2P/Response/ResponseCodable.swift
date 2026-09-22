@@ -16,7 +16,7 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import NIO
+public import NIO
 
 /// Can convert `self` to a `RawResponse`.
 ///
@@ -87,7 +87,7 @@ extension Data: ResponseEncodable {
     // See `ResponseEncodable`.
     public func encodeResponse(for request: Request) -> EventLoopFuture<RawResponse> {
         //let res = Response(payload: .init(bytes: self.bytes))
-        let res = RawResponse(payload: request.allocator.buffer(bytes: self.byteArray))
+        let res = RawResponse(payload: request.allocator.buffer(bytes: Array(self)))
         return request.eventLoop.makeSucceededFuture(res)
     }
 }

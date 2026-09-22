@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2P
+public import LibP2P
 
 /// Encodes a `MockMuxFrame` onto the wire as `uVarInt(header) || uVarInt(length) || payload`, where
 /// `header = streamID << 3 | flag`.
@@ -52,13 +52,13 @@ internal final class MockMuxFrameDecoder: ByteToMessageDecoder {
         let streamID = MockMuxStreamID(id: headerValue >> 3, flag: flag)
         let out: MockMuxFrame
         switch flag {
-        case .NewStream:
+        case .newStream:
             out = MockMuxFrame(streamID: streamID, payload: .newStream)
-        case .MessageReceiver, .MessageInitiator:
+        case .messageReceiver, .messageInitiator:
             out = MockMuxFrame(streamID: streamID, payload: .inboundData(messageBytes))
-        case .CloseReceiver, .CloseInitiator:
+        case .closeReceiver, .closeInitiator:
             out = MockMuxFrame(streamID: streamID, payload: .close)
-        case .ResetReceiver, .ResetInitiator:
+        case .resetReceiver, .resetInitiator:
             out = MockMuxFrame(streamID: streamID, payload: .reset)
         }
 

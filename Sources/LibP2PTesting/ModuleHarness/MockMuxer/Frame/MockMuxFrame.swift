@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2P
+public import LibP2P
 
 // MARK: - Wire model
 //
@@ -28,13 +28,13 @@ import LibP2P
 
 /// The per-frame flag, encoded into the low 3 bits of the frame header.
 internal enum MockMuxFlag: UInt64 {
-    case NewStream = 0
-    case MessageReceiver = 1
-    case MessageInitiator = 2
-    case CloseReceiver = 3
-    case CloseInitiator = 4
-    case ResetReceiver = 5
-    case ResetInitiator = 6
+    case newStream = 0
+    case messageReceiver = 1
+    case messageInitiator = 2
+    case closeReceiver = 3
+    case closeInitiator = 4
+    case resetReceiver = 5
+    case resetInitiator = 6
 }
 
 /// A stream identifier. The `initiator` flag records which side opened the stream (mirroring mplex,
@@ -46,7 +46,7 @@ internal struct MockMuxStreamID: Hashable, Sendable {
     init(id: UInt64, flag: MockMuxFlag) {
         self.id = id
         switch flag {
-        case .NewStream, .MessageInitiator, .CloseInitiator, .ResetInitiator:
+        case .newStream, .messageInitiator, .closeInitiator, .resetInitiator:
             self.initiator = false
         default:
             self.initiator = true
@@ -104,13 +104,13 @@ internal struct MockMuxFrame: Equatable, Sendable {
     var flag: MockMuxFlag {
         switch payload {
         case .newStream:
-            return .NewStream
+            return .newStream
         case .inboundData, .outboundData:
-            return streamID.initiator ? .MessageInitiator : .MessageReceiver
+            return streamID.initiator ? .messageInitiator : .messageReceiver
         case .close:
-            return streamID.initiator ? .CloseInitiator : .CloseReceiver
+            return streamID.initiator ? .closeInitiator : .closeReceiver
         case .reset:
-            return streamID.initiator ? .ResetInitiator : .ResetReceiver
+            return streamID.initiator ? .resetInitiator : .resetReceiver
         }
     }
 

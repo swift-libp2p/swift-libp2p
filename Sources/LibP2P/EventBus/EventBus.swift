@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
-import LibP2PCore
+public import Foundation
+public import LibP2PCore
 import NIOConcurrencyHelpers
 
 extension Application.Events.Provider {

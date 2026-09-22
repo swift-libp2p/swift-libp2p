@@ -16,8 +16,8 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import ConsoleKit
-@preconcurrency import Dispatch
+public import ConsoleKit
+@preconcurrency public import Dispatch
 import Foundation
 import NIOConcurrencyHelpers
 

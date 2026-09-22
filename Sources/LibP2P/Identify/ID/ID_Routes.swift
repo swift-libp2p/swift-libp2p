@@ -13,8 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 import Dispatch
-import LibP2PCore
+public import LibP2PCore
 import NIOCore
+import RoutingKit
 
 /// Bi Directional ipfs/id/1.0.0 Handler
 /// Handles the following routes

@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import NIO
+public import NIO
 
 extension Application.ChildChannelHandlers.Provider {
 
@@ -72,7 +72,7 @@ public class PartialIdentifyMessageDecoder: ByteToMessageDecoder {
         // Consume the bytes and forward the (possibly reassembled) message up the pipeline.
         buffer.moveReaderIndex(forwardBy: buffer.readableBytes)
         context.fireChannelRead(
-            self.wrapInboundOut(ByteBuffer(bytes: try remoteIdentify.serializedData().byteArray))
+            self.wrapInboundOut(ByteBuffer(bytes: try Array(remoteIdentify.serializedData())))
         )
 
         // We can keep going if there's more data.

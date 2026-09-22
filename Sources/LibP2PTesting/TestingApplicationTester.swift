@@ -16,9 +16,9 @@
 //  Modified by LibP2P on 1/29/26.
 //
 
-import LibP2P
-import LibP2PTestUtils
-import NIOCore
+public import LibP2P
+public import LibP2PTestUtils
+public import NIOCore
 import Testing
 
 public protocol TestingApplicationTester: Sendable {

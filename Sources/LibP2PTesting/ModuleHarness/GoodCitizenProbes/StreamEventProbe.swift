@@ -13,9 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
-import LibP2P
+public import LibP2P
 import NIOConcurrencyHelpers
-import NIOCore
+public import NIOCore
 import RoutingKit
 
 /// A transparent inbound probe that records `channelRead` / `channelReadComplete` activity on the pipeline

@@ -12,10 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2PCore
-import Multiaddr
+public import LibP2PCore
+public import Multiaddr
 import NIOConcurrencyHelpers
-import NIOCore
+public import NIOCore
 
 extension Application {
     public var connectionManager: Connections {
@@ -67,7 +67,7 @@ extension Application {
             case connectionRejectedByGater(reason: String)
         }
 
-        public struct Provider {
+        public struct Provider: Sendable {
             let run: @Sendable (Application) -> Void
 
             @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {

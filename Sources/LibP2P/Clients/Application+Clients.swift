@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2PCore
+public import LibP2PCore
 
 extension Application {
     public var clients: Clients {
@@ -21,7 +21,7 @@ extension Application {
 
     public struct Clients: Sendable {
 
-        public struct Provider {
+        public struct Provider: Sendable {
             let run: @Sendable (Application) -> Void
 
             @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {

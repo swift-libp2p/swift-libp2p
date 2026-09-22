@@ -17,7 +17,7 @@
 //
 
 import NIOCore
-import RoutingKit
+public import RoutingKit
 
 ///// Determines how an incoming HTTP request's body is collected.
 public enum PayloadStreamStrategy: Sendable {

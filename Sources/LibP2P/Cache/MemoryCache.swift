@@ -16,9 +16,9 @@
 //  Modified by swift-libp2p
 //
 
-import Foundation
+public import Foundation
 import NIOConcurrencyHelpers
-import NIOCore
+public import NIOCore
 
 extension Application.Caches {
     /// In-memory cache. Thread safe.

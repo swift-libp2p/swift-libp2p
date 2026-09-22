@@ -16,7 +16,9 @@
 //  Modified by LibP2P on 1/29/26.
 //
 
-@testable import LibP2P
+public import LibP2PCrypto
+
+@testable public import LibP2P
 
 extension Application {
     public enum Method {

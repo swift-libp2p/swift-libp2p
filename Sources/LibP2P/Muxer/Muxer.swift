@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2PCore
+public import LibP2PCore
 import NIO
 import PeerID
 
@@ -26,7 +26,7 @@ extension Application {
 
     public struct MuxerUpgraders: Sendable {
         //internal typealias KeyedMuxerUpgrader = (key: String, value: ((Application) -> MuxerUpgrader))
-        public struct Provider {
+        public struct Provider: Sendable {
             let run: @Sendable (Application) -> Void
 
             @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {

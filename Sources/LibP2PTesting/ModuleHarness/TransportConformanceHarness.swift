@@ -13,7 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
-import LibP2P
+public import LibP2P
+public import LibP2PCrypto
 import NIOConcurrencyHelpers
 import NIOCore
 import RoutingKit
@@ -39,7 +40,7 @@ import RoutingKit
 /// - Returns: a ``ConformanceReport``; assert `report.passed` or call `try report.throwIfFailed()`.
 public func runTransportConformance(
     transportKey: String,
-    configure: @escaping (Application) throws -> Void,
+    configure: @Sendable @escaping (Application) throws -> Void,
     security: Application.SecurityUpgraders.Provider = .mockSecurity,
     muxer: Application.MuxerUpgraders.Provider = .harnessSingleStream,
     payloadSizes: [Int] = [1, 1024, 65_536, 1_048_576],

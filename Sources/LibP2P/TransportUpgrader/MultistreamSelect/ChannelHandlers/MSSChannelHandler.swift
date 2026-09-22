@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
-import NIOCore
+public import NIOCore
 
 /// Negotiates a protocol over multistream-select using a typed `MSSFrame` state machine.
 ///

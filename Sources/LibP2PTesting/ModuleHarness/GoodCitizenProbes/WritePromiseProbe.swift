@@ -13,9 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
-import LibP2P
+public import LibP2P
 import NIOConcurrencyHelpers
-import NIOCore
+public import NIOCore
 
 /// A transparent outbound handler that sits at the **socket boundary** (`position: .first`) and can *hold*
 /// the flush so the harness can decouple "the write future completed" from "the loopback socket happened to

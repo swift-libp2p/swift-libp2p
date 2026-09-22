@@ -17,12 +17,12 @@
 //
 
 import Foundation
-import LibP2PCore
-import Logging
-import Multiaddr
+public import LibP2PCore
+public import Logging
+public import Multiaddr
 import NIOConcurrencyHelpers
-import NIOCore
-import RoutingKit
+public import NIOCore
+public import RoutingKit
 
 public final class Request: CustomStringConvertible, Sendable {
     public let application: Application

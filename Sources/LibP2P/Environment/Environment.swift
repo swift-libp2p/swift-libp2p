@@ -16,8 +16,8 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import ConsoleKit
-import Foundation
+public import ConsoleKit
+public import Foundation
 
 /// The environment the application is running in, i.e., production, dev, etc. All `Container`s will have
 /// an `Environment` that can be used to dynamically register and configure services.

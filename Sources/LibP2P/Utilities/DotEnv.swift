@@ -16,9 +16,9 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-import Logging
-import NIOCore
-import NIOPosix
+public import Logging
+public import NIOCore
+public import NIOPosix
 import _NIOFileSystem
 
 #if os(Linux)
@@ -61,9 +61,10 @@ public struct DotEnvFile: Sendable {
     ///     - eventLoopGroupProvider: Either provides an EventLoopGroup or tells the function to create a new one.
     ///     - fileio: NonBlockingFileIO that is used to read the .env file(s).
     ///     - logger: Optionally provide an existing logger.
+    ///
+    /// - Note: Only used by the deprecated sync `Application.init`; both will be removed in swift-libp2p 0.5.0.
     @available(*, noasync, message: "Use an async version of load instead")
-    @available(*, deprecated, message: "Use an async version of load instead")
-    public static func load(
+    internal static func load(
         for environment: Environment = .development,
         on eventLoopGroupProvider: Application.EventLoopGroupProvider = .singleton,
         fileio: NonBlockingFileIO,
@@ -88,9 +89,10 @@ public struct DotEnvFile: Sendable {
     ///     - eventLoopGroupProvider: Either provides an EventLoopGroup or tells the function to create a new one.
     ///     - fileio: NonBlockingFileIO that is used to read the .env file(s).
     ///     - logger: Optionally provide an existing logger.
+    ///
+    /// - Note: Only used by the deprecated sync `Application.init`; both will be removed in swift-libp2p 0.5.0.
     @available(*, noasync, message: "Use an async version of load instead")
-    @available(*, deprecated, message: "Use an async version of load instead")
-    public static func load(
+    internal static func load(
         path: String,
         on eventLoopGroupProvider: Application.EventLoopGroupProvider = .singleton,
         fileio: NonBlockingFileIO,
@@ -101,21 +103,6 @@ public struct DotEnvFile: Sendable {
         switch eventLoopGroupProvider {
         case .shared(let group):
             eventLoopGroup = group
-        case .createNew:
-            eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
-        }
-        defer {
-            switch eventLoopGroupProvider {
-            case .shared:
-                logger.trace("Running on shared EventLoopGroup. Not shutting down EventLoopGroup.")
-            case .createNew:
-                logger.trace("Shutting down EventLoopGroup")
-                do {
-                    try eventLoopGroup.syncShutdownGracefully()
-                } catch {
-                    logger.warning("Shutting down EventLoopGroup failed: \(error)")
-                }
-            }
         }
 
         do {
@@ -140,8 +127,9 @@ public struct DotEnvFile: Sendable {
     ///     - eventLoop: Eventloop to perform async work on.
     ///     - overwrite: If `true`, values already existing in the process' env
     ///                  will be overwritten. Defaults to `false`.
-    @available(*, deprecated, message: "Use an async version of load instead")
-    public static func load(
+    ///
+    /// - Note: Only used by the deprecated sync `Application.init`; both will be removed in swift-libp2p 0.5.0.
+    internal static func load(
         path: String,
         fileio: NonBlockingFileIO,
         on eventLoop: EventLoop,
@@ -168,8 +156,9 @@ public struct DotEnvFile: Sendable {
     ///     - path: Absolute or relative path of the dotenv file.
     ///     - fileio: File loader.
     ///     - eventLoop: Eventloop to perform async work on.
-    @available(*, deprecated, message: "Migrate to async API")
-    public static func read(
+    ///
+    /// - Note: Only used by the deprecated sync `Application.init`; both will be removed in swift-libp2p 0.5.0.
+    internal static func read(
         path: String,
         fileio: NonBlockingFileIO,
         on eventLoop: EventLoop
@@ -282,7 +271,7 @@ public struct DotEnvFile: Sendable {
         fileio: NonBlockingFileIO,
         overwrite: Bool = false
     ) async throws {
-        let file = try await self.read(path: path, fileio: fileio, sanitizeKeys: [KeyPairFile.ENV_PEERID_PASSWORD_KEY])
+        let file = try await self.read(path: path, fileio: fileio, sanitizeKeys: [KeyPairFile.envPeerIDPasswordKey])
         file.load(overwrite: overwrite)
     }
 

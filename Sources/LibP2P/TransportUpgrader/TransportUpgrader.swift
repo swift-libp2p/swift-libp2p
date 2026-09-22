@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import NIOConcurrencyHelpers
-import NIOCore
+public import NIOCore
 
 // `TransportUpgrader` now lives in LibP2PCore (re-exported here), so upgrader modules can
 // depend on core alone.
@@ -43,7 +43,7 @@ extension Application {
     }
 
     public struct TransportUpgraders: Sendable {
-        public struct Provider {
+        public struct Provider: Sendable {
             let run: @Sendable (Application) -> Void
 
             @preconcurrency public init(_ run: @Sendable @escaping (Application) -> Void) {

@@ -16,8 +16,8 @@
 //  Modified by Brandon Toms on 11/10/25.
 //
 
-import NIOCore
-import NIOHTTP1
+public import NIOCore
+public import NIOHTTP1
 
 /// Can convert `self` to a `Response`.
 ///
@@ -114,7 +114,7 @@ extension Data: AsyncResponseEncodable {
     // See `ResponseEncodable`.
     public func encodeResponse(for request: Request) async throws -> RawResponse {
         //let res = Response(payload: .init(bytes: self.bytes))
-        let res = RawResponse(payload: request.allocator.buffer(bytes: self.byteArray))
+        let res = RawResponse(payload: request.allocator.buffer(bytes: Array(self)))
         return res
     }
 }

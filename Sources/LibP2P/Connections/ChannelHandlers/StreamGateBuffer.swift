@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
-import NIOCore
+public import NIOCore
 
 /// A passive buffer installed on a fresh inbound child channel while its ``StreamGater`` verdict is
 /// outstanding.

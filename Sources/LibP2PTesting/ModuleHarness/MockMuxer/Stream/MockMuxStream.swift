@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import LibP2P
+public import LibP2P
 import NIOConcurrencyHelpers
 
 /// A libp2p `_Stream` backed by a `MockMuxStreamChannel`. Writes are threaded through the child-channel
