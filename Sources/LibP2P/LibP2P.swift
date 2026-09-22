@@ -180,7 +180,7 @@ public final class Application: Sendable {
     public convenience init(
         _ environment: Environment = .development,
         peerID: PeerID = try! PeerID(.Ed25519),
-        maxConncurrentConnections: Int = 50,
+        maxConcurrentConnections: Int = 50,
         enableAutomaticStreamCounting: Bool = false,
         eventLoopGroupProvider: EventLoopGroupProvider = .singleton,
         logger: Logger? = nil
@@ -188,7 +188,7 @@ public final class Application: Sendable {
         self.init(
             environment,
             peerID: peerID,
-            maxConncurrentConnections: maxConncurrentConnections,
+            maxConcurrentConnections: maxConcurrentConnections,
             enableAutomaticStreamCounting: enableAutomaticStreamCounting,
             eventLoopGroupProvider: eventLoopGroupProvider,
             async: false,
@@ -201,7 +201,7 @@ public final class Application: Sendable {
     public static func make(
         _ environment: Environment = .development,
         peerID keyFile: KeyPairFile = .ephemeral(type: .Ed25519),
-        maxConncurrentConnections: Int = 50,
+        maxConcurrentConnections: Int = 50,
         enableAutomaticStreamCounting: Bool = false,
         eventLoopGroupProvider: EventLoopGroupProvider = .singleton,
         logger: Logger? = nil
@@ -209,7 +209,7 @@ public final class Application: Sendable {
         let app = Application(
             environment,
             peerID: try await keyFile.resolve(for: environment),
-            maxConncurrentConnections: maxConncurrentConnections,
+            maxConcurrentConnections: maxConcurrentConnections,
             enableAutomaticStreamCounting: enableAutomaticStreamCounting,
             eventLoopGroupProvider: eventLoopGroupProvider,
             async: true,
@@ -229,7 +229,7 @@ public final class Application: Sendable {
     public static func make(
         _ environment: Environment = .development,
         peerID: PeerID = try! PeerID(.Ed25519),
-        maxConncurrentConnections: Int = 50,
+        maxConcurrentConnections: Int = 50,
         enableAutomaticStreamCounting: Bool = false,
         eventLoopGroupProvider: EventLoopGroupProvider = .singleton,
         logger: Logger? = nil
@@ -237,7 +237,7 @@ public final class Application: Sendable {
         let app = Application(
             environment,
             peerID: peerID,
-            maxConncurrentConnections: maxConncurrentConnections,
+            maxConcurrentConnections: maxConcurrentConnections,
             enableAutomaticStreamCounting: enableAutomaticStreamCounting,
             eventLoopGroupProvider: eventLoopGroupProvider,
             async: true,
@@ -251,7 +251,7 @@ public final class Application: Sendable {
     private init(
         _ environment: Environment = .development,
         peerID: PeerID = try! PeerID(.Ed25519),
-        maxConncurrentConnections: Int = 50,
+        maxConcurrentConnections: Int = 50,
         enableAutomaticStreamCounting: Bool = false,
         eventLoopGroupProvider: EventLoopGroupProvider = .singleton,
         async: Bool = false,
@@ -305,7 +305,7 @@ public final class Application: Sendable {
         // ConnectionManager
         self.connectionManager.initialize()
         self.connectionManager.use(
-            .default(maxConcurrentConnections: maxConncurrentConnections, ASCEnabled: enableAutomaticStreamCounting)
+            .default(maxConcurrentConnections: maxConcurrentConnections, ASCEnabled: enableAutomaticStreamCounting)
         )
 
         // PeerstoreManager
