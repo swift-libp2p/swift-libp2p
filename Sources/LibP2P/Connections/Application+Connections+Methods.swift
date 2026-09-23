@@ -108,8 +108,22 @@ extension Application {
     }
 
     /// Broadcasts the given message to all current connections that support the specified protocol
+    ///
+    /// - Returns: The b58 string of each peer the message was written to.
     @discardableResult
     public func broadcast(_ bytes: [UInt8], toProtocol proto: String) -> EventLoopFuture<[String]> {
+        self._broadcast(bytes, toProtocol: proto)
+    }
+    
+    /// Broadcasts the given message to all current connections that support the specified protocol
+    ///
+    /// - Returns: The b58 string of each peer the message was written to.
+    @discardableResult
+    public func broadcast(_ bytes: [UInt8], toProtocol proto: String) async throws -> [String] {
+        try await self._broadcast(bytes, toProtocol: proto).get()
+    }
+
+    internal func _broadcast(_ bytes: [UInt8], toProtocol proto: String) -> EventLoopFuture<[String]> {
         self.activeStreams(for: proto).map { streams in
             self.logger.trace("Broadcast()::Found \(streams.count) active streams for protocol \(proto)")
             return streams.compactMap { stream in
