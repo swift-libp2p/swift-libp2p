@@ -355,6 +355,14 @@ extension Application {
         }
 
         public func getTotalConnectionCount() -> EventLoopFuture<UInt64> {
+            self._getTotalConnectionCount()
+        }
+
+        public func getTotalConnectionCount() async throws -> UInt64 {
+            try await self._getTotalConnectionCount().get()
+        }
+
+        internal func _getTotalConnectionCount() -> EventLoopFuture<UInt64> {
             self.storage.manager.withLockedValue { manager in
                 if let basicMan = manager as? BasicInMemoryConnectionManager {
                     return basicMan.getTotalConnectionCount()
@@ -364,6 +372,14 @@ extension Application {
         }
 
         public func getTotalStreamCount() -> EventLoopFuture<UInt64> {
+            self._getTotalStreamCount()
+        }
+
+        public func getTotalStreamCount() async throws -> UInt64 {
+            try await self._getTotalStreamCount().get()
+        }
+
+        internal func _getTotalStreamCount() -> EventLoopFuture<UInt64> {
             self.storage.manager.withLockedValue { manager in
                 if let basicMan = manager as? BasicInMemoryConnectionManager {
                     return basicMan.getTotalStreamCount()
