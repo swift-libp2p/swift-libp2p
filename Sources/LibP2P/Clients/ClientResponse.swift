@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-public struct ClientResponse {
+public struct ClientResponse: Sendable {
     public var payload: ByteBuffer?
     // PeerID
     // RemoteAddress
