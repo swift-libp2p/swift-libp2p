@@ -150,23 +150,24 @@ extension Application {
         let el = self.eventLoopGroup.next()
 
         return self.peers.getAddresses(forPeer: peer, on: el).flatMap { addresses -> EventLoopFuture<Data> in
-            guard !addresses.isEmpty else { return el.makeFailedFuture(Errors.noKnownAddressesForPeer) }
-
             // Check to see if we have a transport thats capable of dialing any of these addresses...
             // - TODO: Maybe instead of just returning the first transport found, we return the best transport (like one that's already muxed, or with low latency, or recently interacted with)
-            return self.transports.canDialAny(addresses, on: el).flatMap { match -> EventLoopFuture<Data> in
-                let singleRequest = SingleRequest(
-                    to: match,
-                    overProtocol: proto,
-                    withRequest: request,
-                    withHandlers: handlers,
-                    andMiddleware: middleware,
-                    on: self.eventLoopGroup.next(),
-                    host: self,
-                    withTimeout: timeout
-                )
-                return singleRequest.resume(style: style)
+            guard let addressToDial = try? self.transports.canDialAny(addresses) else {
+                return el.makeFailedFuture( Errors.noKnownAddressesForPeer )
             }
+            
+            let singleRequest = SingleRequest(
+                to: addressToDial,
+                overProtocol: proto,
+                withRequest: request,
+                withHandlers: handlers,
+                andMiddleware: middleware,
+                on: self.eventLoopGroup.next(),
+                host: self,
+                withTimeout: timeout
+            )
+            
+            return singleRequest.resume(style: style)
         }
     }
 
