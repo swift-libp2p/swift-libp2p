@@ -40,5 +40,10 @@ extension Application {
         public func stop() {
             self.promise.succeed(())
         }
+
+        /// Suspends until the application has been stopped (via ``stop()`` or shutdown).
+        public func waitUntilStopped() async throws {
+            try await self.onStop.get()
+        }
     }
 }
