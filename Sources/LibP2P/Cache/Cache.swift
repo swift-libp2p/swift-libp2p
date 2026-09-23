@@ -19,7 +19,7 @@
 public import NIOCore
 
 /// Codable key-value pair cache.
-public protocol Cache {
+public protocol Cache: Sendable {
     /// Gets a decodable value from the cache. Returns `nil` if not found.
     func get<T>(_ key: String, as type: T.Type) -> EventLoopFuture<T?>
     where T: Decodable
