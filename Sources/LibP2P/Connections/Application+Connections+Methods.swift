@@ -47,7 +47,7 @@ extension Application {
         }
     }
 
-    /// Strips out local/internal addresses that are annouced by peers (I'm not sure why they include these addresses)
+    /// Strips out local/internal addresses that are annouced by peers.
     ///
     /// Example:
     /// - When we send a findNode query in Kad DHT, we receive Peer messages that contains a list of all listening addresses that peer is known to be listening on.
@@ -72,39 +72,15 @@ extension Application {
         _ mas: [Multiaddr],
         externalAddressesOnly: Bool = true,
         on: EventLoop
-    ) -> EventLoopFuture<[Multiaddr]> {
-        let promise = on.makePromise(of: [Multiaddr].self)
-        let dialableAddresses: NIOLockedValueBox<[Multiaddr]> = .init([])
-
-        let _ = Set(mas).map { ma in
-            self.transports.canDial(ma, on: on).map { canDial in
-                // TCP will pick up dns, dns4 and dns6 along with ip4 and ip6 addresses
-                if canDial {
-                    if externalAddressesOnly {
-                        guard !ma.isInternalAddress else { return }
-                    }
-                    dialableAddresses.withLockedValue({
-                        $0.append(ma)
-                    })
-                } else {
-                    // Otherwise, ask our registered resolvers if they can resolve the address
-                    // ex: dnsaddr/ will pass when the LibP2PDNSAddr package is registered
-                    if self.resolvers.can(resolve: ma) {
-                        dialableAddresses.withLockedValue({
-                            $0.append(ma)
-                        })
-                    }
-                }
-            }
-        }.flatten(on: on).map {
-            promise.succeed(dialableAddresses.withLockedValue({ $0 }))
-        }
-
-        return promise.futureResult
+    ) -> [Multiaddr] {
+        return self.transports.dialableAddress(
+            mas,
+            externalAddressesOnly: externalAddressesOnly
+        )
     }
 
     public func stripInternalAddresses(_ mas: [Multiaddr]) -> [Multiaddr] {
-        mas.filter { !$0.isInternalAddress }
+        self.transports.stripInternalAddresses(mas)
     }
 
     /// Broadcasts the given message to all current connections that support the specified protocol
