@@ -16,7 +16,6 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-// TODO: Remove these deprecated methods along with ServerStartError in the major release.
 public protocol Server: LifecycleHandler {
     static var key: String { get }
 
