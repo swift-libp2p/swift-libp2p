@@ -132,7 +132,17 @@ extension Application.DiscoveryServices {
         case service(String)
     }
 
+    /// Announces the given service registration on our discovery services.
     public func announce(_ service: ServiceRegistration) -> EventLoopFuture<TimeAmount> {
+        self._announce(service)
+    }
+
+    /// Announces the given service registration on our discovery services.
+    public func announce(_ service: ServiceRegistration) async throws -> TimeAmount {
+        try await self._announce(service).get()
+    }
+
+    internal func _announce(_ service: ServiceRegistration) -> EventLoopFuture<TimeAmount> {
         guard case .service(let proto) = service else {
             return application.eventLoopGroup.any().makeFailedFuture(Errors.notYetImplemented)
         }
