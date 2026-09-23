@@ -18,6 +18,7 @@ public import NIOCore
 import VarInt
 
 extension Application {
+    
     /// A method on libp2p that acts as a request / response mechanism for streams
     ///
     /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
@@ -30,8 +31,97 @@ extension Application {
         andMiddleware middleware: MiddlewareConfig = .custom(nil),
         withTimeout timeout: TimeAmount = .seconds(3)
     ) -> EventLoopFuture<Data> {
+        self._newRequest(
+            to: ma,
+            forProtocol: proto,
+            withRequest: request,
+            style: style,
+            withHandlers: handlers,
+            andMiddleware: middleware,
+            withTimeout: timeout
+        )
+    }
+    
+    /// A method on libp2p that acts as a request / response mechanism for streams
+    ///
+    /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
+    public func newRequest(
+        to ma: Multiaddr,
+        forProtocol proto: String,
+        withRequest request: Data,
+        style: SingleRequest.Style = .responseExpected,
+        withHandlers handlers: HandlerConfig = .rawHandlers([]),
+        andMiddleware middleware: MiddlewareConfig = .custom(nil),
+        withTimeout timeout: TimeAmount = .seconds(3)
+    ) async throws -> Data {
+        try await self._newRequest(
+            to: ma,
+            forProtocol: proto,
+            withRequest: request,
+            style: style,
+            withHandlers: handlers,
+            andMiddleware: middleware,
+            withTimeout: timeout
+        ).get()
+    }
+
+    /// A method on libp2p that acts as a request / response mechanism for streams
+    ///
+    /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
+    public func newRequest(
+        to peer: PeerID,
+        forProtocol proto: String,
+        withRequest request: Data,
+        style: SingleRequest.Style = .responseExpected,
+        withHandlers handlers: HandlerConfig = .rawHandlers([]),
+        andMiddleware middleware: MiddlewareConfig = .custom(nil),
+        withTimeout timeout: TimeAmount = .seconds(3)
+    ) -> EventLoopFuture<Data> {
+        self._newRequest(
+            to: peer,
+            forProtocol: proto,
+            withRequest: request,
+            style: style,
+            withHandlers: handlers,
+            andMiddleware: middleware,
+            withTimeout: timeout
+        )
+    }
+    
+    /// A method on libp2p that acts as a request / response mechanism for streams
+    ///
+    /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
+    public func newRequest(
+        to peer: PeerID,
+        forProtocol proto: String,
+        withRequest request: Data,
+        style: SingleRequest.Style = .responseExpected,
+        withHandlers handlers: HandlerConfig = .rawHandlers([]),
+        andMiddleware middleware: MiddlewareConfig = .custom(nil),
+        withTimeout timeout: TimeAmount = .seconds(3)
+    ) async throws -> Data {
+        try await self._newRequest(
+            to: peer,
+            forProtocol: proto,
+            withRequest: request,
+            style: style,
+            withHandlers: handlers,
+            andMiddleware: middleware,
+            withTimeout: timeout
+        ).get()
+    }
+
+    /// The actual internal implementation that both the ELF and Async versions call.
+    internal func _newRequest(
+        to ma: Multiaddr,
+        forProtocol proto: String,
+        withRequest request: Data,
+        style: SingleRequest.Style,
+        withHandlers handlers: HandlerConfig,
+        andMiddleware middleware: MiddlewareConfig,
+        withTimeout timeout: TimeAmount
+    ) -> EventLoopFuture<Data> {
         let promise = self.eventLoopGroup.next().makePromise(of: Data.self)
-        //let singleRequest =
         promise.completeWith(
             SingleRequest(
                 to: ma,
@@ -47,17 +137,15 @@ extension Application {
         return promise.futureResult
     }
 
-    /// A method on libp2p that acts as a request / response mechanism for streams
-    ///
-    /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
-    public func newRequest(
+    /// The actual internal implementation that both the ELF and Async versions call.
+    internal func _newRequest(
         to peer: PeerID,
         forProtocol proto: String,
         withRequest request: Data,
-        style: SingleRequest.Style = .responseExpected,
-        withHandlers handlers: HandlerConfig = .rawHandlers([]),
-        andMiddleware middleware: MiddlewareConfig = .custom(nil),
-        withTimeout timeout: TimeAmount = .seconds(3)
+        style: SingleRequest.Style,
+        withHandlers handlers: HandlerConfig,
+        andMiddleware middleware: MiddlewareConfig,
+        withTimeout timeout: TimeAmount
     ) -> EventLoopFuture<Data> {
         let el = self.eventLoopGroup.next()
 
