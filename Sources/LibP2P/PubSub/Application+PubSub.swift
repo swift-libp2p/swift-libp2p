@@ -101,7 +101,17 @@ extension Application {
             case publishedToPeers(Int)
         }
 
+        /// Publishes the given message to all installed PubSub services for the specified topic.
         public func publish(_ msg: [UInt8], toTopic topic: String) -> EventLoopFuture<PublishedResults> {
+            self._publish(msg, toTopic: topic)
+        }
+
+        /// Publishes the given message to all installed PubSub services for the specified topic.
+        public func publish(_ msg: [UInt8], toTopic topic: String) async throws -> PublishedResults {
+            try await self._publish(msg, toTopic: topic).get()
+        }
+
+        internal func _publish(_ msg: [UInt8], toTopic topic: String) -> EventLoopFuture<PublishedResults> {
             let el = application.eventLoopGroup.next()
             return services.map { service in
                 service.publish(topic: topic, bytes: msg, on: el)
@@ -118,13 +128,36 @@ extension Application {
             return sub
         }
 
+        /// Subscribes to the given config's topic on all installed PubSub services.
         public func subscribe(_ config: PubSub.SubscriptionConfig, on loop: EventLoop? = nil) -> EventLoopFuture<Void> {
+            self._subscribe(config, on: loop)
+        }
+
+        /// Subscribes to the given config's topic on all installed PubSub services.
+        public func subscribe(_ config: PubSub.SubscriptionConfig) async throws {
+            try await self._subscribe(config).get()
+        }
+
+        internal func _subscribe(
+            _ config: PubSub.SubscriptionConfig,
+            on loop: EventLoop? = nil
+        ) -> EventLoopFuture<Void> {
             services.map { service in
                 service.subscribe(config, on: loop)
             }.flatten(on: application.eventLoopGroup.next())
         }
 
+        /// Unsubscribes from the given topic on all installed PubSub services.
         public func unsubscribe(topic: String, on loop: EventLoop? = nil) -> EventLoopFuture<Void> {
+            self._unsubscribe(topic: topic, on: loop)
+        }
+
+        /// Unsubscribes from the given topic on all installed PubSub services.
+        public func unsubscribe(topic: String) async throws {
+            try await self._unsubscribe(topic: topic).get()
+        }
+
+        internal func _unsubscribe(topic: String, on loop: EventLoop? = nil) -> EventLoopFuture<Void> {
             services.map { service in
                 service.unsubscribe(topic: topic, on: loop)
             }.flatten(on: application.eventLoopGroup.next())
