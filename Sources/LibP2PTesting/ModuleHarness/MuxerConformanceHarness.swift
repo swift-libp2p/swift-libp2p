@@ -142,31 +142,23 @@ public func runMuxerConformance(
         // MARK: Concurrent streams (multiplexing independence)
         // All requests are launched before any is awaited, so they genuinely overlap on the wire.
         if concurrentStreams > 0 {
-            let el = client.eventLoopGroup.next()
-            var expected: [Data] = []
-            var futures: [EventLoopFuture<Data>] = []
-            for i in 0..<concurrentStreams {
-                let payload = Data("concurrent-\(i)-".utf8) + randomData(count: 4096)
-                expected.append(payload)
-                futures.append(
-                    client.newRequest(
-                        to: addr,
-                        forProtocol: echoProto,
-                        withRequest: payload,
-                        withHandlers: .handlers([.varIntLengthPrefixed]),
-                        withTimeout: requestTimeout
-                    )
-                )
+            let payloads = (0..<concurrentStreams).map { i in
+                Data("concurrent-\(i)-".utf8) + randomData(count: 4096)
             }
-            let results = try await EventLoopFuture.whenAllComplete(futures, on: el).get()
-            var allMatched = true
-            for (i, result) in results.enumerated() {
-                switch result {
-                case .success(let data) where data == expected[i]:
-                    continue
-                default:
-                    allMatched = false
+            let allMatched = await withTaskGroup(of: Bool.self) { group in
+                for payload in payloads {
+                    group.addTask {
+                        let response = try? await client.newRequest(
+                            to: addr,
+                            forProtocol: echoProto,
+                            withRequest: payload,
+                            withHandlers: .handlers([.varIntLengthPrefixed]),
+                            withTimeout: requestTimeout
+                        )
+                        return response == payload
+                    }
                 }
+                return await group.reduce(true) { $0 && $1 }
             }
             report.check(
                 "\(concurrentStreams) concurrent streams each round-trip independently",
