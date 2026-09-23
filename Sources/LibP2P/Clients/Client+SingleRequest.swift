@@ -253,98 +253,95 @@ extension Application {
             guard !self.hasBegun else { return self.eventloop.makeFailedFuture(SingleRequestError.failedToOpenStream) }
             self._hasBegun.withLockedValue { $0 = true }
 
-            do {
-                try host.newStream(
-                    to: self.multiaddr,
-                    forProtocol: self.proto,
-                    withHandlers: self.handlers,
-                    andMiddleware: self.middleware
-                ) { req -> EventLoopFuture<RawResponse> in
-                    switch req.event {
-                    case .ready:
-                        // If the stream is ready and we have data to send... let's send it...
-                        return req.eventLoop.makeSucceededFuture(
-                            RawResponse(payload: req.allocator.buffer(bytes: Array(self.request)))
-                        ).always { _ in
-                            if style == .noResponseExpected {
-                                self._hasCompleted.withLockedValue { $0 = true }
-                                self.cancelTimeoutTask()
-                                req.shouldClose()
-                                self.promise.succeed(Data())
-                            }
-                        }
-
-                    case .data(let response):
-                        var chunks = self.chunks.withLockedValue { $0 }
-                        if chunks == 0 {
-                            // Check if the response is uVarInt length prefixed...
-                            if let expected = Self.announcedResponseLength(of: response),
-                                expected > response.readableBytes
-                            {
-                                // We need to buffer...
-                                self.expectedResponseBytes.withLockedValue { $0 = expected }
-                                self.buffer.withLockedValue { $0 = response }
-                                chunks += 1
-                                self.chunks.withLockedValue { $0 = chunks }
-                                // Stay Open...
-                                self.resetTimeoutTask()
-                                return req.eventLoop.makeSucceededFuture(
-                                    RawResponse(payload: req.allocator.buffer(bytes: []))
-                                )
-                            }
-
+            // Ask our host to open the stream
+            host._newStream(
+                to: self.multiaddr,
+                forProtocol: self.proto,
+                withHandlers: self.handlers,
+                andMiddleware: self.middleware
+            ) { req -> EventLoopFuture<RawResponse> in
+                switch req.event {
+                case .ready:
+                    // If the stream is ready and we have data to send... let's send it...
+                    return req.eventLoop.makeSucceededFuture(
+                        RawResponse(payload: req.allocator.buffer(bytes: Array(self.request)))
+                    ).always { _ in
+                        if style == .noResponseExpected {
                             self._hasCompleted.withLockedValue { $0 = true }
                             self.cancelTimeoutTask()
                             req.shouldClose()
-                            self.promise.succeed(Data(response.readableBytesView))
-                        } else {
-                            // Append the next response onto the buffer and check to see if we've meet the length prefix
-                            chunks += 1
-                            self.buffer.withLockedValue { buffer in
-                                buffer!.writeBytes(response.readableBytesView)
-                                let expected = self.expectedResponseBytes.withLockedValue { $0! }
-                                if buffer!.readableBytes >= expected {
-                                    self._hasCompleted.withLockedValue { $0 = true }
-                                    self.cancelTimeoutTask()
-                                    req.shouldClose()
-                                    self.promise.succeed(Data(buffer!.readableBytesView))
-                                } else {
-                                    // Stay open
-                                    self.resetTimeoutTask()
-                                }
-                            }
-                            self.chunks.withLockedValue { $0 = chunks }
+                            self.promise.succeed(Data())
                         }
-
-                    case .closed:
-                        if !self.hasCompleted {
-                            self._hasCompleted.withLockedValue { $0 = true }
-                            req.logger.error("Stream Closed before we got our response")
-                            self.promise.fail(SingleRequestError.failedToOpenStream)
-                        }
-                        self.cancelTimeoutTask()
-                        req.shouldClose()
-
-                    case .error(let error):
-                        self._hasCompleted.withLockedValue { $0 = true }
-                        req.logger.error("Stream Error - \(error)")
-                        self.promise.fail(error)
-                        self.cancelTimeoutTask()
-                        req.shouldClose()
                     }
 
-                    return req.eventLoop.makeSucceededFuture(RawResponse(payload: req.allocator.buffer(bytes: [])))
-                }
+                case .data(let response):
+                    var chunks = self.chunks.withLockedValue { $0 }
+                    if chunks == 0 {
+                        // Check if the response is uVarInt length prefixed...
+                        if let expected = Self.announcedResponseLength(of: response),
+                            expected > response.readableBytes
+                        {
+                            // We need to buffer...
+                            self.expectedResponseBytes.withLockedValue { $0 = expected }
+                            self.buffer.withLockedValue { $0 = response }
+                            chunks += 1
+                            self.chunks.withLockedValue { $0 = chunks }
+                            // Stay Open...
+                            self.resetTimeoutTask()
+                            return req.eventLoop.makeSucceededFuture(
+                                RawResponse(payload: req.allocator.buffer(bytes: []))
+                            )
+                        }
 
-                /// Enforce a timeout on the request...
-                self.startTimeoutTask()
+                        self._hasCompleted.withLockedValue { $0 = true }
+                        self.cancelTimeoutTask()
+                        req.shouldClose()
+                        self.promise.succeed(Data(response.readableBytesView))
+                    } else {
+                        // Append the next response onto the buffer and check to see if we've meet the length prefix
+                        chunks += 1
+                        self.buffer.withLockedValue { buffer in
+                            buffer!.writeBytes(response.readableBytesView)
+                            let expected = self.expectedResponseBytes.withLockedValue { $0! }
+                            if buffer!.readableBytes >= expected {
+                                self._hasCompleted.withLockedValue { $0 = true }
+                                self.cancelTimeoutTask()
+                                req.shouldClose()
+                                self.promise.succeed(Data(buffer!.readableBytesView))
+                            } else {
+                                // Stay open
+                                self.resetTimeoutTask()
+                            }
+                        }
+                        self.chunks.withLockedValue { $0 = chunks }
+                    }
 
-            } catch {
-                self.eventloop.execute {
+                case .closed:
+                    if !self.hasCompleted {
+                        self._hasCompleted.withLockedValue { $0 = true }
+                        req.logger.error("Stream Closed before we got our response")
+                        self.promise.fail(SingleRequestError.failedToOpenStream)
+                    }
+                    self.cancelTimeoutTask()
+                    req.shouldClose()
+
+                case .error(let error):
+                    self._hasCompleted.withLockedValue { $0 = true }
+                    req.logger.error("Stream Error - \(error)")
                     self.promise.fail(error)
+                    self.cancelTimeoutTask()
+                    req.shouldClose()
                 }
+
+                return req.eventLoop.makeSucceededFuture(RawResponse(payload: req.allocator.buffer(bytes: [])))
+            }.whenComplete { result in
+                self.host.logger.trace("NewStream(SingleRequest)[\(self.proto)] result => \(result)")
             }
 
+            // Enforce a timeout on the request...
+            self.startTimeoutTask()
+
+            // Return the future result
             return self.promise.futureResult
         }
 
