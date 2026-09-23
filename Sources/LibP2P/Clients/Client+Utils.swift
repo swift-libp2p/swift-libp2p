@@ -14,6 +14,12 @@
 
 extension Application {
 
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async newStream(to:forProtocol:...) instead. This fire-and-forget form will be removed in swift-libp2p 0.5.0"
+    )
     public func newStream(
         to: PeerID,
         forProtocol proto: String,
@@ -69,6 +75,12 @@ extension Application {
 
     /// Creates a new outbound stream (channel) to the node at the specified multiaddr, delegating to the
     /// supplied handler / responder. This method will resuse existing connections when possible.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async newStream(to:forProtocol:...) instead. This fire-and-forget form will be removed in swift-libp2p 0.5.0"
+    )
     public func newStream(
         to: Multiaddr,
         forProtocol proto: String,
@@ -119,6 +131,12 @@ extension Application {
 
     /// Creates a new outbound stream (channel) to the node at the specified multiaddr, delegating to our
     /// registered Route handlers. This method will resuse existing connections when possible.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async newStream(to:forProtocol:) instead. This fire-and-forget form will be removed in swift-libp2p 0.5.0"
+    )
     public func newStream(to: Multiaddr, forProtocol proto: String) throws {
         self._newStream(to: to, forProtocol: proto).whenComplete { result in
             self.logger.trace("NewStream(toMultiaddr)[\(proto)] result => \(result)")
@@ -205,6 +223,12 @@ extension Application {
         }
     }
 
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async newStream(to:forProtocol:) instead. This fire-and-forget form will be removed in swift-libp2p 0.5.0"
+    )
     public func newStream(to: PeerInfo, forProtocol proto: String) throws {
         self._newStream(to: to, forProtocol: proto).whenComplete { result in
             self.logger.trace("NewStream(toPeerInfo)[\(proto)] result => \(result)")
@@ -222,6 +246,12 @@ extension Application {
         }
     }
 
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async newStream(to:forProtocol:) instead. This fire-and-forget form will be removed in swift-libp2p 0.5.0"
+    )
     public func newStream(to: PeerID, forProtocol proto: String) throws {
         self._newStream(to: to, forProtocol: proto).whenComplete { result in
             self.logger.trace("NewStream(toPeer, forProtocol)[\(proto)] result => \(result)")

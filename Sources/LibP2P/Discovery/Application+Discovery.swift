@@ -133,6 +133,12 @@ extension Application.DiscoveryServices {
     }
 
     /// Announces the given service registration on our discovery services.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async announce(_:) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+    )
     public func announce(_ service: ServiceRegistration) -> EventLoopFuture<TimeAmount> {
         self._announce(service)
     }

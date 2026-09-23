@@ -86,6 +86,12 @@ extension Application {
     /// Broadcasts the given message to all current connections that support the specified protocol
     ///
     /// - Returns: The b58 string of each peer the message was written to.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async broadcast(_:toProtocol:) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+    )
     @discardableResult
     public func broadcast(_ bytes: [UInt8], toProtocol proto: String) -> EventLoopFuture<[String]> {
         self._broadcast(bytes, toProtocol: proto)

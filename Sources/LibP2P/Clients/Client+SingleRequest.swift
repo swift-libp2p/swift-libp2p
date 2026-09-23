@@ -18,10 +18,16 @@ public import NIOCore
 import VarInt
 
 extension Application {
-    
+
     /// A method on libp2p that acts as a request / response mechanism for streams
     ///
     /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async newRequest(to:forProtocol:...) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+    )
     public func newRequest(
         to ma: Multiaddr,
         forProtocol proto: String,
@@ -41,7 +47,7 @@ extension Application {
             withTimeout: timeout
         )
     }
-    
+
     /// A method on libp2p that acts as a request / response mechanism for streams
     ///
     /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
@@ -68,6 +74,12 @@ extension Application {
     /// A method on libp2p that acts as a request / response mechanism for streams
     ///
     /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async newRequest(to:forProtocol:...) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+    )
     public func newRequest(
         to peer: PeerID,
         forProtocol proto: String,
@@ -87,7 +99,7 @@ extension Application {
             withTimeout: timeout
         )
     }
-    
+
     /// A method on libp2p that acts as a request / response mechanism for streams
     ///
     /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
@@ -153,9 +165,9 @@ extension Application {
             // Check to see if we have a transport thats capable of dialing any of these addresses...
             // - TODO: Maybe instead of just returning the first transport found, we return the best transport (like one that's already muxed, or with low latency, or recently interacted with)
             guard let addressToDial = try? self.transports.canDialAny(addresses) else {
-                return el.makeFailedFuture( Errors.noKnownAddressesForPeer )
+                return el.makeFailedFuture(Errors.noKnownAddressesForPeer)
             }
-            
+
             let singleRequest = SingleRequest(
                 to: addressToDial,
                 overProtocol: proto,
@@ -166,7 +178,7 @@ extension Application {
                 host: self,
                 withTimeout: timeout
             )
-            
+
             return singleRequest.resume(style: style)
         }
     }

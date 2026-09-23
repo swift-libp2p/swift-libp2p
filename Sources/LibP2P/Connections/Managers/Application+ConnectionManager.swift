@@ -354,6 +354,12 @@ extension Application {
             }
         }
 
+        @available(
+            *,
+            deprecated,
+            message:
+                "Use the async getTotalConnectionCount() instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+        )
         public func getTotalConnectionCount() -> EventLoopFuture<UInt64> {
             self._getTotalConnectionCount()
         }
@@ -371,6 +377,12 @@ extension Application {
             }
         }
 
+        @available(
+            *,
+            deprecated,
+            message:
+                "Use the async getTotalStreamCount() instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+        )
         public func getTotalStreamCount() -> EventLoopFuture<UInt64> {
             self._getTotalStreamCount()
         }

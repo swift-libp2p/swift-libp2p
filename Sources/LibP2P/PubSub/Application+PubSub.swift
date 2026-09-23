@@ -102,6 +102,12 @@ extension Application {
         }
 
         /// Publishes the given message to all installed PubSub services for the specified topic.
+        @available(
+            *,
+            deprecated,
+            message:
+                "Use the async publish(_:toTopic:) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+        )
         public func publish(_ msg: [UInt8], toTopic topic: String) -> EventLoopFuture<PublishedResults> {
             self._publish(msg, toTopic: topic)
         }
@@ -129,6 +135,12 @@ extension Application {
         }
 
         /// Subscribes to the given config's topic on all installed PubSub services.
+        @available(
+            *,
+            deprecated,
+            message:
+                "Use the async subscribe(_:) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+        )
         public func subscribe(_ config: PubSub.SubscriptionConfig, on loop: EventLoop? = nil) -> EventLoopFuture<Void> {
             self._subscribe(config, on: loop)
         }
@@ -148,6 +160,12 @@ extension Application {
         }
 
         /// Unsubscribes from the given topic on all installed PubSub services.
+        @available(
+            *,
+            deprecated,
+            message:
+                "Use the async unsubscribe(topic:) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+        )
         public func unsubscribe(topic: String, on loop: EventLoop? = nil) -> EventLoopFuture<Void> {
             self._unsubscribe(topic: topic, on: loop)
         }
