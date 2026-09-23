@@ -155,7 +155,7 @@ extension LibP2PTests {
                 #expect(await Self.waitUntil { !listened.withLockedValue { $0.isEmpty } })
                 let announced = listened.withLockedValue { Set($0) }
 
-                server.shutdown()
+                await server.shutdown()
 
                 #expect(
                     await Self.waitUntil { closed.withLockedValue { Set($0) } == announced },
@@ -182,13 +182,13 @@ extension LibP2PTests {
             try await withApp(configure: config) { app in
                 let server = try #require(app.servers.server(for: TCPServer.self))
 
-                server.shutdown()
+                await server.shutdown()
                 #expect(await Self.waitUntil { !closed.withLockedValue { $0.isEmpty } })
                 let afterFirst = closed.withLockedValue { $0.count }
 
                 // Must not throw, stall, or emit a duplicate round of events.
-                server.shutdown()
-                server.shutdown()
+                await server.shutdown()
+                await server.shutdown()
 
                 try await Task.sleep(for: .milliseconds(100))
                 #expect(closed.withLockedValue { $0.count } == afterFirst)
