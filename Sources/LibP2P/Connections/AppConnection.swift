@@ -79,6 +79,43 @@ public protocol AppConnection: Connection, CustomStringConvertible {
     func prepareForClose()
 }
 
+// MARK: - Async
+
+extension AppConnection {
+
+    public func initializeChannel() async throws {
+        try await self.initializeChannel().get()
+    }
+
+    /// Attempts to open a new Stream but throws (without notifying the supplied closure) when the
+    /// Connection refused the stream, so that the caller can recover by attempting a new, cold, dial.
+    ///
+    /// See the future-based requirement for more details.
+    public func tryNewStream(
+        forProtocol proto: String,
+        withHandlers handlers: HandlerConfig = .rawHandlers([]),
+        andMiddleware middleware: MiddlewareConfig = .custom(nil),
+        closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
+    ) async throws {
+        try await self.tryNewStream(
+            forProtocol: proto,
+            withHandlers: handlers,
+            andMiddleware: middleware,
+            closure: closure
+        ).get()
+    }
+
+    /// Attempts to open a new Stream but throws (without notifying the registered responder) when the
+    /// Connection refused the stream, so that the caller can recover by attempting a new, cold, dial.
+    ///
+    /// See the future-based requirement for more details.
+    public func tryNewStream(forProtocol proto: String) async throws {
+        try await self.tryNewStream(forProtocol: proto).get()
+    }
+}
+
+// MARK: - Connection Upgrading
+
 extension AppConnection {
 
     /// This method returns immediately after installing the upgrader and completes a promise upon protocol negotiation
