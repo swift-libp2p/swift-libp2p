@@ -289,26 +289,29 @@ extension Application {
     private func resolveAddressForBestTransport(_ ma: Multiaddr) async throws -> Multiaddr {
         // Resolve the ma if necessary, this can return multiple addresses
         let mas = try await self.resolveAddressIfNecessary(ma)
-        
+
         // No Results, throw an error
         guard !mas.isEmpty else { throw Errors.noTransportForMultiaddr(ma) }
-        
+
         // We resolved at least one new address...
         // Instead of trying any random multiaddr, lets see if we have a PeerID we can use to
         // find an existing connection...
         let pids = Set(mas.compactMap { try? $0.getPeerID() })
         for peer in pids {
-            if let existingConnection = try? await self.connections.getBestConnectionForPeer(peer: peer) {
-                if let addy = existingConnection.remoteAddr {
-                    return addy
-                }
+            // getBestConnectionForPeer is an implementation specific call, so ensure that
+            // the returned connection's remotePeer is actually the peer we're interested in.
+            if let existingConnection = try? await self.connections.getBestConnectionForPeer(peer: peer),
+                existingConnection.remotePeer == peer,
+                let addy = existingConnection.remoteAddr
+            {
+                return addy
             }
         }
-        
+
         // Otherwise see if we can dial any of the resolved addresses...
         return try self.transports.canDialAny(mas)
     }
-    
+
     /// Given a multiaddr this method will
     /// - attempt to resolve it if necessary (dns or dnsaddr)
     /// - using the set of resolved multiaddr, attempt to find an exsiting connection to one of them
