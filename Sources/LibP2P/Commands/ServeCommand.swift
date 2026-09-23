@@ -81,49 +81,54 @@ public final class ServeCommand: AsyncCommand, Sendable {
 
     /// See `AsyncCommand`.
     public func run(using context: CommandContext, signature: Signature) async throws {
+        let servers = context.application.servers.allServers
+
+        // Resolve each server's bind address
+        let addresses: [BindAddress?]
         switch (signature.hostname, signature.port, signature.bind, signature.socketPath) {
         case (.none, .none, .none, .none):  // use defaults
-            for server in context.application.servers.allServers {
-                try server.start(address: nil)
-            }
+            addresses = servers.map { _ in nil }
 
         case (.none, .none, .none, .some(let socketPath)):  // unix socket
-            for server in context.application.servers.allServers {
-                try server.start(address: .unixDomainSocket(path: socketPath))
-            }
+            addresses = servers.map { _ in .unixDomainSocket(path: socketPath) }
 
         case (.none, .none, .some(let address), .none):  // bind ("hostname:port")
             let hostname = address.split(separator: ":").first.flatMap(String.init)
             let port = address.split(separator: ":").last.flatMap(String.init).flatMap(Int.init)
-            try self.box.withLockedValue { box in
+            addresses = self.box.withLockedValue { box in
                 box.nextPort = port ?? ServeCommand.defaultPort
-                for server in context.application.servers.allServers {
-                    try server.start(address: .hostname(hostname, port: box.nextPort))
-                    box.nextPort! += 1
+                return servers.map { _ in
+                    defer { box.nextPort! += 1 }
+                    return .hostname(hostname, port: box.nextPort)
                 }
             }
 
         case (let hostname, let port, .none, .none):  // hostname / port
-            try self.box.withLockedValue { box in
+            addresses = self.box.withLockedValue { box in
                 box.nextPort = port ?? ServeCommand.defaultPort
-                for server in context.application.servers.allServers {
-                    try server.start(address: .hostname(hostname, port: box.nextPort!))
-                    box.nextPort! += 1
+                return servers.map { _ in
+                    defer { box.nextPort! += 1 }
+                    return .hostname(hostname, port: box.nextPort)
                 }
             }
 
         default: throw Error.incompatibleFlags
         }
 
-        var box = self.box.withLockedValue { $0 }
-        box.servers = context.application.servers.allServers
+        // Start the servers using their resolved bind address
+        for (server, address) in zip(servers, addresses) {
+            try await server.start(address: address)
+        }
 
-        // allow the server to be stopped or waited for
+        var box = self.box.withLockedValue { $0 }
+        box.servers = servers
+
+        // Allow the server to be stopped or waited for
         let promise = context.application.eventLoopGroup.next().makePromise(of: Void.self)
         context.application.running = .start(using: promise)
         box.running = context.application.running
 
-        // setup signal sources for shutdown
+        // Setup signal sources for shutdown
         let signalQueue = DispatchQueue(label: "swift.libp2p.server.shutdown")
         func makeSignalSource(_ code: Int32) {
             #if canImport(Darwin)
@@ -165,8 +170,7 @@ public final class ServeCommand: AsyncCommand, Sendable {
         box.didShutdown = true
         box.running?.stop()
         for server in box.servers {
-            // TODO: Support Async Server Shutdowns
-            server.shutdown()
+            await server.shutdown()
         }
         for signalSource in box.signalSources {
             signalSource.cancel()  // clear refs
