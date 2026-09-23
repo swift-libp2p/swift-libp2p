@@ -93,9 +93,7 @@ public func runTransportConformance(
         }
 
         // MARK: canDial (warn + skip dial checks if the transport rejects its own listen address)
-        let el = client.eventLoopGroup.next()
-        let canDial = (try? await client.transports.canDial(addr, on: el).get()) ?? false
-        guard canDial else {
+        guard client.transports.canDial(addr) else {
             report.warn("Transport canDial() rejected its own loopback listen address — skipping dial checks")
             try await client.asyncShutdown()
             try await host.asyncShutdown()
