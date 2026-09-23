@@ -86,7 +86,7 @@ public func runMuxerConformance(
             withRequest: warmup,
             withHandlers: .handlers([.varIntLengthPrefixed]),
             withTimeout: requestTimeout
-        ).get()
+        )
         report.check(
             "Warm-up echo round-trips",
             warmupResponse == warmup,
@@ -128,7 +128,7 @@ public func runMuxerConformance(
                     withRequest: payload,
                     withHandlers: .handlers([.varIntLengthPrefixed]),
                     withTimeout: requestTimeout
-                ).get()
+                )
                 report.check(
                     "Round-trip \(size)B payload",
                     response == payload,
@@ -226,7 +226,7 @@ public func runMuxerConformance(
             withRequest: Data("probe".utf8),
             withHandlers: .handlers([.varIntLengthPrefixed]),
             withTimeout: requestTimeout
-        ).get()
+        )
         _ = await harnessWaitUntil { streamProbes.withLockedValue { $0.contains { $0.readCompletes > 0 } } }
         let probes = streamProbes.withLockedValue { $0 }
         let totalReads = probes.reduce(0) { $0 + $1.reads }

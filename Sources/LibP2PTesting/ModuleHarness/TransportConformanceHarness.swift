@@ -109,7 +109,7 @@ public func runTransportConformance(
             withRequest: warmup,
             withHandlers: .handlers([.varIntLengthPrefixed]),
             withTimeout: requestTimeout
-        ).get()
+        )
         report.check(
             "Dial + echo round-trips (bytes move peer-to-peer)",
             warmupResponse == warmup,
@@ -143,7 +143,7 @@ public func runTransportConformance(
                     withRequest: payload,
                     withHandlers: .handlers([.varIntLengthPrefixed]),
                     withTimeout: requestTimeout
-                ).get()
+                )
                 report.check(
                     "Round-trip \(size)B payload",
                     response == payload,
