@@ -106,7 +106,7 @@ func runWritePromiseProbe(
 ) async {
     let checkName = "Stream write future is tied to the socket write (not completed prematurely)"
 
-    try? client.newStream(
+    try? await client.newStream(
         to: addr,
         forProtocol: holdProto,
         withHandlers: .handlers([.varIntLengthPrefixed])

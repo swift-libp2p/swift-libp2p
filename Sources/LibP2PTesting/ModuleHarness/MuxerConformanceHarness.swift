@@ -249,7 +249,7 @@ public func runMuxerConformance(
             // Open a client-controlled stream to the hold route. We use the closure-based `newStream` (not
             // the fire-and-forget variant) so the outbound stream has a responder and actually opens; the
             // closure itself is a no-op since we only need a live stream handle to reset.
-            try? client.newStream(
+            try? await client.newStream(
                 to: addr,
                 forProtocol: holdProto,
                 withHandlers: .handlers([.varIntLengthPrefixed])
@@ -286,7 +286,7 @@ public func runMuxerConformance(
         }
 
         // MARK: Idempotency — double graceful close must not crash or leak a promise
-        try? client.newStream(
+        try? await client.newStream(
             to: addr,
             forProtocol: holdProto,
             withHandlers: .handlers([.varIntLengthPrefixed])
@@ -318,7 +318,7 @@ public func runMuxerConformance(
         // muxer-dependent (some fire errorCaught+inactive, some only inactive) — so the hard contract is
         // "responder is notified of the teardown", with a `.error`-specific advisory. We reuse a reset to
         // generate the terminal event, so that half of the check requires `testReset`.
-        try? client.newStream(
+        try? await client.newStream(
             to: addr,
             forProtocol: eventsProto,
             withHandlers: .handlers([.varIntLengthPrefixed])

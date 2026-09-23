@@ -279,7 +279,7 @@ public func runSecurityConformance(
 
         // MARK: Stream reset (see runMuxerConformance for the testReset caveat)
         if testReset {
-            try? client.newStream(
+            try? await client.newStream(
                 to: addr,
                 forProtocol: holdProto,
                 withHandlers: .handlers([.varIntLengthPrefixed])
