@@ -17,8 +17,8 @@
 // it for free. All symbols are `internal` — the public surface is the harness entry points themselves,
 // and keeping these internal avoids clashing with the (identically named) helpers in integration-tests.
 
-public import LibP2P
-public import LibP2PCrypto
+import LibP2P
+import LibP2PCrypto
 import NIOConcurrencyHelpers
 import NIOCore
 

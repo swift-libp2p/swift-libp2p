@@ -16,7 +16,7 @@
 // adapted for the swift-libp2p mock muxer. Flow-control / windowing has been removed since the mock
 // muxer only ever drives a single logical stream at a time.
 
-public import LibP2P
+import LibP2P
 import NIOConcurrencyHelpers
 public import NIOCore
 
