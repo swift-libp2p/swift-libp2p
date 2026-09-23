@@ -15,7 +15,7 @@
 import CoreFoundation
 import CryptoSwift
 public import LibP2PCore
-public import LibP2PCrypto
+import LibP2PCrypto
 import NIOConcurrencyHelpers
 
 /// Identify V1.0.0

@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import LibP2PCore
+import LibP2PCore
 public import Multiaddr
 public import NIOCore
 

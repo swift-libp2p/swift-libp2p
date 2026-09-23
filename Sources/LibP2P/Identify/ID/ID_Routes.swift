@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import Dispatch
-public import LibP2PCore
+import LibP2PCore
 import NIOCore
 import RoutingKit
 
