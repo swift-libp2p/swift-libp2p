@@ -251,77 +251,79 @@ extension Application {
         }
     }
 
-    private func resolveAddressIfNecessary(_ ma: Multiaddr, on loop: EventLoop) -> EventLoopFuture<[Multiaddr]?> {
-        guard let f = ma.addresses.first else { return loop.makeSucceededFuture(nil) }
+    private func resolveAddressIfNecessary(_ ma: Multiaddr) async throws -> [Multiaddr] {
+        guard let f = ma.addresses.first else {
+            throw Errors.noTransportForMultiaddr(ma)
+        }
         switch f.codec {
         case .ip4, .ip6, .udp, .dns, .dns4, .dns6:
-            return loop.makeSucceededFuture([ma])
+            return [ma]
         case .dnsaddr:
-            return self.resolve(ma)
+            return try await self.resolve(ma) ?? []
         default:
             self.logger.error("We don't support `\(f.codec) yet!`")
-            return loop.makeSucceededFuture(nil)
+            throw Errors.noTransportForMultiaddr(ma)
         }
     }
 
     private func resolveAddressIfNecessary(
         _ ma: Multiaddr,
-        forCodecs codecs: Set<MultiaddrProtocol>,
-        on loop: EventLoop
-    ) -> EventLoopFuture<Multiaddr?> {
-        guard let f = ma.addresses.first else { return loop.makeSucceededFuture(nil) }
+        forCodecs codecs: Set<MultiaddrProtocol>
+    ) async throws -> Multiaddr? {
+        guard let f = ma.addresses.first else { return nil }
         switch f.codec {
         case .ip4, .ip6, .udp, .dns, .dns4, .dns6:
-            return loop.makeSucceededFuture(ma)
+            return ma
         case .dnsaddr:
-            return self.resolve(ma, for: codecs)
+            return try await self.resolve(ma, for: codecs)
         default:
             self.logger.error("We don't support `\(f.codec) yet!`")
-            return loop.makeSucceededFuture(nil)
+            return nil
         }
     }
 
     /// Given a multiaddr this method will
     /// - attempt to resolve it if necessary (dns or dnsaddr)
     /// - using the set of resolved multiaddr, attempt to find an exsiting connection to one of them
-    /// - otherwise, it'll return the first address that we're capable of dialing
-    private func resolveAddressForBestTransport(_ ma: Multiaddr, on loop: EventLoop) -> EventLoopFuture<Multiaddr> {
-        //if let c = ma.getPeerID(), let remotePeerID = PeerID(cid: c)
-        //guard let mas = self.resolveAddressIfNecessary(ma, on: loop), !mas.isEmpty else { return loop.makeFailedFuture(Errors.noTransportForMultiaddr(ma)) }
-
-        self.resolveAddressIfNecessary(ma, on: loop).flatMap { resolvedAddresses in
-            guard let resolvedAddresses = resolvedAddresses else {
-                return loop.makeFailedFuture(Errors.noTransportForMultiaddr(ma))
-            }
-
-            if resolvedAddresses.count == 1, resolvedAddresses.first == ma {
-                // We didn't resolve an address...
-                return self.transports.canDialAny(resolvedAddresses, on: loop)
-            } else {
-                // We resolved an address...
-                // Instead of trying any random multiaddr, lets see if we have a PeerID we can use to find existing connections...
-                if let peer = resolvedAddresses.compactMap({ ma -> PeerID? in
-                    try? ma.getPeerID()
-                }).first {
-                    return self.connections.getBestConnectionForPeer(peer: peer, on: loop).flatMap {
-                        conn -> EventLoopFuture<Multiaddr> in
-                        if let addy = conn.remoteAddr {
-                            self.logger.trace("Found existing connection to peer, attempting to reuse address: \(addy)")
-                            return loop.makeSucceededFuture(addy)
-                        }
-
-                        // Otherwise see if we can dial any of the resolved addresses...
-                        return self.transports.canDialAny(resolvedAddresses, on: loop)
-                    }.flatMapError { _ -> EventLoopFuture<Multiaddr> in
-                        // No existing connection, see if we can dial any of the resolved addresses...
-                        self.transports.canDialAny(resolvedAddresses, on: loop)
-                    }
+    /// - otherwise, return the first address that we're capable of dialing
+    private func resolveAddressForBestTransport(_ ma: Multiaddr) async throws -> Multiaddr {
+        // Resolve the ma if necessary, this can return multiple addresses
+        let mas = try await self.resolveAddressIfNecessary(ma)
+        
+        // No Results, throw an error
+        guard !mas.isEmpty else { throw Errors.noTransportForMultiaddr(ma) }
+        
+        // We resolved at least one new address...
+        // Instead of trying any random multiaddr, lets see if we have a PeerID we can use to
+        // find an existing connection...
+        let pids = Set(mas.compactMap { try? $0.getPeerID() })
+        for peer in pids {
+            if let existingConnection = try? await self.connections.getBestConnectionForPeer(peer: peer) {
+                if let addy = existingConnection.remoteAddr {
+                    return addy
                 }
-
-                // Otherwise see if we can dial any of the resolved addresses...
-                return self.transports.canDialAny(resolvedAddresses, on: loop)
             }
         }
+        
+        // Otherwise see if we can dial any of the resolved addresses...
+        return try self.transports.canDialAny(mas)
+    }
+    
+    /// Given a multiaddr this method will
+    /// - attempt to resolve it if necessary (dns or dnsaddr)
+    /// - using the set of resolved multiaddr, attempt to find an exsiting connection to one of them
+    /// - otherwise, return the first address that we're capable of dialing
+    private func resolveAddressForBestTransport(_ ma: Multiaddr, on loop: EventLoop) -> EventLoopFuture<Multiaddr> {
+        let promise = loop.makePromise(of: Multiaddr.self)
+        Task {
+            do {
+                let ma = try await self.resolveAddressForBestTransport(ma)
+                promise.succeed(ma)
+            } catch {
+                promise.fail(error)
+            }
+        }
+        return promise.futureResult
     }
 }
 
