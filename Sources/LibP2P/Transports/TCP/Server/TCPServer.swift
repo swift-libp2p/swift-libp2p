@@ -205,12 +205,7 @@ public final class TCPServer: Server, @unchecked Sendable {
     }
 
     public func start(address: BindAddress?) throws {
-        // Flip our didStart
-        try self.state.withLockedValue { state in
-            guard !state.didStart else { throw Errors.alreadyStarted }
-            guard !state.didShutdown else { throw Errors.alreadyShutdown }
-            state.didStart = true
-        }
+        let configuration = try self.prepareStart(address: address)
 
         // Revert didStart if we fail to bind, so a recoverable failure (address already in
         // use, say) can still be retried by the caller.
@@ -219,6 +214,50 @@ public final class TCPServer: Server, @unchecked Sendable {
             if !boundSuccessfully {
                 self.state.withLockedValue { $0.didStart = false }
             }
+        }
+
+        // Start the actual TCPServer
+        let connection = try TCPServerConnection.start(
+            application: self.application,
+            responder: self.responder,
+            configuration: configuration,
+            on: self.eventLoopGroup
+        ).wait()
+
+        self.completeStart(connection: connection, configuration: configuration)
+        boundSuccessfully = true
+    }
+
+    public func start(address: BindAddress?) async throws {
+        let configuration = try self.prepareStart(address: address)
+
+        // Revert didStart if we fail to bind, so a recoverable failure (address already in
+        // use, say) can still be retried by the caller.
+        var boundSuccessfully = false
+        defer {
+            if !boundSuccessfully {
+                self.state.withLockedValue { $0.didStart = false }
+            }
+        }
+
+        // Start the actual TCPServer
+        let connection = try await TCPServerConnection.start(
+            application: self.application,
+            responder: self.responder,
+            configuration: configuration,
+            on: self.eventLoopGroup
+        ).get()
+
+        self.completeStart(connection: connection, configuration: configuration)
+        boundSuccessfully = true
+    }
+
+    /// Flips `didStart` and resolves the effective configuration for this start attempt.
+    private func prepareStart(address: BindAddress?) throws -> Configuration {
+        try self.state.withLockedValue { state in
+            guard !state.didStart else { throw Errors.alreadyStarted }
+            guard !state.didShutdown else { throw Errors.alreadyShutdown }
+            state.didStart = true
         }
 
         var configuration = self.configuration
@@ -232,6 +271,11 @@ public final class TCPServer: Server, @unchecked Sendable {
             configuration.address = .unixDomainSocket(path: socketPath)
         }
 
+        return configuration
+    }
+
+    /// Records the bound connection, then logs and announces the listen addresses.
+    private func completeStart(connection: TCPServerConnection, configuration: Configuration) {
         func addressDescription(for configuration: Configuration) -> String {
             switch configuration.address {
             case .hostname(let hostname, let port):
@@ -241,16 +285,7 @@ public final class TCPServer: Server, @unchecked Sendable {
             }
         }
 
-        // start the actual TCPServer
-        let connection = try TCPServerConnection.start(
-            application: self.application,
-            responder: self.responder,
-            configuration: configuration,
-            on: self.eventLoopGroup
-        ).wait()
-
         self.state.withLockedValue { $0.connection = connection }
-        boundSuccessfully = true
 
         if let la = connection.channel.localAddress {
             self.configuration.logger.notice("TCP Server Started")
@@ -273,7 +308,32 @@ public final class TCPServer: Server, @unchecked Sendable {
     }
 
     public func shutdown() {
-        // Grab our connection and the announced addresses in one step, so a second `shutdown()` is a no-op
+        guard let (connection, announced) = self.beginShutdown() else { return }
+
+        do {
+            try connection.close(timeout: self.configuration.shutdownTimeout).wait()
+        } catch {
+            self.configuration.logger.error("Could not stop TCP server: \(error)")
+        }
+
+        self.finishShutdown(announced: announced)
+    }
+
+    public func shutdown() async {
+        guard let (connection, announced) = self.beginShutdown() else { return }
+
+        do {
+            try await connection.close(timeout: self.configuration.shutdownTimeout).get()
+        } catch {
+            self.configuration.logger.error("Could not stop TCP server: \(error)")
+        }
+
+        self.finishShutdown(announced: announced)
+    }
+
+    /// Claims the live connection and announced addresses in one step, so a second `shutdown()`
+    /// is a no-op. Returns `nil` when there's nothing to shut down.
+    private func beginShutdown() -> (connection: TCPServerConnection, announced: [Multiaddr])? {
         let (connection, announced) = self.state.withLockedValue {
             state -> (TCPServerConnection?, [Multiaddr]) in
             guard !state.didShutdown, let connection = state.connection else { return (nil, []) }
@@ -283,14 +343,12 @@ public final class TCPServer: Server, @unchecked Sendable {
             state.announcedAddresses = []
             return (connection, announced)
         }
-        guard let connection else { return }
-
+        guard let connection else { return nil }
         self.configuration.logger.trace("Requesting TCP server shutdown")
-        do {
-            try connection.close(timeout: self.configuration.shutdownTimeout).wait()
-        } catch {
-            self.configuration.logger.error("Could not stop TCP server: \(error)")
-        }
+        return (connection, announced)
+    }
+
+    private func finishShutdown(announced: [Multiaddr]) {
         self.configuration.logger.trace("TCP server shutting down")
 
         // Balance the `.listen` events posted at start-up.
