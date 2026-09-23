@@ -29,19 +29,18 @@ extension Application.Transports {
     }
 
     /// Traverses our available transports in search for one who's capabale of dialing the provided multiaddr
-    public func canDial(_ ma: Multiaddr, on: EventLoop) -> EventLoopFuture<Bool> {
-        guard let _ = try? self.findBest(forMultiaddr: ma) else { return on.makeSucceededFuture(false) }
-        return on.makeSucceededFuture(true)
+    public func canDial(_ ma: Multiaddr) -> Bool {
+        let transports = self.storage.transports.withLockedValue { $0 }
+        return transports.contains(where: { $0.value.canDial(address: ma) })
     }
 
-    /// Traverses our available transports in search for one who's capabale of dialing the provided multiaddr
-    public func canDialAny(_ mas: [Multiaddr], on: EventLoop) -> EventLoopFuture<Multiaddr> {
-        guard
-            let ma = mas.first(where: { ma in
-                (try? self.findBest(forMultiaddr: ma)) != nil
-            })
-        else { return on.makeFailedFuture(Errors.noTransportsForMultiaddrs(mas)) }
-        return on.makeSucceededFuture(ma)
+    /// Traverses our available transports in search for one who's capabale of dialing the provided multiaddr,
+    /// returning the first dialable address.
+    public func canDialAny(_ mas: [Multiaddr]) throws -> Multiaddr {
+        guard let ma = mas.first(where: { self.canDial($0) }) else {
+            throw Errors.noTransportsForMultiaddrs(mas)
+        }
+        return ma
     }
 
     /// Strips out local/internal addresses that are annouced by peers (I'm not sure why they include these addresses)
@@ -67,30 +66,27 @@ extension Application.Transports {
     /// ```
     public func dialableAddress(
         _ mas: [Multiaddr],
-        externalAddressesOnly: Bool = true,
-        on: EventLoop
-    ) -> EventLoopFuture<[Multiaddr]> {
-        let promise = on.makePromise(of: [Multiaddr].self)
-        var dialableAddresses: [Multiaddr] = []
-
-        let _ = mas.map { ma in
-            self.canDial(ma, on: on).map { canDial in
-                if canDial {
-                    if externalAddressesOnly {
-                        guard !ma.isInternalAddress else { return }
-                    }
-                    dialableAddresses.append(ma)
+        externalAddressesOnly: Bool = true
+    ) -> [Multiaddr] {
+        let unique = Set(
+            mas.filter { ma in
+                // Filter out internal address when external only is set
+                if externalAddressesOnly, ma.isInternalAddress { return false }
+                // If we can dial the ma as is, keep it
+                if self.canDial(ma) {
+                    return true
+                } else {
+                    // Otherwise, ask our registered resolvers if they can resolve the address
+                    // ex: dnsaddr/ will pass when the LibP2PDNSAddr package is registered
+                    return self.application.resolvers.can(resolve: ma)
                 }
             }
-        }.flatten(on: on).map {
-            promise.succeed(dialableAddresses)
-        }
-
-        return promise.futureResult
+        )
+        return Array(unique)
     }
 
     public func stripInternalAddresses(_ mas: [Multiaddr]) -> [Multiaddr] {
-        mas.filter { !$0.isInternalAddress }
+        mas.filter { $0.isExternalAddress }
     }
 
     public enum Errors: Error {
@@ -99,10 +95,20 @@ extension Application.Transports {
     }
 }
 
+extension Array where Element == Multiaddr {
+    func dialable(on app: Application, externalAddressesOnly: Bool = true) -> [Multiaddr] {
+        app.transports.dialableAddress(self, externalAddressesOnly: externalAddressesOnly)
+    }
+}
+
 extension Multiaddr {
     public var isInternalAddress: Bool {
         let desc = self.description
         return desc.contains("127.0.0.1") || desc.contains("::1") || desc.contains("192.168.")
+    }
+
+    public var isExternalAddress: Bool {
+        !self.isInternalAddress
     }
 
     /// True when this multiaddr's IP component is the unspecified/wildcard
