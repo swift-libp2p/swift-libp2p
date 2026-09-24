@@ -53,8 +53,14 @@ public func runMuxerConformance(
     let eventsProto = "/mux-harness-events/1.0.0"
     let requestTimeout: TimeAmount = .seconds(15)
 
-    let host = try await makeHarnessNode(security: security, muxer: muxer, logLevel: logLevel)
-    let client = try await makeHarnessNode(security: security, muxer: muxer, logLevel: logLevel)
+    let host = try await makeTestNode(logLevel: logLevel) { app in
+        app.security.use(security)
+        app.muxers.use(muxer)
+    }
+    let client = try await makeTestNode(logLevel: logLevel) { app in
+        app.security.use(security)
+        app.muxers.use(muxer)
+    }
 
     installEchoRoute(on: host, proto: echoProto)
     installHoldRoute(on: host, proto: holdProto)

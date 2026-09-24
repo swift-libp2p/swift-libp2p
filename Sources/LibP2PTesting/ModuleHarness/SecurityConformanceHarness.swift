@@ -57,8 +57,14 @@ public func runSecurityConformance(
     let probeProto = "/sec-harness-probe/1.0.0"
     let requestTimeout: TimeAmount = .seconds(15)
 
-    let host = try await makeHarnessNode(security: security, muxer: muxer, logLevel: logLevel)
-    let client = try await makeHarnessNode(security: security, muxer: muxer, logLevel: logLevel)
+    let host = try await makeTestNode(logLevel: logLevel) { app in
+        app.security.use(security)
+        app.muxers.use(muxer)
+    }
+    let client = try await makeTestNode(logLevel: logLevel) { app in
+        app.security.use(security)
+        app.muxers.use(muxer)
+    }
 
     secInstallEchoRoute(on: host, proto: echoProto)
     secInstallHoldRoute(on: host, proto: holdProto)
