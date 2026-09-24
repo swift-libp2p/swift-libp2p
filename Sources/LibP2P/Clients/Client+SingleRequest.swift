@@ -182,13 +182,13 @@ extension Application {
     internal func _newRequest(
         to peer: PeerID,
         forProtocol proto: String,
-        withRequest request: Data,
+        withRequest request: ByteBuffer,
         style: SingleRequest.Style,
         withHandlers handlers: HandlerConfig,
         andMiddleware middleware: MiddlewareConfig,
         expecting completion: SingleRequest.ResponseCompletion,
         withTimeout timeout: TimeAmount
-    ) -> EventLoopFuture<Data> {
+    ) -> EventLoopFuture<ByteBuffer> {
         let el = self.eventLoopGroup.next()
 
         return self.peers.getAddresses(forPeer: peer, on: el).flatMap { addresses -> EventLoopFuture<Data> in
@@ -233,10 +233,12 @@ extension Application {
 
     public final class SingleRequest: Sendable {
         let eventloop: EventLoop
-        let promise: EventLoopPromise<Data>
+        let promise: EventLoopPromise<ByteBuffer>
         let multiaddr: Multiaddr
         let proto: String
-        let request: Data
+        /// The payload, held as a `ByteBuffer` because that's what the pipeline wants. The `Data`
+        /// entry points convert once, on the way in.
+        let request: ByteBuffer
         let handlers: HandlerConfig
         let middleware: MiddlewareConfig
         let completion: ResponseCompletion
@@ -285,7 +287,7 @@ extension Application {
         init(
             to ma: Multiaddr,
             overProtocol proto: String,
-            withRequest request: Data,
+            withRequest request: ByteBuffer,
             withHandlers handlers: HandlerConfig = .rawHandlers([]),
             andMiddleware middleware: MiddlewareConfig = .custom(nil),
             expecting completion: ResponseCompletion = .firstFrame,
@@ -302,7 +304,7 @@ extension Application {
             self.middleware = middleware
             self.completion = completion
             self.timeout = timeout
-            self.promise = self.eventloop.makePromise(of: Data.self)
+            self.promise = self.eventloop.makePromise(of: ByteBuffer.self)
             self._hasBegun = .init(false)
             self._hasCompleted = .init(false)
             self.timeoutTask = .init(nil)
@@ -312,7 +314,7 @@ extension Application {
         //    print("Single Request Deinitialized")
         //}
 
-        func resume(style: Style = .responseExpected) -> EventLoopFuture<Data> {
+        func resume(style: Style = .responseExpected) -> EventLoopFuture<ByteBuffer> {
             guard !self.hasBegun else { return self.eventloop.makeFailedFuture(SingleRequestError.failedToOpenStream) }
             self._hasBegun.withLockedValue { $0 = true }
 
@@ -327,13 +329,13 @@ extension Application {
                 case .ready:
                     // If the stream is ready and we have data to send... let's send it...
                     return req.eventLoop.makeSucceededFuture(
-                        RawResponse(payload: req.allocator.buffer(bytes: Array(self.request)))
+                        RawResponse(payload: self.request)
                     ).always { _ in
                         if style == .noResponseExpected {
                             self._hasCompleted.withLockedValue { $0 = true }
                             self.cancelTimeoutTask()
                             req.shouldClose()
-                            self.promise.succeed(Data())
+                            self.promise.succeed(ByteBuffer())
                         }
                     }
 
