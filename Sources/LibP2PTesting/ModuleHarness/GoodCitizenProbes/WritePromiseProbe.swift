@@ -100,7 +100,7 @@ func runWritePromiseProbe(
     client: Application,
     addr: Multiaddr,
     holdProto: String,
-    clientEvents: HarnessEventRecorder,
+    clientEvents: EventRecorder,
     strict: Bool,
     report: inout ConformanceReport
 ) async {
