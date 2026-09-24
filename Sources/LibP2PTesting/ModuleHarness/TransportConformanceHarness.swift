@@ -85,7 +85,7 @@ public func runTransportConformance(
             listenAddr != nil ? "\(listenAddr!)" : "no listen addresses announced"
         )
 
-        guard listenAddr != nil, let addr = try? host.harnessDialableAddress else {
+        guard listenAddr != nil, let addr = try? host.dialableAddress else {
             report.warn("No dialable host address — skipping dial-based checks")
             try await client.asyncShutdown()
             try await host.asyncShutdown()

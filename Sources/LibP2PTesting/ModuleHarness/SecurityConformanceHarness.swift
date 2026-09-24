@@ -82,7 +82,7 @@ public func runSecurityConformance(
         try await host.startup()
         try await client.startup()
 
-        let addr = try host.harnessDialableAddress
+        let addr = try host.dialableAddress
 
         // MARK: Handshake completes → upgrade + negotiated codec
         let warmup = Data("warmup".utf8)

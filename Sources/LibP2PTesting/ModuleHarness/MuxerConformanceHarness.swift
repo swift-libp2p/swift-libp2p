@@ -81,7 +81,7 @@ public func runMuxerConformance(
         try await host.startup()
         try await client.startup()
 
-        let addr = try host.harnessDialableAddress
+        let addr = try host.dialableAddress
 
         // MARK: Upgrade reached + negotiated codec
         // A warm-up echo forces the connection through the full upgrade pipeline.
