@@ -39,10 +39,18 @@ extension Application {
             struct MuxerFactory {
                 let factory: (@Sendable (Application) -> MuxerUpgrader)
             }
-            /// Muxer Upgraders stored in order of preference
-            let muxUpgraders: NIOLockedValueBox<[String: MuxerFactory]>
+
+            /// One registered muxer, keyed by its `MuxerUpgrader.key`.
+            typealias KeyedMuxerFactory = (key: String, value: MuxerFactory)
+
+            /// Muxer Upgraders, in registration order, which is the order of preference.
+            ///
+            /// - Important: This has to stay an ordered collection. ``available`` is handed straight
+            ///   to `AppConnection.negotiateProtocol(fromSet:)` as the multistream-select proposal
+            ///   list, so its order decides which muxer a connection actually negotiates.
+            let muxUpgraders: NIOLockedValueBox<[KeyedMuxerFactory]>
             init() {
-                self.muxUpgraders = .init([:])
+                self.muxUpgraders = .init([])
             }
         }
 
@@ -63,12 +71,11 @@ extension Application {
         //        }
 
         public func upgrader(forKey key: String) -> MuxerUpgrader? {
-            self.storage.muxUpgraders.withLockedValue {
-                if let factory = $0.first(where: { $0.key == key })?.value.factory {
-                    return factory(self.application)
-                } else {
+            self.storage.muxUpgraders.withLockedValue { upgraders in
+                guard let factory = upgraders.first(where: { $0.key == key })?.value.factory else {
                     return nil
                 }
+                return factory(self.application)
             }
         }
 
@@ -105,16 +112,18 @@ extension Application {
 
         @preconcurrency public func use<M: MuxerUpgrader>(_ makeUpgrader: @Sendable @escaping (Application) -> (M)) {
             self.storage.muxUpgraders.withLockedValue { muxers in
-                guard muxers[M.key] == nil else {
+                guard !muxers.contains(where: { $0.key == M.key }) else {
                     self.application.logger.warning("`\(M.key)` Muxer Module Already Installed - Skipping")
                     return
                 }
-                muxers[M.key] = .init(factory: makeUpgrader)
+                // Appended, so registration order is preserved as the preference order.
+                muxers.append((M.key, .init(factory: makeUpgrader)))
             }
         }
 
         public let application: Application
 
+        /// The installed muxers' keys, in order of preference.
         public var available: [String] {
             self.storage.muxUpgraders.withLockedValue { $0.map { $0.key } }
         }
@@ -134,10 +143,10 @@ extension Application {
         }
 
         public func dump() {
-            print("*** Installed Muxer Modules ***")
+            print("*** Installed Muxer Modules (in order of preference) ***")
             print(
                 self.storage.muxUpgraders.withLockedValue {
-                    $0.keys.enumerated().map { "[\($0.offset + 1)] - \($0.element)" }.joined(
+                    $0.enumerated().map { "[\($0.offset + 1)] - \($0.element.key)" }.joined(
                         separator: "\n"
                     )
                 }
