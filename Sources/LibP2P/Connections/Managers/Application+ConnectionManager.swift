@@ -128,7 +128,7 @@ extension Application {
 
         /// Specify the type of AppConnection to use when establishing a Connection to a remote peer.
         /// Note: The built in options are `BaseConnection`, `BasicConnectionLight` and `ARCConnection`
-        /// Note: There's also a `DummyConnection` available for embedded testing.
+        /// Note: There's also a `DummyConnection` available in the `LibP2PTesting` library for embedded testing.
         public func use(connectionType: AppConnection.Type) {
             self.storage.connectionType.withLockedValue { $0 = connectionType }
         }
