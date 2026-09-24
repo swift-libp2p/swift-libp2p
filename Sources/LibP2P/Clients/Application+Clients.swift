@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 public import LibP2PCore
+internal import NIOConcurrencyHelpers
 
 extension Application {
     public var clients: Clients {

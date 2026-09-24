@@ -14,6 +14,7 @@
 
 public import LibP2P
 import LibP2PCrypto
+public import NIOConcurrencyHelpers
 
 /// A minimal `Connection` for wiring a MUXER handler onto an `EmbeddedChannel`.
 ///

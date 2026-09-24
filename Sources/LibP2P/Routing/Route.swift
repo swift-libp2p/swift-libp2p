@@ -16,6 +16,8 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
+public import ConsoleKit
+internal import NIOConcurrencyHelpers
 public import RoutingKit
 
 public final class Route: CustomStringConvertible, Sendable {

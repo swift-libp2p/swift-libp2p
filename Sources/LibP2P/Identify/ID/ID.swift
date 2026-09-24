@@ -17,6 +17,7 @@ import CryptoSwift
 public import LibP2PCore
 import LibP2PCrypto
 import NIOConcurrencyHelpers
+import SwiftProtobuf
 
 /// Identify V1.0.0
 /// [Spec](https://github.com/libp2p/specs/tree/master/identify)

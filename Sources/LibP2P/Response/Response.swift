@@ -17,6 +17,7 @@
 //
 
 public import NIO
+internal import NIOConcurrencyHelpers
 
 /// A raw response from a server back to the client.
 ///

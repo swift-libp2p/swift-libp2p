@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOConcurrencyHelpers
+
 extension Application.Clients.Provider {
     public static var tcp: Self {
         .init {

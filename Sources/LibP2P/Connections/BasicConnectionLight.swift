@@ -15,6 +15,7 @@
 public import Foundation
 public import LibP2PCore
 public import Logging
+internal import NIOConcurrencyHelpers
 
 public class BasicConnectionLight: AppConnection, @unchecked Sendable {
 

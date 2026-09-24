@@ -14,6 +14,7 @@
 
 public import Multiaddr
 import Multicodec
+import NIOConcurrencyHelpers
 public import NIOPosix
 
 // Install our TCP Tranport on the LibP2P Application

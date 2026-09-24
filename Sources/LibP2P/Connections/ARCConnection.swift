@@ -15,6 +15,7 @@
 public import Foundation
 public import LibP2PCore
 public import Logging
+internal import NIOConcurrencyHelpers
 
 /// Esentially a BasicConnectionLight but adds support for Automatic Reference (Stream) Counting and closes / deinits itself when the connection is idle and empty for a given amount of time.
 public class ARCConnection: AppConnection, @unchecked Sendable {

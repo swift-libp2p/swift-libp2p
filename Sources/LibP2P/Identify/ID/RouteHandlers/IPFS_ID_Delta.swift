@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import SwiftProtobuf
+
 internal func handleDeltaRequest(_ req: Request) -> Response<ByteBuffer> {
     guard req.streamDirection == .inbound else {
         req.logger.error("Identify::Delta::Error - We dont support outbound /p2p/id/delta messages on this handler")

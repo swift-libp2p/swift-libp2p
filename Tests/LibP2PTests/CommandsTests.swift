@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import ConsoleKit
 import LibP2PTesting
 import Testing
 

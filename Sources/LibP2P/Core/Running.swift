@@ -17,6 +17,7 @@
 //
 
 public import NIO
+internal import NIOConcurrencyHelpers
 
 extension Application {
     public struct Running: Sendable {
