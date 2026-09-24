@@ -132,7 +132,7 @@ extension Application {
     )
     @discardableResult
     public func broadcast(_ bytes: [UInt8], toProtocol proto: String) -> EventLoopFuture<[String]> {
-        self._broadcast(bytes, toProtocol: proto)
+        self._broadcast(ByteBuffer(bytes: bytes), toProtocol: proto)
     }
 
     /// Broadcasts the given message to all current connections that support the specified protocol
@@ -140,14 +140,22 @@ extension Application {
     /// - Returns: The b58 string of each peer the message was written to.
     @discardableResult
     public func broadcast(_ bytes: [UInt8], toProtocol proto: String) async throws -> [String] {
-        try await self._broadcast(bytes, toProtocol: proto).get()
+        try await self._broadcast(ByteBuffer(bytes: bytes), toProtocol: proto).get()
     }
 
-    internal func _broadcast(_ bytes: [UInt8], toProtocol proto: String) -> EventLoopFuture<[String]> {
+    /// Broadcasts the given message to all current connections that support the specified protocol
+    ///
+    /// - Returns: The b58 string of each peer the message was written to.
+    @discardableResult
+    public func broadcast(_ buffer: ByteBuffer, toProtocol proto: String) async throws -> [String] {
+        try await self._broadcast(buffer, toProtocol: proto).get()
+    }
+
+    internal func _broadcast(_ buffer: ByteBuffer, toProtocol proto: String) -> EventLoopFuture<[String]> {
         self._activeStreams(for: proto).map { streams in
             self.logger.trace("Broadcast()::Found \(streams.count) active streams for protocol \(proto)")
             return streams.compactMap { stream in
-                let _ = stream.write(bytes)
+                let _ = stream.write(buffer)
                 return stream.connection?.remotePeer?.b58String
             }
         }
