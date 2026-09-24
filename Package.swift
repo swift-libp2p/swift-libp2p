@@ -43,8 +43,6 @@ let package = Package(
         .package(url: "https://github.com/vapor/routing-kit.git", .upToNextMajor(from: "4.0.0")),
         // Logging
         .package(url: "https://github.com/apple/swift-log.git", .upToNextMajor(from: "1.6.0")),
-        // Sugary extensions for the SwiftNIO library
-        .package(url: "https://github.com/vapor/async-kit.git", .upToNextMajor(from: "1.11.1")),
         // Swift Protobuf
         .package(url: "https://github.com/apple/swift-protobuf.git", .upToNextMajor(from: "1.19.0")),
         // Swift metrics API
@@ -68,7 +66,6 @@ let package = Package(
                 .product(name: "ConsoleKit", package: "console-kit"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "RoutingKit", package: "routing-kit"),
-                .product(name: "AsyncKit", package: "async-kit"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 .product(name: "Metrics", package: "swift-metrics"),
                 .product(name: "_NIOFileSystem", package: "swift-nio"),
