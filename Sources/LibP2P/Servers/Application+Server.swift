@@ -132,7 +132,7 @@ extension Application {
             provider.run(self.application)
         }
 
-        public func use<S: Server>(_ makeServer: @escaping (Application) -> (S)) {
+        @preconcurrency public func use<S: Server>(_ makeServer: @Sendable @escaping (Application) -> (S)) {
             self.storage.servers.withLockedValue { servers in
                 guard !servers.contains(where: { $0.key == S.key }) else {
                     self.application.logger.warning("`\(S.key)` Server Already Installed - Skipping")
