@@ -28,7 +28,7 @@ extension Application {
         closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
     ) throws {
         self._newStream(
-            to: to,
+            toTarget: to,
             forProtocol: proto,
             withHandlers: handlers,
             andMiddleware: middleware,
@@ -38,31 +38,24 @@ extension Application {
         }
     }
 
-    /// The actual implementation behind the future and async `newStream(to peer:...closure:)` forms.
+    /// The single target-resolving engine behind every `newStream(to:…closure:)` form.
     ///
-    /// Resolves the target address (reusing the best existing connection when possible, falling back
-    /// to the peerstore), then hands off to the multiaddr engine. The returned future settles once the
-    /// stream request has been handed to a muxer (or the dial failed).
-    internal func _newStream(
-        to peer: PeerID,
+    /// Resolves `target` to a dialable address via ``RequestTarget/dialAddress(for:on:)``, then hands
+    /// off to the multiaddr engine. The returned future settles once the stream request has been
+    /// handed to a muxer (or the dial failed).
+    ///
+    /// - Note: The `toTarget:` label (rather than `to:`) keeps this from overloading against the
+    ///   `Multiaddr` implementation below.
+    internal func _newStream<Target: RequestTarget>(
+        toTarget target: Target,
         forProtocol proto: String,
         withHandlers handlers: HandlerConfig = .rawHandlers([]),
         andMiddleware middleware: MiddlewareConfig = .custom(nil),
         closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
     ) -> EventLoopFuture<Void> {
-        // Do we search the peerstore? or connection manager???
         let el = self.eventLoopGroup.next()
 
-        return self.connections.getBestConnectionForPeer(peer: peer, on: el).map {
-            connection -> Multiaddr in
-            connection.remoteAddr!
-        }.flatMapError { _ -> EventLoopFuture<Multiaddr> in
-            // No reusable connection, fall back to the addresses in our peerstore.
-            self.peers.getAddresses(forPeer: peer, on: el).flatMapThrowing { addresses -> Multiaddr in
-                guard let first = addresses.first else { throw Errors.unknownPeer }
-                return first
-            }
-        }.flatMap { ma -> EventLoopFuture<Void> in
+        return target.dialAddress(for: self, on: el).flatMap { ma -> EventLoopFuture<Void> in
             self._newStream(
                 to: ma,
                 forProtocol: proto,
@@ -70,6 +63,22 @@ extension Application {
                 andMiddleware: middleware,
                 closure: closure
             )
+        }
+    }
+
+    /// The single target-resolving engine behind every `newStream(to:forProtocol:)` form, i.e. the
+    /// variants that delegate to the application's registered routes rather than a caller closure.
+    ///
+    /// - Note: The `toTarget:` label (rather than `to:`) keeps this from overloading against the
+    ///   `Multiaddr` implementation below.
+    internal func _newStream<Target: RequestTarget>(
+        toTarget target: Target,
+        forProtocol proto: String
+    ) -> EventLoopFuture<Void> {
+        let el = self.eventLoopGroup.next()
+
+        return target.dialAddress(for: self, on: el).flatMap { ma -> EventLoopFuture<Void> in
+            self._newStream(to: ma, forProtocol: proto)
         }
     }
 
@@ -230,22 +239,9 @@ extension Application {
             "Use the async newStream(to:forProtocol:) instead. This fire-and-forget form will be removed in swift-libp2p 0.5.0"
     )
     public func newStream(to: PeerInfo, forProtocol proto: String) throws {
-        self._newStream(to: to, forProtocol: proto).whenComplete { result in
+        self._newStream(toTarget: to, forProtocol: proto).whenComplete { result in
             self.logger.trace("NewStream(toPeerInfo)[\(proto)] result => \(result)")
         }
-    }
-
-    /// The actual implementation behind the future and async `newStream(to peerInfo:forProtocol:)` forms.
-    internal func _newStream(to peerInfo: PeerInfo, forProtocol proto: String) -> EventLoopFuture<Void> {
-        let el = self.eventLoopGroup.next()
-
-        // Append the PeerInfo to our PeerStore (dial the PeerID either way, matching the
-        // pre-engine behavior where a failed peerstore insert didn't abort the dial)
-        return self.peers.add(peerInfo: peerInfo, on: el)
-            .flatMapError { _ in el.makeSucceededVoidFuture() }
-            .flatMap {
-                self._newStream(to: peerInfo.peer, forProtocol: proto)
-            }
     }
 
     @available(
@@ -255,31 +251,8 @@ extension Application {
             "Use the async newStream(to:forProtocol:) instead. This fire-and-forget form will be removed in swift-libp2p 0.5.0"
     )
     public func newStream(to: PeerID, forProtocol proto: String) throws {
-        self._newStream(to: to, forProtocol: proto).whenComplete { result in
+        self._newStream(toTarget: to, forProtocol: proto).whenComplete { result in
             self.logger.trace("NewStream(toPeer, forProtocol)[\(proto)] result => \(result)")
-        }
-    }
-
-    /// The actual implementation behind the future and async `newStream(to peer:forProtocol:)` forms.
-    internal func _newStream(to peer: PeerID, forProtocol proto: String) -> EventLoopFuture<Void> {
-        let el = self.eventLoopGroup.next()
-
-        // Search the connection manager for potential existing connections
-        return self.connections.getBestConnectionForPeer(peer: peer, on: el).map {
-            connection -> Multiaddr in
-            connection.remoteAddr!
-        }.flatMapError { _ -> EventLoopFuture<Multiaddr> in
-            // No reusable connection, search the PeerStore for addresses associated with the provided PeerID
-            self.peers.getAddresses(forPeer: peer, on: el).flatMapThrowing { addresses -> Multiaddr in
-                guard let first = addresses.first else {
-                    self.logger.warning("No Addresses Associated with \(peer)")
-                    throw Errors.unknownPeer
-                }
-                /// `encapsulating(peer:)` is a no-op when the address already names a peer.
-                return first.encapsulating(peer: peer)
-            }
-        }.flatMap { ma -> EventLoopFuture<Void> in
-            self._newStream(to: ma, forProtocol: proto)
         }
     }
 
@@ -365,20 +338,22 @@ extension Application {
 // MARK: - Async
 
 extension Application {
-    /// Creates a new outbound stream (channel) to the node at the specified multiaddr, delegating to the
-    /// supplied handler / responder. This method will reuse existing connections when possible.
+    /// Creates a new outbound stream to `target`, delegating to the supplied handler / responder.
+    /// This method will reuse existing connections when possible.
+    ///
+    /// `target` may be any ``RequestTarget`` (e.g. `Multiaddr`, `PeerID`, or `PeerInfo`)
     ///
     /// Unlike the fire-and-forget `throws` form, this suspends until the stream request has been handed
     /// to a muxer, and throws if the dial / reuse attempt failed.
-    public func newStream(
-        to ma: Multiaddr,
+    public func newStream<Target: RequestTarget>(
+        to target: Target,
         forProtocol proto: String,
         withHandlers handlers: HandlerConfig = .rawHandlers([]),
         andMiddleware middleware: MiddlewareConfig = .custom(nil),
         closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
     ) async throws {
         try await self._newStream(
-            to: ma,
+            toTarget: target,
             forProtocol: proto,
             withHandlers: handlers,
             andMiddleware: middleware,
@@ -386,51 +361,17 @@ extension Application {
         ).get()
     }
 
-    /// Creates a new outbound stream (channel) to the node at the specified multiaddr, delegating to our
-    /// registered Route handlers. This method will reuse existing connections when possible.
+    /// Creates a new outbound stream to `target`, delegating to our registered Route handlers.
+    /// This method will reuse existing connections when possible.
+    ///
+    /// `target` may be any ``RequestTarget`` (e.g. `Multiaddr`, `PeerID`, or `PeerInfo`)
     ///
     /// Unlike the fire-and-forget `throws` form, this suspends until the stream request has been handed
     /// to a muxer, and throws if the dial / reuse attempt failed.
-    public func newStream(to ma: Multiaddr, forProtocol proto: String) async throws {
-        try await self._newStream(to: ma, forProtocol: proto).get()
-    }
-
-    /// Creates a new outbound stream (channel) to the specified peer, delegating to the supplied
-    /// handler / responder. This method will reuse existing connections when possible.
-    ///
-    /// Unlike the fire-and-forget `throws` form, this suspends until the stream request has been handed
-    /// to a muxer, and throws if the dial / reuse attempt failed.
-    public func newStream(
-        to peer: PeerID,
-        forProtocol proto: String,
-        withHandlers handlers: HandlerConfig = .rawHandlers([]),
-        andMiddleware middleware: MiddlewareConfig = .custom(nil),
-        closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
+    public func newStream<Target: RequestTarget>(
+        to target: Target,
+        forProtocol proto: String
     ) async throws {
-        try await self._newStream(
-            to: peer,
-            forProtocol: proto,
-            withHandlers: handlers,
-            andMiddleware: middleware,
-            closure: closure
-        ).get()
-    }
-
-    /// Creates a new outbound stream (channel) to the specified peer, delegating to our registered
-    /// Route handlers. This method will reuse existing connections when possible.
-    ///
-    /// Unlike the fire-and-forget `throws` form, this suspends until the stream request has been handed
-    /// to a muxer, and throws if the dial / reuse attempt failed.
-    public func newStream(to peer: PeerID, forProtocol proto: String) async throws {
-        try await self._newStream(to: peer, forProtocol: proto).get()
-    }
-
-    /// Adds the PeerInfo to our PeerStore, then creates a new outbound stream (channel) to the peer,
-    /// delegating to our registered Route handlers. This method will reuse existing connections when possible.
-    ///
-    /// Unlike the fire-and-forget `throws` form, this suspends until the stream request has been handed
-    /// to a muxer, and throws if the dial / reuse attempt failed.
-    public func newStream(to peerInfo: PeerInfo, forProtocol proto: String) async throws {
-        try await self._newStream(to: peerInfo, forProtocol: proto).get()
+        try await self._newStream(toTarget: target, forProtocol: proto).get()
     }
 }
