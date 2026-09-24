@@ -116,7 +116,7 @@ public func runTransportConformance(
             warmupResponse == warmup ? nil : "sent \(warmup.count)B, received \(warmupResponse.count)B"
         )
 
-        let reachedUpgraded = await harnessWaitUntil {
+        let reachedUpgraded = await waitUntil {
             let conns = (try? await client.connections.getConnections(on: nil).get()) ?? []
             return conns.contains { $0.isMuxed && $0.stats.status == .upgraded }
         }
@@ -155,7 +155,7 @@ public func runTransportConformance(
         }
 
         // MARK: Lifecycle events (client side)
-        _ = await harnessWaitUntil { clientEvents.contains("closedStream") }
+        _ = await waitUntil { clientEvents.contains("closedStream") }
         report.check("Emits .connected event", clientEvents.contains("connected"))
         report.check("Emits .upgraded event", clientEvents.contains("upgraded"))
         report.check("Emits .remotePeer event", clientEvents.contains("remotePeer"))
@@ -177,7 +177,7 @@ public func runTransportConformance(
 
         // MARK: Clean teardown emits .disconnected
         _ = try? await client.connections.closeAllConnections().get()
-        let disconnected = await harnessWaitUntil { clientEvents.contains("disconnected") }
+        let disconnected = await waitUntil { clientEvents.contains("disconnected") }
         report.check("Clean teardown emits .disconnected", disconnected)
 
         try await client.asyncShutdown()

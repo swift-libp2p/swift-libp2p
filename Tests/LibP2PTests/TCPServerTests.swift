@@ -33,20 +33,6 @@ extension LibP2PTests {
         /// test keeps its own instance alive for the duration of the test.
         final class Subscriber {}
 
-        /// Polls `predicate` until it returns `true` or the attempts are exhausted, returning the final
-        /// value. Event delivery is asynchronous, so assertions can't read straight after a `post`.
-        static func waitUntil(
-            _ predicate: @Sendable () -> Bool,
-            attempts: Int = 200,
-            every: Duration = .milliseconds(10)
-        ) async -> Bool {
-            for _ in 0..<attempts {
-                if predicate() { return true }
-                try? await Task.sleep(for: every)
-            }
-            return predicate()
-        }
-
         /// Builds an unstarted server bound to `configuration`, for tests that need to inspect a server
         /// that has never listened.
         private static func makeServer(
@@ -152,13 +138,13 @@ extension LibP2PTests {
             try await withApp(configure: config) { app in
                 let server = try #require(app.servers.server(for: TCPServer.self))
 
-                #expect(await Self.waitUntil { !listened.withLockedValue { $0.isEmpty } })
+                #expect(await waitUntil { !listened.withLockedValue { $0.isEmpty } })
                 let announced = listened.withLockedValue { Set($0) }
 
                 await server.shutdown()
 
                 #expect(
-                    await Self.waitUntil { closed.withLockedValue { Set($0) } == announced },
+                    await waitUntil { closed.withLockedValue { Set($0) } == announced },
                     "expected .listenClosed for \(announced), got \(closed.withLockedValue { $0 })"
                 )
                 _ = subscriber
@@ -183,7 +169,7 @@ extension LibP2PTests {
                 let server = try #require(app.servers.server(for: TCPServer.self))
 
                 await server.shutdown()
-                #expect(await Self.waitUntil { !closed.withLockedValue { $0.isEmpty } })
+                #expect(await waitUntil { !closed.withLockedValue { $0.isEmpty } })
                 let afterFirst = closed.withLockedValue { $0.count }
 
                 // Must not throw, stall, or emit a duplicate round of events.
@@ -250,9 +236,9 @@ extension LibP2PTests {
                     }
 
                     // The socket was established (so the leak was possible) and then cleaned up.
-                    #expect(await Self.waitUntil { accepted.withLockedValue { $0 } == 1 })
+                    #expect(await waitUntil { accepted.withLockedValue { $0 } == 1 })
                     #expect(
-                        await Self.waitUntil { closed.withLockedValue { $0 } == 1 },
+                        await waitUntil { closed.withLockedValue { $0 } == 1 },
                         "dialed socket was accepted but never closed — it leaked"
                     )
                 } catch {

@@ -93,7 +93,7 @@ public func runSecurityConformance(
             warmupResponse == warmup ? nil : "sent \(warmup.count)B, received \(warmupResponse.count)B"
         )
 
-        let reachedUpgraded = await harnessWaitUntil {
+        let reachedUpgraded = await waitUntil {
             let conns = (try? await client.connections.getConnections(on: nil).get()) ?? []
             return conns.contains { $0.stats.status == .upgraded }
         }
@@ -138,7 +138,7 @@ public func runSecurityConformance(
                 withTimeout: requestTimeout
             )
             // Give the tapped inbound a beat to flush through.
-            _ = await harnessWaitUntil { tap.byteCount > 0 }
+            _ = await waitUntil { tap.byteCount > 0 }
 
             if markerResponse == markerData {
                 let onWireInClear = containsSubsequence(tap.captured(), marker)
@@ -204,7 +204,7 @@ public func runSecurityConformance(
         }
 
         // MARK: Lifecycle events (client side)
-        _ = await harnessWaitUntil { clientEvents.contains("closedStream") }
+        _ = await waitUntil { clientEvents.contains("closedStream") }
         report.check("Emits .connected event", clientEvents.contains("connected"))
         report.check("Emits .upgraded event", clientEvents.contains("upgraded"))
         report.check("Emits .remotePeer event", clientEvents.contains("remotePeer"))
@@ -258,7 +258,7 @@ public func runSecurityConformance(
             withHandlers: .handlers([.varIntLengthPrefixed]),
             withTimeout: requestTimeout
         )
-        _ = await harnessWaitUntil { streamProbes.withLockedValue { $0.contains { $0.readCompletes > 0 } } }
+        _ = await waitUntil { streamProbes.withLockedValue { $0.contains { $0.readCompletes > 0 } } }
         let probes = streamProbes.withLockedValue { $0 }
         let totalReads = probes.reduce(0) { $0 + $1.reads }
         let sawReadComplete = probes.contains { $0.sawReadCompleteAfterRead }
@@ -279,7 +279,7 @@ public func runSecurityConformance(
             ) { req in
                 req.eventLoop.makeSucceededFuture(RawResponse(payload: ByteBuffer()))
             }
-            let holdOpened = await harnessWaitUntil {
+            let holdOpened = await waitUntil {
                 clientEvents.openedStreams(forProtocol: holdProto).contains { $0.streamState == .open }
             }
             let holdStreamToReset =
@@ -287,7 +287,7 @@ public func runSecurityConformance(
                 ?? clientEvents.openedStreams(forProtocol: holdProto).first
             if holdOpened, let holdStream = holdStreamToReset {
                 _ = try? await holdStream.reset().get()
-                let becameReset = await harnessWaitUntil { holdStream.streamState == .reset }
+                let becameReset = await waitUntil { holdStream.streamState == .reset }
                 report.check(
                     "reset() transitions stream to .reset",
                     becameReset,
@@ -295,7 +295,7 @@ public func runSecurityConformance(
                 )
                 let writeRejected = await secWriteIsRejected(on: holdStream)
                 report.check("Write on a reset stream is rejected", writeRejected)
-                let propagated = await harnessWaitUntil { hostEvents.closedStream(forProtocol: holdProto) }
+                let propagated = await waitUntil { hostEvents.closedStream(forProtocol: holdProto) }
                 report.check("Reset propagates to the peer (host observes stream close)", propagated)
             } else {
                 report.warn("Could not open a hold stream to verify reset semantics")

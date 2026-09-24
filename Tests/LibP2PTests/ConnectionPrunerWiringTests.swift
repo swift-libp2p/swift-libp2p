@@ -93,7 +93,7 @@ extension LibP2PTests {
                 try await manager.addConnection(connection, on: app.eventLoopGroup.next()).get()
 
                 // Two consults prove the sweep repeats, not merely that one prune ran.
-                let sweptRepeatedly = await waitUntilTrue(attempts: 600) { await pruner.pruneCallCount >= 2 }
+                let sweptRepeatedly = await waitUntil(attempts: 600) { await pruner.pruneCallCount >= 2 }
                 #expect(sweptRepeatedly)
 
                 try await manager.closeAllConnections().get()
@@ -154,7 +154,7 @@ extension LibP2PTests {
 
                 // `.close` closes the connection...
                 await channels[0].testingEventLoop.run()
-                let closed = await waitUntilTrue { toClose.status == .closed }
+                let closed = await waitUntil { toClose.status == .closed }
                 #expect(closed)
                 // ...while `.unregister` only drops the bookkeeping.
                 await channels[1].testingEventLoop.run()
@@ -206,21 +206,6 @@ extension LibP2PTests {
             }
         }
 
-        // MARK: - Helpers
-
-        /// Polls `predicate` until it holds or the attempts run out. Needed because prune verdicts
-        /// (and the closes they trigger) land asynchronously, off the calling task.
-        private func waitUntilTrue(
-            attempts: Int = 200,
-            every: Duration = .milliseconds(5),
-            _ predicate: () async -> Bool
-        ) async -> Bool {
-            for _ in 0..<attempts {
-                if await predicate() { return true }
-                try? await Task.sleep(for: every)
-            }
-            return await predicate()
-        }
     }
 }
 

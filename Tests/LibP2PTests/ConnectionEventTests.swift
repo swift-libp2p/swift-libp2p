@@ -81,7 +81,7 @@ extension LibP2PTests {
                 let connection = DummyConnection(direction: .outbound)
                 app.events.post(.connected(connection))
 
-                #expect(await ConnectionEventTests.waitUntil { received.withLockedValue { !$0.isEmpty } })
+                #expect(await waitUntil { received.withLockedValue { !$0.isEmpty } })
                 #expect(received.withLockedValue { $0.first } == connection.id)
                 _ = subscriber
             }
@@ -102,7 +102,7 @@ extension LibP2PTests {
                 let connection = DummyConnection(direction: .inbound)
                 app.events.post(.disconnected(connection, nil))
 
-                #expect(await ConnectionEventTests.waitUntil { received.withLockedValue { $0 != nil } })
+                #expect(await waitUntil { received.withLockedValue { $0 != nil } })
                 let payload = received.withLockedValue { $0 }
                 #expect(payload?.id == connection.id)
                 #expect(payload?.peerWasNil == true)
@@ -125,7 +125,7 @@ extension LibP2PTests {
                 let connection = DummyConnection(direction: .outbound)
                 app.events.post(.upgraded(connection))
 
-                #expect(await ConnectionEventTests.waitUntil { received.withLockedValue { !$0.isEmpty } })
+                #expect(await waitUntil { received.withLockedValue { !$0.isEmpty } })
                 #expect(received.withLockedValue { $0.first } == connection.id)
                 _ = subscriber
             }
@@ -146,7 +146,7 @@ extension LibP2PTests {
 
                 app.events.post(.remotePeer(PeerInfo(peer: peer, addresses: [])))
 
-                #expect(await ConnectionEventTests.waitUntil { received.withLockedValue { $0 != nil } })
+                #expect(await waitUntil { received.withLockedValue { $0 != nil } })
                 #expect(received.withLockedValue { $0 } == peer.b58String)
                 _ = subscriber
             }
@@ -188,8 +188,8 @@ extension LibP2PTests {
                 app.events.post(.openedStream(stream))
                 app.events.post(.closedStream(stream))
 
-                #expect(await ConnectionEventTests.waitUntil { opened.withLockedValue { !$0.isEmpty } })
-                #expect(await ConnectionEventTests.waitUntil { closed.withLockedValue { !$0.isEmpty } })
+                #expect(await waitUntil { opened.withLockedValue { !$0.isEmpty } })
+                #expect(await waitUntil { closed.withLockedValue { !$0.isEmpty } })
                 #expect(opened.withLockedValue { $0.first } == 42)
                 #expect(closed.withLockedValue { $0.first } == 42)
                 _ = (subscriber, stream)
@@ -216,10 +216,7 @@ extension LibP2PTests {
                 app.events.post(.connected(DummyConnection(direction: .outbound)))
 
                 // Give any (erroneous) background delivery a generous window, then confirm nothing arrived.
-                let delivered = await ConnectionEventTests.waitUntil(
-                    { count.withLockedValue { $0 > 0 } },
-                    attempts: 20
-                )
+                let delivered = await waitUntil(attempts: 20) { count.withLockedValue { $0 > 0 } }
                 #expect(delivered == false)
                 #expect(count.withLockedValue { $0 } == 0)
                 _ = subscriber
@@ -265,7 +262,7 @@ extension LibP2PTests {
                 _ = try await channel.finish()
 
                 #expect(
-                    await ConnectionEventTests.waitUntil { received.withLockedValue { $0.contains(connection.id) } }
+                    await waitUntil { received.withLockedValue { $0.contains(connection.id) } }
                 )
                 _ = (subscriber, connection)
             }
@@ -287,16 +284,13 @@ extension LibP2PTests {
 
                 // First post is delivered.
                 app.events.post(.connected(DummyConnection(direction: .outbound)))
-                #expect(await ConnectionEventTests.waitUntil { count.withLockedValue { $0 == 1 } })
+                #expect(await waitUntil { count.withLockedValue { $0 == 1 } })
 
                 // After unregistering, subsequent posts must not reach the handler.
                 app.events.unregister(subscriber)
                 app.events.post(.connected(DummyConnection(direction: .outbound)))
 
-                let deliveredAgain = await ConnectionEventTests.waitUntil(
-                    { count.withLockedValue { $0 > 1 } },
-                    attempts: 20
-                )
+                let deliveredAgain = await waitUntil(attempts: 20) { count.withLockedValue { $0 > 1 } }
                 #expect(deliveredAgain == false)
                 #expect(count.withLockedValue { $0 } == 1)
                 _ = subscriber
@@ -326,7 +320,7 @@ extension LibP2PTests {
                 let connection = DummyConnection(direction: .outbound)
                 app.events.post(.connected(connection))
 
-                #expect(await ConnectionEventTests.waitUntil { received.withLockedValue { !$0.isEmpty } })
+                #expect(await waitUntil { received.withLockedValue { !$0.isEmpty } })
                 #expect(received.withLockedValue { $0.first } == connection.id)
 
                 task.cancel()
@@ -352,7 +346,7 @@ extension LibP2PTests {
                 // First post is delivered to the live stream.
                 let first = DummyConnection(direction: .outbound)
                 app.events.post(.connected(first))
-                #expect(await ConnectionEventTests.waitUntil { received.withLockedValue { $0.count == 1 } })
+                #expect(await waitUntil { received.withLockedValue { $0.count == 1 } })
 
                 // Tearing down the consumer fires the continuation's `onTermination`, which removes it from
                 // the bus. Awaiting the task guarantees that cleanup has run before we post again.
@@ -361,10 +355,7 @@ extension LibP2PTests {
 
                 app.events.post(.connected(DummyConnection(direction: .outbound)))
 
-                let deliveredAgain = await ConnectionEventTests.waitUntil(
-                    { received.withLockedValue { $0.count > 1 } },
-                    attempts: 20
-                )
+                let deliveredAgain = await waitUntil(attempts: 20) { received.withLockedValue { $0.count > 1 } }
                 #expect(deliveredAgain == false)
                 #expect(received.withLockedValue { $0 } == [first.id])
             }
@@ -403,20 +394,17 @@ extension LibP2PTests {
                     let connectionA = DummyConnection(direction: .outbound)
                     appA.events.post(.connected(connectionA))
 
-                    #expect(await ConnectionEventTests.waitUntil { receivedA.withLockedValue { !$0.isEmpty } })
+                    #expect(await waitUntil { receivedA.withLockedValue { !$0.isEmpty } })
                     #expect(receivedA.withLockedValue { $0 } == [connectionA.id])
                     // B must not have seen A's event.
-                    let leakedToB = await ConnectionEventTests.waitUntil(
-                        { receivedB.withLockedValue { !$0.isEmpty } },
-                        attempts: 20
-                    )
+                    let leakedToB = await waitUntil(attempts: 20) { receivedB.withLockedValue { !$0.isEmpty } }
                     #expect(leakedToB == false)
 
                     // Now post on B only and assert the mirror image.
                     let connectionB = DummyConnection(direction: .inbound)
                     appB.events.post(.connected(connectionB))
 
-                    #expect(await ConnectionEventTests.waitUntil { receivedB.withLockedValue { !$0.isEmpty } })
+                    #expect(await waitUntil { receivedB.withLockedValue { !$0.isEmpty } })
                     #expect(receivedB.withLockedValue { $0 } == [connectionB.id])
                     // A must still only have its own single event.
                     #expect(receivedA.withLockedValue { $0 } == [connectionA.id])
@@ -484,15 +472,15 @@ extension LibP2PTests {
                 // The responsive subscribers receive every event even though the slow subscriber is still wedged
                 // on its first event — delivery is isolated per subscriber, so neither `post` nor the fast drains
                 // ever wait on the slow one.
-                #expect(await ConnectionEventTests.waitUntil { callbackCount.withLockedValue { $0 == count } })
-                #expect(await ConnectionEventTests.waitUntil { streamCount.withLockedValue { $0 == count } })
+                #expect(await waitUntil { callbackCount.withLockedValue { $0 == count } })
+                #expect(await waitUntil { streamCount.withLockedValue { $0 == count } })
                 // ...and the slow subscriber genuinely made no progress while blocked.
                 #expect(slowCount.withLockedValue { $0 } == 0)
 
                 // Release it and confirm it drains all buffered events — proving they were queued for it, not
                 // dropped (count < buffer), and that it never gated anyone else.
                 releaseSlow.withLockedValue { $0 = true }
-                #expect(await ConnectionEventTests.waitUntil { slowCount.withLockedValue { $0 == count } })
+                #expect(await waitUntil { slowCount.withLockedValue { $0 == count } })
 
                 drain.cancel()
                 await drain.value
@@ -605,11 +593,11 @@ extension LibP2PTests {
                 #expect(app.events.subscriptionSnapshot.callbackOwners == expectedCallbackOwners)
 
                 // Let any buffered events drain, then assert fan-out reached every responsive subscriber.
-                let allCallbacksGotSomething = await ConnectionEventTests.waitUntil {
+                let allCallbacksGotSomething = await waitUntil {
                     callbackCounts.allSatisfy { $0.withLockedValue { $0 > 0 } }
                 }
                 #expect(allCallbacksGotSomething)
-                let allFastStreamsGotSomething = await ConnectionEventTests.waitUntil {
+                let allFastStreamsGotSomething = await waitUntil {
                     fastStreamCounts.allSatisfy { $0.withLockedValue { $0 > 0 } }
                 }
                 #expect(allFastStreamsGotSomething)
@@ -621,7 +609,7 @@ extension LibP2PTests {
 
                 // `unregister` removes callback owners synchronously; continuation removal happens as each
                 // cancelled drain task ends, so poll until the registry is fully empty.
-                let drained = await ConnectionEventTests.waitUntil {
+                let drained = await waitUntil {
                     app.events.subscriptionSnapshot.continuations == baseline.continuations
                 }
                 #expect(drained)
