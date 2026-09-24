@@ -77,7 +77,7 @@ extension Application {
     /// error (e.g. a failed upgrade) propagates immediately without retrying, so real failures aren't
     /// masked.
     ///
-    /// - Parameter proto: Must match the protocol the route was installed on — pass the same value
+    /// - Parameter proto: Must match the protocol the route was installed on, pass the same value
     ///   you gave ``installEchoRoute(protocol:handlers:)``.
     @discardableResult
     public func echo(
