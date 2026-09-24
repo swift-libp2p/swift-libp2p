@@ -51,7 +51,7 @@ extension Application {
         skipCache: Bool = false,
         timeout: TimeAmount = .seconds(3)
     ) async throws -> [Multiaddr]? {
-        try await self.resolve(multiaddr, skipCache: skipCache, timeout: timeout).get()
+        try await self._resolve(multiaddr, skipCache: skipCache, timeout: timeout).get()
     }
 
     /// Resolves a `Multiaddr` into a set of 'dialable' addresses.
@@ -69,7 +69,22 @@ extension Application {
     ///   - skipCache: Forces a fresh resolution, ignoring any cached result for this address
     ///   - timeout: How long any single resolver is given to answer before we move on without it
     /// - Returns: A set of 'dialable' `Multiaddr`s or `nil` if none exist.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async resolve(_:skipCache:timeout:) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+    )
     public func resolve(
+        _ multiaddr: Multiaddr,
+        skipCache: Bool = false,
+        timeout: TimeAmount = .seconds(3)
+    ) -> EventLoopFuture<[Multiaddr]?> {
+        self._resolve(multiaddr, skipCache: skipCache, timeout: timeout)
+    }
+
+    /// The actual implementation that both the ELF and async forms call.
+    internal func _resolve(
         _ multiaddr: Multiaddr,
         skipCache: Bool = false,
         timeout: TimeAmount = .seconds(3)
@@ -144,7 +159,7 @@ extension Application {
         skipCache: Bool = false,
         timeout: TimeAmount = .seconds(3)
     ) async throws -> Multiaddr? {
-        try await self.resolve(multiaddr, for: codecs, skipCache: skipCache, timeout: timeout).get()
+        try await self._resolve(multiaddr, for: codecs, skipCache: skipCache, timeout: timeout).get()
     }
 
     /// Resolves a `Multiaddr` into a 'dialable' address that conforms to the specified `Codec` set.
@@ -163,7 +178,23 @@ extension Application {
     ///   - skipCache: Forces a fresh resolution, ignoring any cached result for this address
     ///   - timeout: How long any single resolver is given to answer before we move on without it
     /// - Returns: A 'dialable' `Multiaddr` that conforms to the provided Codec set or `nil` if one doesn't exist.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async resolve(_:for:skipCache:timeout:) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+    )
     public func resolve(
+        _ multiaddr: Multiaddr,
+        for codecs: Set<MultiaddrProtocol>,
+        skipCache: Bool = false,
+        timeout: TimeAmount = .seconds(3)
+    ) -> EventLoopFuture<Multiaddr?> {
+        self._resolve(multiaddr, for: codecs, skipCache: skipCache, timeout: timeout)
+    }
+
+    /// The actual implementation that both the ELF and async forms call.
+    internal func _resolve(
         _ multiaddr: Multiaddr,
         for codecs: Set<MultiaddrProtocol>,
         skipCache: Bool = false,
@@ -171,7 +202,7 @@ extension Application {
     ) -> EventLoopFuture<Multiaddr?> {
         self.logger.trace("Attempting to resolve \(multiaddr) for \(self.list(codecs))")
 
-        return self.resolve(multiaddr, skipCache: skipCache, timeout: timeout).map { mas in
+        return self._resolve(multiaddr, skipCache: skipCache, timeout: timeout).map { mas in
             guard let addresses = mas, !addresses.isEmpty else {
                 return nil
             }
