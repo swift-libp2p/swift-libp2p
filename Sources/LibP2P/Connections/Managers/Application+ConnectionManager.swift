@@ -254,6 +254,13 @@ extension Application {
         /// The registry is keyed by `ma.description`, which encapsulates both the target peer and the
         /// full network stack, so only dials to the same peer over the same stack coalesce — dials
         /// to a different stack (a different address) remain independent.
+        ///
+        /// - Important: `internal` on purpose. The client path already wraps every
+        ///   `Transport.dial(address:)` in this call (see `Application._newStream`), so a transport
+        ///   must not call it again from inside its own `dial.
+        ///
+        /// - Important: Transport implementations should hand their connected channel to
+        ///   ``adoptOutbound(channel:remoteAddress:expectedRemotePeer:)``.
         func dial(
             to ma: Multiaddr,
             startDial: @escaping @Sendable () -> EventLoopFuture<AppConnection>
@@ -312,8 +319,14 @@ extension Application {
         /// - Inbound connections are gated before registration, so a pending / denied connection
         ///   doesn't count towards our max connections. This approval / rejectection is bound to
         ///   ``defaultUpgradeTimeout``, at which point the connection is failed.
+        ///
         /// - Outbound connections were already gated pre-dial (with `shouldDial`) and go
         ///   straight to the manager.
+        ///
+        /// - Important: Transport implementations should go through
+        ///   ``adoptInbound(channel:remoteAddress:gaterTimeout:)``  and / or
+        ///   ``adoptOutbound(channel:remoteAddress:expectedRemotePeer:)`` which handles
+        ///   consulting the ConnectionGater and installing the appropriate default channel handlers.
         func admitConnection(
             _ conn: AppConnection,
             gaterTimeout: TimeAmount = Connections.defaultUpgradeTimeout
