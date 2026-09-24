@@ -17,7 +17,6 @@
 //
 
 public import LibP2P
-public import LibP2PTestUtils
 public import NIOCore
 import Testing
 
