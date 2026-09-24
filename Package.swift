@@ -78,17 +78,9 @@ let package = Package(
         ),
         // Testing
         .target(
-            name: "LibP2PTestUtils",
-            dependencies: [
-                .target(name: "LibP2P")
-            ],
-            swiftSettings: swiftSettings
-        ),
-        .target(
             name: "LibP2PTesting",
             dependencies: [
-                .target(name: "LibP2PTestUtils"),
-                .target(name: "LibP2P"),
+                .target(name: "LibP2P")
             ],
             swiftSettings: swiftSettings
         ),
