@@ -454,35 +454,15 @@ private final class TCPServerConnection: Sendable {
                 guard let remoteAddress = try? channel.remoteAddress?.toMultiaddr() else {
                     return channel.eventLoop.makeFailedFuture(TCP.Errors.invalidMultiaddr)
                 }  //.always({ _ in channel.close(mode: .all) }) }
-                let conn = application.connectionManager.generateConnection(
-                    channel: channel,
-                    direction: .inbound,
-                    remoteAddress: remoteAddress,
-                    expectedRemotePeer: nil
-                )
 
-                // Consult the ConnectionGater and add the new inbound connection to our
-                // ConnectionManager. A rejection fails this future and the channel closes
-                // before any handshake bytes move.
-                return application.connectionManager.admitConnection(conn).flatMap {
-                    // `QuiesceOnShutdownHandler` sits at the head so that when the
-                    // server begins quiescing it closes this accepted channel — see
-                    // its doc comment. `BackPressureHandler` follows it.
-                    channel.pipeline.addHandlers(
-                        [QuiesceOnShutdownHandler(), BackPressureHandler()],
-                        position: .first
-                    ).flatMap {
-                        // Initialize the new inbound channel
-                        conn.initializeChannel()
-                    }
-                }.flatMapError { error in
-                    // Ensure we close the channel upon an error
-                    channel.close(mode: .all).flatMapError { _ in
-                        channel.eventLoop.makeSucceededVoidFuture()
-                    }.flatMap {
-                        channel.eventLoop.makeFailedFuture(error)
-                    }
-                }
+                // Hand the accepted channel to the ConnectionManager, which consults the
+                // ConnectionGater, registers the connection, installs the quiesce /
+                // backpressure handlers, and initializes the channel. A rejection fails this
+                // future and the channel closes before any handshake bytes move.
+                return application.connectionManager.adoptInbound(
+                    channel: channel,
+                    remoteAddress: remoteAddress
+                ).map { _ in }
             }
 
             // Enable TCP_NODELAY for the accepted Channels.
@@ -554,11 +534,16 @@ private final class TCPServerConnection: Sendable {
 /// quiesce blocked until the server's `shutdownTimeout` elapses (surfacing as `serverStopTookTooLong`).
 /// Installing this at the head of each accepted channel makes graceful server shutdown prompt,
 /// independent of whether the connection manager also closed the connection.
-final class QuiesceOnShutdownHandler: ChannelInboundHandler, Sendable {
-    typealias InboundIn = ByteBuffer
-    typealias InboundOut = ByteBuffer
+///
+/// - Note: ``Application/Connections/adoptInbound(channel:remoteAddress:gaterTimeout:)`` already
+///   install this for you.
+public final class QuiesceOnShutdownHandler: ChannelInboundHandler, Sendable {
+    public typealias InboundIn = ByteBuffer
+    public typealias InboundOut = ByteBuffer
 
-    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+    public init() {}
+
+    public func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
         // Forward first, so handlers further down the pipeline still observe the quiesce before
         // the channel is torn out from under them.
         context.fireUserInboundEventTriggered(event)
