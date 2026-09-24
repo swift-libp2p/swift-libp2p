@@ -38,10 +38,18 @@ extension Application {
             struct SecurityFactory {
                 let factory: (@Sendable (Application) -> SecurityUpgrader)
             }
-            /// Security Upgraders stored in order of preference
-            let secUpgraders: NIOLockedValueBox<[String: SecurityFactory]>
+
+            /// One registered security module, keyed by its `SecurityUpgrader.key`.
+            typealias KeyedSecurityFactory = (key: String, value: SecurityFactory)
+
+            /// Security Upgraders, in registration order, which is the order of preference.
+            ///
+            /// - Important: This has to stay an ordered collection. ``available`` is handed straight
+            ///   to `AppConnection.negotiateProtocol(fromSet:)` as the multistream-select proposal
+            ///   list, so its order decides which module a connection actually negotiates.
+            let secUpgraders: NIOLockedValueBox<[KeyedSecurityFactory]>
             init() {
-                self.secUpgraders = .init([:])
+                self.secUpgraders = .init([])
             }
         }
 
@@ -62,12 +70,11 @@ extension Application {
         //        }
 
         public func upgrader(forKey key: String) -> SecurityUpgrader? {
-            self.storage.secUpgraders.withLockedValue {
-                if let factory = $0.first(where: { $0.key == key })?.value.factory {
-                    return factory(self.application)
-                } else {
+            self.storage.secUpgraders.withLockedValue { upgraders in
+                guard let factory = upgraders.first(where: { $0.key == key })?.value.factory else {
                     return nil
                 }
+                return factory(self.application)
             }
         }
 
@@ -107,16 +114,18 @@ extension Application {
 
         @preconcurrency public func use<S: SecurityUpgrader>(_ makeUpgrader: @Sendable @escaping (Application) -> (S)) {
             self.storage.secUpgraders.withLockedValue { security in
-                guard security[S.key] == nil else {
+                guard !security.contains(where: { $0.key == S.key }) else {
                     self.application.logger.warning("`\(S.key)` Security Module Already Installed - Skipping")
                     return
                 }
-                security[S.key] = .init(factory: makeUpgrader)
+                // Appended, so registration order is preserved as the preference order.
+                security.append((S.key, .init(factory: makeUpgrader)))
             }
         }
 
         public let application: Application
 
+        /// The installed security modules' keys, in order of preference.
         public var available: [String] {
             self.storage.secUpgraders.withLockedValue { $0.map { $0.key } }
         }
@@ -140,10 +149,10 @@ extension Application {
         }
 
         public func dump() {
-            print("*** Installed Security Modules ***")
+            print("*** Installed Security Modules (in order of preference) ***")
             print(
                 self.storage.secUpgraders.withLockedValue {
-                    $0.keys.enumerated().map { "[\($0.offset + 1)] - \($0.element)" }.joined(
+                    $0.enumerated().map { "[\($0.offset + 1)] - \($0.element.key)" }.joined(
                         separator: "\n"
                     )
                 }
