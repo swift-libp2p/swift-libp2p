@@ -89,41 +89,13 @@ public struct TCP: Transport, Sendable {
         return sharedClient.connect(host: tcp.address, port: tcp.port).flatMap {
             channel -> EventLoopFuture<Connection> in
 
-            self.application.logger.trace("Instantiating new BasicConnectionLight")
-            let conn = application.connectionManager.generateConnection(
+            /// Hand the connected channel to the ConnectionManager, which registers it, installs the
+            /// quiesce / backpressure handlers, and kicks off the security + muxer upgrade.
+            /// Outbound dials were already gated pre-dial, so admission goes straight to the manager.
+            self.application.connectionManager.adoptOutbound(
                 channel: channel,
-                direction: .outbound,
-                remoteAddress: address,
-                expectedRemotePeer: try? address.getPeerID()
-            )
-
-            /// The connection installs the necessary channel handlers here
-            self.application.logger.trace("Asking BasicConnectionLight to instantiate new outbound channel")
-
-            /// Add the connection to our ConnectionManager (outbound dials were already gated
-            /// pre-dial, so admission goes straight to the manager)
-            return self.application.connectionManager.admitConnection(conn).flatMap {
-                // Install the quiesce and backpressure handlers
-                channel.pipeline.addHandlers(
-                    [QuiesceOnShutdownHandler(), BackPressureHandler()],
-                    position: .first
-                ).flatMap {
-                    conn.initializeChannel().map {
-                        //self.onNewOutboundConnection(conn, address).map { _ -> Connection in
-                        conn
-                        //}
-                    }
-                }
-            }.flatMapError { error in
-                /// Make sure to close the channel upon an error
-                self.application.logger.trace("Closing dialed channel after failed upgrade: \(error)")
-                return channel.close(mode: .all).flatMapError { _ in
-                    channel.eventLoop.makeSucceededVoidFuture()
-                }.flatMap {
-                    /// Surface the original failure, not whatever `close` reported.
-                    channel.eventLoop.makeFailedFuture(error)
-                }
-            }
+                remoteAddress: address
+            ).map { $0 as Connection }
         }
     }
 
