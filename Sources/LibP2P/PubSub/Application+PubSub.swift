@@ -96,8 +96,19 @@ extension Application {
         }
 
         public enum PublishedResults: Sendable {
+            
+            /// - Note: Not currently produced by ``publish(_:toTopic:)``.
             case failed(Error)
+            
+            /// - Note: Not currently produced by ``publish(_:toTopic:)``.
             case storedLocally
+            
+            /// Handed to this many installed PubSub services (e.g. floodsub, gossipsub).
+            ///
+            /// - Important: Despite the name this is a count of services, not of remote peers. Ask the
+            ///   service (`app.pubsub.service(forKey:)`) if you need actual fan-out numbers.
+            ///
+            /// - TODO: This requires changes to the swift-libp2p-core protocols.
             case publishedToPeers(Int)
         }
 
@@ -117,11 +128,20 @@ extension Application {
             try await self._publish(msg, toTopic: topic).get()
         }
 
+        // TODO: Fix this...
         internal func _publish(_ msg: [UInt8], toTopic topic: String) -> EventLoopFuture<PublishedResults> {
             let el = application.eventLoopGroup.next()
+            let services = self.services
+            guard !services.isEmpty else {
+                return el.makeFailedFuture(Errors.noPubSubServicesAvailable)
+            }
             return services.map { service in
                 service.publish(topic: topic, bytes: msg, on: el)
-            }.flatten(on: el).map { PublishedResults.publishedToPeers(1) }
+            }.flatten(on: el).map {
+                // `flatten` fails the whole future if any service failed, so reaching here means
+                // every service accepted the message.
+                PublishedResults.publishedToPeers(services.count)
+            }
         }
 
         public func subscribe(_ config: PubSub.SubscriptionConfig) throws -> PubSub.SubscriptionHandler {
