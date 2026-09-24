@@ -502,7 +502,7 @@ public final class Application: Sendable {
         }
     }
 
-    public enum Errors: Error {
+    public enum Errors: Error, Sendable, Equatable {
         case noTransportForMultiaddr(Multiaddr)
         case unknownConnection
         case unknownPeer
