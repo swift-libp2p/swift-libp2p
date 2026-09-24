@@ -73,14 +73,15 @@ extension RoutesBuilder {
     ///     group.get(...) { ... }
     ///
     /// - parameters:
+    ///     - path: Path components to prefix every route added to the returned `Router` with.
     ///     - handlers: Array of `[ChannelHandler]` to configure the `Router` with.
     /// - returns: New `Router` configured with `ChannelHandlers`.
     public func grouped(_ path: [PathComponent], handlers: [Application.ChildChannelHandlers.Provider]) -> RoutesBuilder
     {
-        guard handlers.count > 0 else {
+        guard !path.isEmpty || !handlers.isEmpty else {
             return self
         }
-        return ChannelHandlerGroup(root: self, handlers: handlers)
+        return ChannelHandlerGroup(root: self, path: path, handlers: handlers)
     }
 
     /// Creates a new `Router` whos pipeline will be configred with the supplied array of `ChannelHandler`.
