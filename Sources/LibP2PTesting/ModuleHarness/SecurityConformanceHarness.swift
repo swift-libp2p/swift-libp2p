@@ -73,8 +73,8 @@ public func runSecurityConformance(
     let (streamProbeProvider, streamProbes) = makeStreamProbeProvider()
     installProbeEchoRoute(on: host, proto: probeProto, probeProvider: streamProbeProvider)
 
-    let clientEvents = HarnessEventRecorder()
-    let hostEvents = HarnessEventRecorder()
+    let clientEvents = EventRecorder()
+    let hostEvents = EventRecorder()
     clientEvents.subscribe(to: client)
     hostEvents.subscribe(to: host)
 

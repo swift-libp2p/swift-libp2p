@@ -65,7 +65,7 @@ public func runTransportConformance(
 
     tptInstallEchoRoute(on: host, proto: echoProto)
 
-    let clientEvents = HarnessEventRecorder()
+    let clientEvents = EventRecorder()
     clientEvents.subscribe(to: client)
 
     do {
