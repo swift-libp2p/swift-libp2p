@@ -14,7 +14,22 @@
 
 extension Application {
     /// Returns the number of open streams we currently have to the peer at the specified multiaddress
-    func streamCountToPeer(_ ma: Multiaddr) -> EventLoopFuture<Int> {
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async streamCountToPeer(_:) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+    )
+    public func streamCountToPeer(_ ma: Multiaddr) -> EventLoopFuture<Int> {
+        self._streamCountToPeer(ma)
+    }
+
+    /// Returns the number of open streams we currently have to the peer at the specified multiaddress
+    public func streamCountToPeer(_ ma: Multiaddr) async throws -> Int {
+        try await self._streamCountToPeer(ma).get()
+    }
+
+    internal func _streamCountToPeer(_ ma: Multiaddr) -> EventLoopFuture<Int> {
         self.connections.getConnectionsTo(ma, onlyMuxed: true, on: nil).map({ connections -> Int in
             var streamCount = 0
             for connection in connections {
@@ -28,22 +43,45 @@ extension Application {
     }
 
     /// Asks our ConnectionManager for a list of all active streams registered for the specified protocol
-    func activeStreams(for proto: SemVerProtocol) -> EventLoopFuture<[LibP2PCore.Stream]> {
-        self.activeStreams(for: proto.stringValue)
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async activeStreams(for:) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+    )
+    public func activeStreams(for proto: SemVerProtocol) -> EventLoopFuture<[LibP2PCore.Stream]> {
+        self._activeStreams(for: proto.stringValue)
     }
 
     /// Asks our ConnectionManager for a list of all active streams registered for the specified protocol
-    func activeStreams(for proto: String) -> EventLoopFuture<[LibP2PCore.Stream]> {
+    public func activeStreams(for proto: SemVerProtocol) async throws -> [LibP2PCore.Stream] {
+        try await self._activeStreams(for: proto.stringValue).get()
+    }
+
+    /// Asks our ConnectionManager for a list of all active streams registered for the specified protocol
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async activeStreams(for:) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+    )
+    public func activeStreams(for proto: String) -> EventLoopFuture<[LibP2PCore.Stream]> {
+        self._activeStreams(for: proto)
+    }
+
+    /// Asks our ConnectionManager for a list of all active streams registered for the specified protocol
+    public func activeStreams(for proto: String) async throws -> [LibP2PCore.Stream] {
+        try await self._activeStreams(for: proto).get()
+    }
+
+    internal func _activeStreams(for proto: String) -> EventLoopFuture<[LibP2PCore.Stream]> {
         self.connections.getConnections(on: nil).map { connections -> [LibP2PCore.Stream] in
-            //Loop through the connections looking for those who have an open / active stream for the specified protocol
-            connections.reduce(
-                [],
-                { _, connection in
-                    connection.streams.filter { stream in
-                        stream.protocolCodec == proto
-                    }
+            // Loop through the connections collecting every open / active stream for the protocol.
+            connections.flatMap { connection in
+                connection.streams.filter { stream in
+                    stream.protocolCodec == proto
                 }
-            )
+            }
         }
     }
 
@@ -73,7 +111,7 @@ extension Application {
         externalAddressesOnly: Bool = true,
         on: EventLoop
     ) -> [Multiaddr] {
-        return self.transports.dialableAddress(
+        self.transports.dialableAddress(
             mas,
             externalAddressesOnly: externalAddressesOnly
         )
@@ -96,7 +134,7 @@ extension Application {
     public func broadcast(_ bytes: [UInt8], toProtocol proto: String) -> EventLoopFuture<[String]> {
         self._broadcast(bytes, toProtocol: proto)
     }
-    
+
     /// Broadcasts the given message to all current connections that support the specified protocol
     ///
     /// - Returns: The b58 string of each peer the message was written to.
@@ -106,7 +144,7 @@ extension Application {
     }
 
     internal func _broadcast(_ bytes: [UInt8], toProtocol proto: String) -> EventLoopFuture<[String]> {
-        self.activeStreams(for: proto).map { streams in
+        self._activeStreams(for: proto).map { streams in
             self.logger.trace("Broadcast()::Found \(streams.count) active streams for protocol \(proto)")
             return streams.compactMap { stream in
                 let _ = stream.write(bytes)
