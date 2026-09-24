@@ -33,7 +33,7 @@ extension LibP2PTests {
     ///   * `EventBus.post` silently drops events unless `application.isRunning`, so each positive test starts
     ///     the app; one negative test asserts the drop behaviour explicitly.
     ///   * Delivery happens asynchronously on a background thread, so assertions poll with a timeout via
-    ///     ``waitUntil(_:attempts:every:)`` rather than reading immediately after `post`.
+    ///     `waitUntil(attempts:every:_:)` rather than reading immediately after `post`.
     @Suite("ConnectionEventTests", .serialized)
     struct ConnectionEventTests {
 
@@ -48,20 +48,6 @@ extension LibP2PTests {
             private let onDeinit: @Sendable () -> Void
             init(onDeinit: @escaping @Sendable () -> Void) { self.onDeinit = onDeinit }
             deinit { onDeinit() }
-        }
-
-        /// Polls `predicate` until it returns `true` or the attempts are exhausted. Returns the final value
-        /// of the predicate (so a caller can assert both "eventually true" and "never true").
-        static func waitUntil(
-            _ predicate: @Sendable () -> Bool,
-            attempts: Int = 200,
-            every: Duration = .milliseconds(10)
-        ) async -> Bool {
-            for _ in 0..<attempts {
-                if predicate() { return true }
-                try? await Task.sleep(for: every)
-            }
-            return predicate()
         }
 
         // MARK: - Connection events
