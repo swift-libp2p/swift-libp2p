@@ -142,7 +142,7 @@ struct LibP2PTests {
                 #expect(app.listenAddresses.isEmpty)
 
                 // This will throw an error (MultiaddrError.invalidFormat)
-                let _ = try await app.resolve(Multiaddr("")).get()
+                let _ = try await app.resolve(Multiaddr(""))
             }
         } catch let maError as MultiaddrError {
             #expect(maError == .invalidFormat)
