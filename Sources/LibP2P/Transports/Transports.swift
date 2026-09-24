@@ -71,7 +71,8 @@ extension Application {
             provider.run(self.application)
         }
 
-        public func use(key: String, _ transport: @escaping (Application) -> (Transport)) {
+        /// Registers a `Transport` under `key`.
+        @preconcurrency public func use(key: String, _ transport: @Sendable @escaping (Application) -> (Transport)) {
             /// We store the instantiation instead of the builder...
             self.storage.transports.withLockedValue {
                 $0[key] = transport(application)
