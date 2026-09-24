@@ -43,18 +43,20 @@ extension Application {
         withTimeout timeout: TimeAmount = .seconds(3)
     ) -> EventLoopFuture<Data> {
         self._newRequest(
-            to: ma,
+            toTarget: ma,
             forProtocol: proto,
-            withRequest: request,
+            withRequest: ByteBuffer(bytes: request),
             style: style,
             withHandlers: handlers,
             andMiddleware: middleware,
             expecting: completion,
             withTimeout: timeout
-        )
+        ).map { Data($0.readableBytesView) }
     }
 
     /// A method on libp2p that acts as a request / response mechanism for streams
+    ///
+    /// `target` may be any ``RequestTarget`` (e.g. `Multiaddr`, `PeerID`, or `PeerInfo`)
     ///
     /// The stream is negotiated, the request sent, the response delivered, then the stream is closed.
     ///
@@ -62,8 +64,8 @@ extension Application {
     /// `.newLineDelimited`, `.fixedLengthFramed(frameLength:)`) so each `.data` event is one
     /// complete message, the default `.firstFrame` then completes the request the moment the
     /// first message arrives.
-    public func newRequest(
-        to ma: Multiaddr,
+    public func newRequest<Target: RequestTarget>(
+        to target: Target,
         forProtocol proto: String,
         withRequest request: Data,
         style: SingleRequest.Style = .responseExpected,
@@ -72,8 +74,41 @@ extension Application {
         expecting completion: SingleRequest.ResponseCompletion = .firstFrame,
         withTimeout timeout: TimeAmount = .seconds(3)
     ) async throws -> Data {
+        let response = try await self.newRequest(
+            to: target,
+            forProtocol: proto,
+            withRequest: ByteBuffer(bytes: request),
+            style: style,
+            withHandlers: handlers,
+            andMiddleware: middleware,
+            expecting: completion,
+            withTimeout: timeout
+        )
+        return Data(response.readableBytesView)
+    }
+
+    /// A method on libp2p that acts as a request / response mechanism for streams.
+    ///
+    /// `target` may be any ``RequestTarget`` (e.g. `Multiaddr`, `PeerID`, or `PeerInfo`)
+    ///
+    /// The stream is negotiated, the request sent, the response delivered, then the stream is closed.
+    ///
+    /// - Note: Install framing handlers via `withHandlers:` (e.g. `.varIntFrameDecoder`,
+    /// `.newLineDelimited`, `.fixedLengthFramed(frameLength:)`) so each `.data` event is one
+    /// complete message, the default `.firstFrame` then completes the request the moment the
+    /// first message arrives.
+    public func newRequest<Target: RequestTarget>(
+        to target: Target,
+        forProtocol proto: String,
+        withRequest request: ByteBuffer,
+        style: SingleRequest.Style = .responseExpected,
+        withHandlers handlers: HandlerConfig = .rawHandlers([]),
+        andMiddleware middleware: MiddlewareConfig = .custom(nil),
+        expecting completion: SingleRequest.ResponseCompletion = .firstFrame,
+        withTimeout timeout: TimeAmount = .seconds(3)
+    ) async throws -> ByteBuffer {
         try await self._newRequest(
-            to: ma,
+            toTarget: target,
             forProtocol: proto,
             withRequest: request,
             style: style,
@@ -109,59 +144,29 @@ extension Application {
         withTimeout timeout: TimeAmount = .seconds(3)
     ) -> EventLoopFuture<Data> {
         self._newRequest(
-            to: peer,
+            toTarget: peer,
             forProtocol: proto,
-            withRequest: request,
+            withRequest: ByteBuffer(bytes: request),
             style: style,
             withHandlers: handlers,
             andMiddleware: middleware,
             expecting: completion,
             withTimeout: timeout
-        )
-    }
-
-    /// A method on libp2p that acts as a request / response mechanism for streams
-    ///
-    /// The stream is negotiated, the request sent, the response delivered, then the stream is closed.
-    ///
-    /// - Note: Install framing handlers via `withHandlers:` (e.g. `.varIntFrameDecoder`,
-    /// `.newLineDelimited`, `.fixedLengthFramed(frameLength:)`) so each `.data` event is one
-    /// complete message, the default `.firstFrame` then completes the request the moment the
-    /// first message arrives.
-    public func newRequest(
-        to peer: PeerID,
-        forProtocol proto: String,
-        withRequest request: Data,
-        style: SingleRequest.Style = .responseExpected,
-        withHandlers handlers: HandlerConfig = .rawHandlers([]),
-        andMiddleware middleware: MiddlewareConfig = .custom(nil),
-        expecting completion: SingleRequest.ResponseCompletion = .firstFrame,
-        withTimeout timeout: TimeAmount = .seconds(3)
-    ) async throws -> Data {
-        try await self._newRequest(
-            to: peer,
-            forProtocol: proto,
-            withRequest: request,
-            style: style,
-            withHandlers: handlers,
-            andMiddleware: middleware,
-            expecting: completion,
-            withTimeout: timeout
-        ).get()
+        ).map { Data($0.readableBytesView) }
     }
 
     /// The actual internal implementation that both the ELF and Async versions call.
     internal func _newRequest(
         to ma: Multiaddr,
         forProtocol proto: String,
-        withRequest request: Data,
+        withRequest request: ByteBuffer,
         style: SingleRequest.Style,
         withHandlers handlers: HandlerConfig,
         andMiddleware middleware: MiddlewareConfig,
         expecting completion: SingleRequest.ResponseCompletion,
         withTimeout timeout: TimeAmount
-    ) -> EventLoopFuture<Data> {
-        let promise = self.eventLoopGroup.next().makePromise(of: Data.self)
+    ) -> EventLoopFuture<ByteBuffer> {
+        let promise = self.eventLoopGroup.next().makePromise(of: ByteBuffer.self)
         promise.completeWith(
             SingleRequest(
                 to: ma,
@@ -178,9 +183,16 @@ extension Application {
         return promise.futureResult
     }
 
-    /// The actual internal implementation that both the ELF and Async versions call.
-    internal func _newRequest(
-        to peer: PeerID,
+    /// The single target-resolving engine behind every `newRequest(to:…)` form.
+    ///
+    /// Resolves `target` to a dialable address via ``RequestTarget/dialAddress(for:on:)``, then hands
+    /// it off to the multiaddr implementation.
+    ///
+    /// - Note: The `toTarget:` label (rather than `to:`) keeps this from overloading against the
+    ///   `Multiaddr` implementation above. `Multiaddr` is itself a `RequestTarget`, so a shared
+    ///   label would make the generic form a candidate for its own body and recurse.
+    internal func _newRequest<Target: RequestTarget>(
+        toTarget target: Target,
         forProtocol proto: String,
         withRequest request: ByteBuffer,
         style: SingleRequest.Style,
@@ -191,26 +203,17 @@ extension Application {
     ) -> EventLoopFuture<ByteBuffer> {
         let el = self.eventLoopGroup.next()
 
-        return self.peers.getAddresses(forPeer: peer, on: el).flatMap { addresses -> EventLoopFuture<Data> in
-            // Check to see if we have a transport thats capable of dialing any of these addresses...
-            // - TODO: Maybe instead of just returning the first transport found, we return the best transport (like one that's already muxed, or with low latency, or recently interacted with)
-            guard let addressToDial = try? self.transports.canDialAny(addresses) else {
-                return el.makeFailedFuture(Errors.noKnownAddressesForPeer)
-            }
-
-            let singleRequest = SingleRequest(
-                to: addressToDial,
-                overProtocol: proto,
+        return target.dialAddress(for: self, on: el).flatMap { ma -> EventLoopFuture<ByteBuffer> in
+            self._newRequest(
+                to: ma,
+                forProtocol: proto,
                 withRequest: request,
+                style: style,
                 withHandlers: handlers,
                 andMiddleware: middleware,
                 expecting: completion,
-                on: self.eventLoopGroup.next(),
-                host: self,
                 withTimeout: timeout
             )
-
-            return singleRequest.resume(style: style)
         }
     }
 
@@ -345,7 +348,7 @@ extension Application {
                         self._hasCompleted.withLockedValue { $0 = true }
                         self.cancelTimeoutTask()
                         req.shouldClose()
-                        self.promise.succeed(Data(response.readableBytesView))
+                        self.promise.succeed(response)
                     case .untilClosed:
                         // Accumulate until the remote closes; the single timeout bounds the whole request.
                         self.buffer.withLockedValue { buffer in
@@ -362,7 +365,7 @@ extension Application {
                         self._hasCompleted.withLockedValue { $0 = true }
                         let buffered = self.buffer.withLockedValue { $0 }
                         if self.completion == .untilClosed, let buffered, buffered.readableBytes > 0 {
-                            self.promise.succeed(Data(buffered.readableBytesView))
+                            self.promise.succeed(buffered)
                         } else {
                             req.logger.error("Stream Closed before we got our response")
                             self.promise.fail(SingleRequestError.failedToOpenStream)
