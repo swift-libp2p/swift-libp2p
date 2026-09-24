@@ -25,7 +25,7 @@ extension Application {
         .init(application: self)
     }
 
-    public struct SecurityUpgraders {
+    public struct SecurityUpgraders: Sendable {
         public struct Provider: Sendable {
             let run: @Sendable (Application) -> Void
 

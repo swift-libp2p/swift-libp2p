@@ -20,7 +20,7 @@ extension Application {
         .init(application: self)
     }
 
-    public struct Transports: TransportManager {
+    public struct Transports: TransportManager, Sendable {
 
         public struct Provider: Sendable {
             let run: @Sendable (Application) -> Void
