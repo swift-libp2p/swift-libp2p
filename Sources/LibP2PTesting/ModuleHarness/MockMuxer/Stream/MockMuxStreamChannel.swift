@@ -136,8 +136,8 @@ internal final class MockMuxStreamChannel: Channel, ChannelCore, @unchecked Send
         self.eventLoop = parent.eventLoop
         self.streamID = streamID
         self.multiplexer = multiplexer
-        self._isActiveAtomic = .makeAtomic(value: false)
-        self._isWritable = .makeAtomic(value: true)
+        self._isActiveAtomic = .init(false)
+        self._isWritable = .init(true)
         self.state = .idle
         self.streamDataType = streamDataType
         self.autoRead = false
@@ -336,20 +336,20 @@ internal final class MockMuxStreamChannel: Channel, ChannelCore, @unchecked Send
     }
 
     var isWritable: Bool {
-        self._isWritable.load()
+        self._isWritable.withLockedValue { $0 }
     }
 
-    private let _isWritable: NIOAtomic<Bool>
+    private let _isWritable: NIOLockedValueBox<Bool>
 
     private var _isActive: Bool {
         self.state == .active || self.state == .closing || self.state == .localActive
     }
 
     var isActive: Bool {
-        self._isActiveAtomic.load()
+        self._isActiveAtomic.withLockedValue { $0 }
     }
 
-    private let _isActiveAtomic: NIOAtomic<Bool>
+    private let _isActiveAtomic: NIOLockedValueBox<Bool>
 
     var _channelCore: ChannelCore {
         self
@@ -686,12 +686,12 @@ extension MockMuxStreamChannel {
 }
 
 extension MockMuxStreamChannel {
-    /// Ensures state modification keeps the `isActive` atomic in sync.
+    /// Ensures state modification keeps the `isActive` flag in sync.
     private func modifyingState<ReturnType>(
         _ closure: (inout StreamChannelState) throws -> ReturnType
     ) rethrows -> ReturnType {
         defer {
-            self._isActiveAtomic.store(self._isActive)
+            self._isActiveAtomic.withLockedValue { $0 = self._isActive }
         }
         return try closure(&self.state)
     }
