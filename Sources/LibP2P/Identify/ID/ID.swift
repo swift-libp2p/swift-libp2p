@@ -514,7 +514,7 @@ extension Identify {
     func initiateOutboundPingTo(peer: PeerID) -> EventLoopFuture<TimeAmount> {
         self.el.flatSubmit {
             self.startOutboundPing(to: peer) {
-                self.application!._newStream(to: peer, forProtocol: Identify.Multicodecs.ping)
+                self.application!._newStream(toTarget: peer, forProtocol: Identify.Multicodecs.ping)
                     .whenComplete { result in
                         self.logger.trace("Identify::Ping result => \(result)")
                     }
