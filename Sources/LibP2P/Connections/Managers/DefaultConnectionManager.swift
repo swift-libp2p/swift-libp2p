@@ -357,7 +357,7 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
 
     func closeConnectionsToPeer(peer: PeerID, on loop: EventLoop?) -> EventLoopFuture<Bool> {
         connectionsInvolvingPeer(peer: peer).flatMap { connections -> EventLoopFuture<Bool> in
-            connections.map { $0.close() }.flatten(on: self.eventLoop).transform(to: true)
+            connections.map { $0.close() }.flatten(on: self.eventLoop).map { true }
         }.hop(to: loop ?? eventLoop)
     }
 

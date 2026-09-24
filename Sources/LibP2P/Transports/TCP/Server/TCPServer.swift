@@ -477,7 +477,9 @@ private final class TCPServerConnection: Sendable {
                     }
                 }.flatMapError { error in
                     // Ensure we close the channel upon an error
-                    channel.close(mode: .all).flatMapAlways { _ in
+                    channel.close(mode: .all).flatMapError { _ in
+                        channel.eventLoop.makeSucceededVoidFuture()
+                    }.flatMap {
                         channel.eventLoop.makeFailedFuture(error)
                     }
                 }

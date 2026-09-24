@@ -116,7 +116,9 @@ public struct TCP: Transport, Sendable {
             }.flatMapError { error in
                 /// Make sure to close the channel upon an error
                 self.application.logger.trace("Closing dialed channel after failed upgrade: \(error)")
-                return channel.close(mode: .all).flatMapAlways { _ in
+                return channel.close(mode: .all).flatMapError { _ in
+                    channel.eventLoop.makeSucceededVoidFuture()
+                }.flatMap {
                     /// Surface the original failure, not whatever `close` reported.
                     channel.eventLoop.makeFailedFuture(error)
                 }

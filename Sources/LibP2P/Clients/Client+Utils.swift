@@ -241,9 +241,11 @@ extension Application {
 
         // Append the PeerInfo to our PeerStore (dial the PeerID either way, matching the
         // pre-engine behavior where a failed peerstore insert didn't abort the dial)
-        return self.peers.add(peerInfo: peerInfo, on: el).flatMapAlways { _ in
-            self._newStream(to: peerInfo.peer, forProtocol: proto)
-        }
+        return self.peers.add(peerInfo: peerInfo, on: el)
+            .flatMapError { _ in el.makeSucceededVoidFuture() }
+            .flatMap {
+                self._newStream(to: peerInfo.peer, forProtocol: proto)
+            }
     }
 
     @available(

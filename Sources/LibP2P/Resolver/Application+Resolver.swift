@@ -102,14 +102,15 @@ extension Application {
 
                 // Publish the addresses to our peerstore so the rest of the stack can dial them
                 return self.publishToPeerStore(resolvedAddresses: resolved, for: multiaddr, on: el)
-                    .flatMapAlways { result -> EventLoopFuture<[Multiaddr]?> in
+                    .always { result in
                         if case .failure(let error) = result {
                             self.logger.warning(
                                 "Failed to publish the resolved addresses for \(multiaddr) to our peerstore: \(error)"
                             )
                         }
-                        return el.makeSucceededFuture(resolved)
                     }
+                    .flatMapError { _ in el.makeSucceededVoidFuture() }
+                    .map { _ -> [Multiaddr]? in resolved }
             }.whenComplete { result in
                 // Settle the cache entry before the promise, so that anyone woken by the promise sees
                 // the finished entry rather than the in-flight one it replaces.
