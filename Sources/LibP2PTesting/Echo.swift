@@ -67,7 +67,7 @@ extension Application {
         }
     }
 
-    /// Fires a single line-delimited `/echo/1.0.0` request and returns the echoed payload.
+    /// Fires a single line-delimited request (`/echo/1.0.0` by default) and returns the echoed payload.
     ///
     /// The supplied `timeout` is ``NIOCore/TimeAmount/ciScaled`` so it gets extra headroom on throttled
     /// CI runners. On top of that, the request is retried up to `attempts` times only on a spurious
@@ -76,20 +76,45 @@ extension Application {
     /// typically succeeds. A genuine stall still fails once the attempts are exhausted, and any other
     /// error (e.g. a failed upgrade) propagates immediately without retrying, so real failures aren't
     /// masked.
+    ///
+    /// - Parameter proto: Must match the protocol the route was installed on — pass the same value
+    ///   you gave ``installEchoRoute(protocol:handlers:)``.
     @discardableResult
     public func echo(
         _ message: Data,
         to address: Multiaddr,
+        protocol proto: String = "/echo/1.0.0",
         timeout: TimeAmount = .seconds(15),
         attempts: Int = 3
     ) async throws -> Data {
+        let response = try await self.echo(
+            ByteBuffer(bytes: message),
+            to: address,
+            protocol: proto,
+            timeout: timeout,
+            attempts: attempts
+        )
+        return Data(response.readableBytesView)
+    }
+
+    /// Fires a single line-delimited request (`/echo/1.0.0` by default) and returns the echoed payload.
+    ///
+    /// The `ByteBuffer` form of the `Data` overload; see it for the retry and CI-scaling behaviour.
+    @discardableResult
+    public func echo(
+        _ message: ByteBuffer,
+        to address: Multiaddr,
+        protocol proto: String = "/echo/1.0.0",
+        timeout: TimeAmount = .seconds(15),
+        attempts: Int = 3
+    ) async throws -> ByteBuffer {
         let scaledTimeout = timeout.ciScaled
         var lastError: Error = Application.SingleRequestError.timedOut
         for attempt in 1...max(1, attempts) {
             do {
                 return try await self.newRequest(
                     to: address,
-                    forProtocol: "/echo/1.0.0",
+                    forProtocol: proto,
                     withRequest: message,
                     withHandlers: .handlers([.newLineDelimited]),
                     withTimeout: scaledTimeout
