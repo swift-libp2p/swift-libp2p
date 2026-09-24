@@ -209,10 +209,10 @@ let response = try await lib.newRequest(
     to: peerAddress,  // a Multiaddr or PeerID
     forProtocol: "/echo/1.0.0",
     withRequest: Data("Hello, libp2p!".utf8)
-).get()
+)
 ```
 
-> Note: swift-libp2p 0.4.0 is async-first for application lifecycle (`Application.make`, `startup`, `asyncShutdown`). The remaining `EventLoopFuture`-returning client APIs gain `async` variants over the 0.4.x cycle and the future-based forms will be removed in 0.5.0.
+> Note: swift-libp2p 0.4.0 is async-first. The application lifecycle (`Application.make`, `startup`, `asyncShutdown`) and the client APIs (`newRequest`, `newStream`, `broadcast`, PubSub, Discovery, …) all have native `async` forms. The `EventLoopFuture`-returning variants are deprecated and will be removed in 0.5.0.
 
 ## Contributing
 
@@ -228,4 +228,4 @@ Let's make this code better together! 🤝
 
 ## License
 
-[MIT](LICENSE) © 2022 Breth Inc.
+[MIT](LICENSE) © 2026 Breth Inc.
