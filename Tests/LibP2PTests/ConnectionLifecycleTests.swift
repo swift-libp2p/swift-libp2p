@@ -36,6 +36,8 @@ extension LibP2PTests {
     struct ConnectionLifecycleTests {
 
         /// Every `AppConnection` implementation the `Application` can be configured with.
+        ///
+        /// - Note: `ARCConnection` and `BasicConnectionLight` are deprecated for removal in 0.5.0.
         static let connectionTypes: [AppConnection.Type] = [
             ARCConnection.self,
             BasicConnectionLight.self,

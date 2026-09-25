@@ -22,6 +22,7 @@ extension LibP2PTests.ConformanceHarnessTests {
     @Suite("TransportConformanceHarness")
     struct TransportConformanceHarnessTests {
 
+        /// - Note: `ARCConnection` and `BasicConnectionLight` are deprecated for removal in 0.5.0
         static let connectionTypes: [AppConnection.Type] = [
             ARCConnection.self,
             BasicConnectionLight.self,
