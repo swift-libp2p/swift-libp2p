@@ -30,6 +30,14 @@ extension Application {
             return try addr.encapsulate(proto: .p2p, address: self.peerID.b58String)
         }
     }
+
+    /// The number of connections the connection manager is currently holding open.
+    ///
+    /// - Note: A live count, so it moves as idle teardown and pruning run. Assertions that want a
+    ///   total count should use `connectionManager.getTotalConnectionCount()`.
+    public func liveConnectionCount() async throws -> Int {
+        try await self.connections.getConnections(on: nil).get().count
+    }
 }
 
 /// Builds a fully configured (but not yet started) node over loopback TCP.
