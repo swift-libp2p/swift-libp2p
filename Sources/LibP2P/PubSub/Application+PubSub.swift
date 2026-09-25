@@ -107,13 +107,13 @@ extension Application {
         }
 
         public enum PublishedResults: Sendable {
-            
+
             /// - Note: Not currently produced by ``publish(_:toTopic:)``.
             case failed(Error)
-            
+
             /// - Note: Not currently produced by ``publish(_:toTopic:)``.
             case storedLocally
-            
+
             /// Handed to this many installed PubSub services (e.g. floodsub, gossipsub).
             ///
             /// - Important: Despite the name this is a count of services, not of remote peers. Ask the

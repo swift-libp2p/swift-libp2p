@@ -13,7 +13,6 @@
 //===----------------------------------------------------------------------===//
 
 public import LibP2PCore
-
 internal import NIOConcurrencyHelpers
 
 public final class BootstrapPeerDiscovery: Discovery, LifecycleHandler, Sendable {

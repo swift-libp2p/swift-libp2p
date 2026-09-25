@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Logging
 public import LibP2PCore
+import Logging
 import NIOConcurrencyHelpers
 // `@preconcurrency` because `NIOThrowingAsyncSequenceProducer.AsyncIterator` is non-`Sendable` and
 // its `next()` isn't `nonisolated(nonsending)`.

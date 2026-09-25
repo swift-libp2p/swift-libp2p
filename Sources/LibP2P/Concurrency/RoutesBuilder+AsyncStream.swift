@@ -149,8 +149,8 @@ final class StreamingResponder: Responder {
                 do {
                     try await handler(stream)
                     // The handler is done talking, so the stream's purpose is served. Don't await
-                    // the remote's reciprocal close (see `withStream`), this Task would hang on a
-                    // peer that never sends one, and there's nothing left here to hang around for.
+                    // the remote's reciprocal close (see `withStream`), this Task would stall on a
+                    // peer that never sends one, and there's nothing left to stay open for.
                     stream.closeNow()
                 } catch {
                     request.logger.error("Streaming route `\(request.protocol)` failed: \(error)")
