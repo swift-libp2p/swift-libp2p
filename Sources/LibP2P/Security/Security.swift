@@ -39,17 +39,10 @@ extension Application {
                 let factory: (@Sendable (Application) -> SecurityUpgrader)
             }
 
-            /// One registered security module, keyed by its `SecurityUpgrader.key`.
-            typealias KeyedSecurityFactory = (key: String, value: SecurityFactory)
-
             /// Security Upgraders, in registration order, which is the order of preference.
-            ///
-            /// - Important: This has to stay an ordered collection. ``available`` is handed straight
-            ///   to `AppConnection.negotiateProtocol(fromSet:)` as the multistream-select proposal
-            ///   list, so its order decides which module a connection actually negotiates.
-            let secUpgraders: NIOLockedValueBox<[KeyedSecurityFactory]>
+            let secUpgraders: NIOLockedValueBox<SubsystemRegistry<SecurityFactory>>
             init() {
-                self.secUpgraders = .init([])
+                self.secUpgraders = .init(.init())
             }
         }
 
@@ -71,9 +64,7 @@ extension Application {
 
         public func upgrader(forKey key: String) -> SecurityUpgrader? {
             self.storage.secUpgraders.withLockedValue { upgraders in
-                guard let factory = upgraders.first(where: { $0.key == key })?.value.factory else {
-                    return nil
-                }
+                guard let factory = upgraders.value(forKey: key)?.factory else { return nil }
                 return factory(self.application)
             }
         }
@@ -112,14 +103,28 @@ extension Application {
             for provider in providers { provider.run(self.application) }
         }
 
+        /// Installs a security module, appending it to the preference list.
+        ///
+        /// - Important: Traps if another security module is already installed under `S.key`. Use
+        ///   ``replace(_:)`` to override one on purpose.
         @preconcurrency public func use<S: SecurityUpgrader>(_ makeUpgrader: @Sendable @escaping (Application) -> (S)) {
+            let result = self.storage.secUpgraders.withLockedValue { security in
+                security.register(.init(factory: makeUpgrader), forKey: S.key)
+            }
+            if result == .duplicate {
+                duplicateRegistration("Security module", key: S.key, replaceWith: "app.security.replace(_:)")
+            }
+        }
+
+        /// Replaces the security module installed under `S.key`, keeping its position in the
+        /// preference list.
+        ///
+        /// Installs it if nothing is registered under that key yet.
+        @preconcurrency public func replace<S: SecurityUpgrader>(
+            _ makeUpgrader: @Sendable @escaping (Application) -> (S)
+        ) {
             self.storage.secUpgraders.withLockedValue { security in
-                guard !security.contains(where: { $0.key == S.key }) else {
-                    self.application.logger.warning("`\(S.key)` Security Module Already Installed - Skipping")
-                    return
-                }
-                // Appended, so registration order is preserved as the preference order.
-                security.append((S.key, .init(factory: makeUpgrader)))
+                security.replace(.init(factory: makeUpgrader), forKey: S.key)
             }
         }
 
@@ -127,7 +132,7 @@ extension Application {
 
         /// The installed security modules' keys, in order of preference.
         public var available: [String] {
-            self.storage.secUpgraders.withLockedValue { $0.map { $0.key } }
+            self.storage.secUpgraders.withLockedValue { $0.keys }
         }
 
         //        public var installers:[SecurityProtocolInstaller] {
@@ -145,13 +150,7 @@ extension Application {
 
         public func dump() {
             print("*** Installed Security Modules (in order of preference) ***")
-            print(
-                self.storage.secUpgraders.withLockedValue {
-                    $0.enumerated().map { "[\($0.offset + 1)] - \($0.element.key)" }.joined(
-                        separator: "\n"
-                    )
-                }
-            )
+            print(self.storage.secUpgraders.withLockedValue { $0.preferenceList })
             print("----------------------------------")
         }
     }
