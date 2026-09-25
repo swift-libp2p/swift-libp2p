@@ -211,7 +211,7 @@ extension LibP2PTests {
 
         // MARK: - End-to-end production trigger
 
-        /// Drives the real `BasicConnectionLight` teardown path: closing the underlying channel of a running
+        /// Drives the real `BaseConnection` teardown path: closing the underlying channel of a running
         /// connection must publish a `disconnected` event naming that connection.
         @Test("Closing a running connection's channel publishes `disconnected`")
         func testChannelCloseFiresDisconnectedEvent() async throws {
@@ -235,7 +235,7 @@ extension LibP2PTests {
                 // off-thread touch of the loop. `NIOAsyncTestingChannel`'s `NIOAsyncTestingEventLoop` is
                 // thread-safe (lock-guarded), so it tolerates all of that without tripping the misuse assertion.
                 let channel = NIOAsyncTestingChannel()
-                let connection = BasicConnectionLight(
+                let connection = BaseConnection(
                     application: app,
                     channel: channel,
                     direction: .outbound,

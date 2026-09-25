@@ -99,7 +99,7 @@ extension LibP2PTests {
                 func live(_ direction: ConnectionStats.Direction) throws -> Connection {
                     let channel = NIOAsyncTestingChannel()
                     channels.append(channel)
-                    return BasicConnectionLight(
+                    return BaseConnection(
                         application: app,
                         channel: channel,
                         direction: direction,
@@ -160,7 +160,7 @@ extension LibP2PTests {
             try await withApp { app in
                 let loop = app.eventLoopGroup.next()
                 let prunerChannel = NIOAsyncTestingChannel()
-                let pruned = BasicConnectionLight(
+                let pruned = BaseConnection(
                     application: app,
                     channel: prunerChannel,
                     direction: .inbound,
@@ -168,7 +168,7 @@ extension LibP2PTests {
                     expectedRemotePeer: nil
                 )
                 let keeperChannel = NIOAsyncTestingChannel()
-                let kept = BasicConnectionLight(
+                let kept = BaseConnection(
                     application: app,
                     channel: keeperChannel,
                     direction: .outbound,
@@ -208,7 +208,7 @@ extension LibP2PTests {
                 let manager = factory.make(app, 10)
                 let loop = app.eventLoopGroup.next()
                 let channel = NIOAsyncTestingChannel()
-                let connection = BasicConnectionLight(
+                let connection = BaseConnection(
                     application: app,
                     channel: channel,
                     direction: .inbound,

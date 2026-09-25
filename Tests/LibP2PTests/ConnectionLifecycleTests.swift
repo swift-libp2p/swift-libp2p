@@ -294,7 +294,7 @@ extension LibP2PTests {
                 )
                 let loop = app.eventLoopGroup.next()
                 let channel = NIOAsyncTestingChannel()
-                let connection = BasicConnectionLight(
+                let connection = BaseConnection(
                     application: app,
                     channel: channel,
                     direction: .inbound,
@@ -332,7 +332,7 @@ extension LibP2PTests {
                 )
                 let loop = app.eventLoopGroup.next()
                 let channel = NIOAsyncTestingChannel()
-                let connection = BasicConnectionLight(
+                let connection = BaseConnection(
                     application: app,
                     channel: channel,
                     direction: .inbound,
@@ -422,7 +422,7 @@ extension LibP2PTests {
                 )
                 let loop = app.eventLoopGroup.next()
                 let channel = NIOAsyncTestingChannel()
-                let connection = BasicConnectionLight(
+                let connection = BaseConnection(
                     application: app,
                     channel: channel,
                     direction: .inbound,

@@ -83,7 +83,7 @@ extension LibP2PTests {
 
                 // The pruner is skipped when there's no connections, so register a connection.
                 let channel = NIOAsyncTestingChannel()
-                let connection = BasicConnectionLight(
+                let connection = BaseConnection(
                     application: app,
                     channel: channel,
                     direction: .inbound,
@@ -110,10 +110,10 @@ extension LibP2PTests {
                 let loop = app.eventLoopGroup.next()
 
                 var channels: [NIOAsyncTestingChannel] = []
-                func liveConnection(_ direction: ConnectionStats.Direction) throws -> BasicConnectionLight {
+                func liveConnection(_ direction: ConnectionStats.Direction) throws -> BaseConnection {
                     let channel = NIOAsyncTestingChannel()
                     channels.append(channel)
-                    return BasicConnectionLight(
+                    return BaseConnection(
                         application: app,
                         channel: channel,
                         direction: direction,
@@ -179,7 +179,7 @@ extension LibP2PTests {
                 // `DummyConnection` is initialized `.closed`.
                 let closed = DummyConnection(direction: .inbound)
                 let channel = NIOAsyncTestingChannel()
-                let live = BasicConnectionLight(
+                let live = BaseConnection(
                     application: app,
                     channel: channel,
                     direction: .inbound,
