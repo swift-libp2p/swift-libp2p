@@ -250,6 +250,9 @@ public final class Application: Sendable {
         // Transports
         self.transports.initialize()
         self.transports.use(.tcp)
+        // Mark it as a default so if a user calls `app.transports.use(.tcp)`
+        // our standard registration duplication logic doesn't fatalError.
+        self.transports.markInstalledAsDefaults()
 
         // TransportUpgraders
         self.transportUpgraders.initialize()
@@ -291,6 +294,9 @@ public final class Application: Sendable {
         self.servers.initialize()
         self.clients.initialize()
         self.clients.use(.tcp)
+        // Mark it as a default so if a user calls `app.transports.use(.tcp)`
+        // our standard registration duplication logic doesn't fatalError.
+        self.clients.markInstalledAsDefaults()
 
         // PubSub Services
         self.pubsub.initialize()
