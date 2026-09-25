@@ -198,21 +198,16 @@ extension Application {
 
         let application: Application
 
+        /// - Note: The `PreferringLive` variant, and load-bearing here: teardown itself (notably
+        ///   `closeAllConnections()`) runs with `isShuttingDown` already set and has to reach the
+        ///   *real* manager to drain and reject connections.
         var storage: Storage {
-            // Prefer the real storage whenever it still exists — even after
-            // `isShuttingDown` has been set. This lets teardown itself (notably
-            // `closeAllConnections()`) reach the *real* ConnectionManager to drain
-            // and reject connections, instead of a vacuous throwaway. We only fall
-            // back once `storage.clear()` has actually removed our key: at that
-            // point `isShuttingDown` lets stranded event-loop callbacks racing the
-            // teardown finish vacuously instead of tripping the `fatalError`.
-            if let storage = self.application.storage[Key.self] {
-                return storage
-            }
-            if self.application.isShuttingDown {
-                return Storage()
-            }
-            fatalError("ConnectionManager not initialized. Configure with app.connectionManager.initialize()")
+            self.application.subsystemStoragePreferringLive(
+                Key.self,
+                subsystem: "ConnectionManager",
+                initializer: "app.connectionManager.initialize()",
+                makeEmpty: Storage.init
+            )
         }
 
         public func generateConnection(
