@@ -44,10 +44,15 @@ extension Application {
 
         /// Storing the instantiations
         final class Storage: Sendable {
-            let transports: NIOLockedValueBox<[String: Transport]>
+            /// Installed transports, in registration order.
+            ///
+            /// - Important: Ordered, because `canDialAny(_:)` walks the installed transports to pick
+            ///   the one that will dial an address. Registration order is therefore the order in
+            ///   which transports are offered a dial.
+            let transports: NIOLockedValueBox<SubsystemRegistry<Transport>>
 
             init() {
-                self.transports = .init([:])
+                self.transports = .init(.init())
             }
         }
 
@@ -64,25 +69,54 @@ extension Application {
         }
 
         public func transport(forKey key: String) -> Transport? {
-            self.storage.transports.withLockedValue { $0[key] }  //?(self.application)
+            self.storage.transports.withLockedValue { $0.value(forKey: key) }
         }
 
         public func use(_ provider: Provider) {
             provider.run(self.application)
         }
 
-        /// Registers a `Transport` under `key`.
+        /// Installs a `Transport` under `key`, appending it to the preference order.
+        ///
+        /// - Important: Traps if another transport is already installed under `key`. Use
+        ///   ``replace(key:_:)`` to override one on purpose.
         @preconcurrency public func use(key: String, _ transport: @Sendable @escaping (Application) -> (Transport)) {
             /// We store the instantiation instead of the builder...
-            self.storage.transports.withLockedValue {
-                $0[key] = transport(application)
+            let transport = transport(self.application)
+            let result = self.storage.transports.withLockedValue {
+                $0.register(transport, forKey: key)
             }
+            if result == .duplicate {
+                duplicateRegistration("Transport", key: key, replaceWith: "app.transports.replace(key:_:)")
+            }
+        }
+
+        /// Replaces the transport installed under `key`, keeping its position in the preference order.
+        ///
+        /// Installs it if nothing is registered under that key yet.
+        @preconcurrency public func replace(
+            key: String,
+            _ transport: @Sendable @escaping (Application) -> (Transport)
+        ) {
+            let transport = transport(self.application)
+            self.storage.transports.withLockedValue {
+                $0.replace(transport, forKey: key)
+            }
+        }
+
+        /// Marks everything installed so far as an `Application` built-in default.
+        ///
+        /// Called by the bootstrap after it installs TCP. A later explicit ``use(key:_:)`` of a
+        /// defaulted key takes it over silently rather than tripping the duplicate trap.
+        internal func markInstalledAsDefaults() {
+            self.storage.transports.withLockedValue { $0.markInstalledAsDefaults() }
         }
 
         public let application: Application
 
+        /// The installed transports' keys, in registration order.
         public var available: [String] {
-            self.storage.transports.withLockedValue { $0.keys.map { $0 } }
+            self.storage.transports.withLockedValue { $0.keys }
         }
 
         var storage: Storage {
@@ -96,7 +130,7 @@ extension Application {
 
         public func dump() {
             print("*** Installed Transports ***")
-            print(self.storage.transports.withLockedValue { $0.keys.map { $0 }.joined(separator: "\n") })
+            print(self.storage.transports.withLockedValue { $0.preferenceList })
             print("----------------------------------")
         }
     }
