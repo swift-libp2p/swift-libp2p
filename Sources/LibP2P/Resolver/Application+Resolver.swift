@@ -243,11 +243,12 @@ extension Application {
         private static let maxCacheEntries = 256
 
         final class Storage: Sendable {
-            let resolvers: NIOLockedValueBox<[String: AddressResolver]>
+            /// Installed resolvers, in registration order.
+            let resolvers: NIOLockedValueBox<SubsystemRegistry<AddressResolver>>
             let cache: NIOLockedValueBox<[Multiaddr: CacheEntry]>
             let ttl: NIOLockedValueBox<TimeAmount>
             init() {
-                self.resolvers = .init([:])
+                self.resolvers = .init(.init())
                 self.cache = .init([:])
                 self.ttl = .init(.minutes(3))
             }
@@ -265,9 +266,27 @@ extension Application {
             provider.run(self.application)
         }
 
+        /// Installs an `AddressResolver`, appending it to the consultation order.
+        ///
+        /// - Important: Traps if another resolver is already installed under `R.key`. Use
+        ///   ``replace(_:)`` to override one on purpose.
         @preconcurrency public func use<R: AddressResolver>(_ makeResolver: @Sendable @escaping (Application) -> (R)) {
             let resolver = makeResolver(self.application)
-            self.storage.resolvers.withLockedValue { $0[R.key] = resolver }
+            let result = self.storage.resolvers.withLockedValue { $0.register(resolver, forKey: R.key) }
+            if result == .duplicate {
+                duplicateRegistration("Resolver", key: R.key, replaceWith: "app.resolvers.replace(_:)")
+            }
+        }
+
+        /// Replaces the resolver installed under `R.key`, keeping its position in the consultation
+        /// order.
+        ///
+        /// Installs it if nothing is registered under that key yet.
+        @preconcurrency public func replace<R: AddressResolver>(
+            _ makeResolver: @Sendable @escaping (Application) -> (R)
+        ) {
+            let resolver = makeResolver(self.application)
+            self.storage.resolvers.withLockedValue { $0.replace(resolver, forKey: R.key) }
         }
 
         let application: Application
@@ -304,22 +323,12 @@ extension Application {
             }
         }
 
-        /// Every installed resolver, in a stable order.
-        ///
-        /// The registry is a dictionary, whose iteration order varies from run to run, so we order by key
-        /// here — otherwise the addresses an aggregated resolution reports would be ordered arbitrarily
-        /// whenever more than one resolver can serve an address.
+        /// Every installed resolver, in registration order.
         fileprivate var allResolvers: [AddressResolver] {
-            self.storage.resolvers.withLockedValue { resolvers in
-                resolvers.sorted { $0.key < $1.key }.map { $0.value }
-            }
+            self.storage.resolvers.withLockedValue { $0.values }
         }
 
-        /// Every installed resolver that can resolve the `Multiaddr`, in a stable order.
-        ///
-        /// The registry is a dictionary, whose iteration order varies from run to run, so we order by key
-        /// here — otherwise the addresses an aggregated resolution reports would be ordered arbitrarily
-        /// whenever more than one resolver can serve an address.
+        /// Every installed resolver that can resolve the `Multiaddr`, in registration order.
         fileprivate func allResolvers(for ma: Multiaddr) -> [AddressResolver] {
             self.allResolvers.filter { $0.can(resolve: ma) }
         }
