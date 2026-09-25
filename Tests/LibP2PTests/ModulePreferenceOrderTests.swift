@@ -28,7 +28,7 @@ extension LibP2PTests {
     struct ModulePreferenceOrderTests {
 
         // MARK: - Stub modules
-        
+
         struct SecurityZ: SecurityUpgrader {
             static let key = "/z-security/1.0.0"
             func upgradeConnection(
@@ -136,7 +136,7 @@ extension LibP2PTests {
                 #expect(app.security.upgrader(forKey: "/not-installed/1.0.0") == nil)
             }
         }
-        
+
         @Test("The variadic security provider overload preserves argument order")
         func securityVariadicProvidersPreserveOrder() async throws {
             try await withApp { app in
