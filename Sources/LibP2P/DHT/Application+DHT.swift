@@ -29,9 +29,10 @@ extension Application {
         }
 
         final class Storage: Sendable {
-            let dhtServices: NIOLockedValueBox<[String: DHTCore]>
+            /// Installed DHT services, in registration order.
+            let dhtServices: NIOLockedValueBox<SubsystemRegistry<DHTCore>>
             init() {
-                self.dhtServices = .init([:])
+                self.dhtServices = .init(.init())
             }
         }
 
@@ -48,29 +49,46 @@ extension Application {
         }
 
         public func service(forKey key: String) -> DHTCore? {
-            self.storage.dhtServices.withLockedValue { $0[key] }
+            self.storage.dhtServices.withLockedValue { $0.value(forKey: key) }
         }
 
         public func use(_ provider: Provider) {
             provider.run(self.application)
         }
 
+        /// Installs a DHT service, appending it to the registration order.
+        ///
+        /// - Important: Traps if another DHT service is already installed under `DHT.key`. Use
+        ///   ``replace(_:)`` to override one on purpose.
         @preconcurrency public func use<DHT: DHTCore>(_ makeService: @Sendable @escaping (Application) -> (DHT)) {
+            let service = makeService(self.application)
+            let result = self.storage.dhtServices.withLockedValue { services in
+                services.register(service, forKey: DHT.key)
+            }
+            if result == .duplicate {
+                duplicateRegistration("DHT service", key: DHT.key, replaceWith: "app.dht.replace(_:)")
+            }
+        }
+
+        /// Replaces the DHT service installed under `DHT.key`, keeping its position.
+        ///
+        /// Installs it if nothing is registered under that key yet.
+        @preconcurrency public func replace<DHT: DHTCore>(_ makeService: @Sendable @escaping (Application) -> (DHT)) {
+            let service = makeService(self.application)
             self.storage.dhtServices.withLockedValue { services in
-                if services[DHT.key] != nil { fatalError("DHTService `\(DHT.key)` Already Installed") }
-                let service = makeService(self.application)
-                services[DHT.key] = service
+                services.replace(service, forKey: DHT.key)
             }
         }
 
         public let application: Application
 
+        /// The installed DHT services' keys, in registration order.
         public var available: [String] {
-            self.storage.dhtServices.withLockedValue { $0.keys.map { $0 } }
+            self.storage.dhtServices.withLockedValue { $0.keys }
         }
 
         internal var services: [DHTCore] {
-            self.storage.dhtServices.withLockedValue { $0.values.map { $0 } }
+            self.storage.dhtServices.withLockedValue { $0.values }
         }
 
         var storage: Storage {
@@ -84,7 +102,7 @@ extension Application {
 
         public func dump() {
             print("*** Installed DHT Services ***")
-            print(self.storage.dhtServices.withLockedValue { $0.keys.map { $0 }.joined(separator: "\n") })
+            print(self.storage.dhtServices.withLockedValue { $0.preferenceList })
             print("----------------------------------")
         }
 
