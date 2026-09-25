@@ -212,6 +212,35 @@ let response = try await lib.newRequest(
 )
 ```
 
+Handle an inbound stream as one long-lived async function:
+
+``` swift
+/// The handler runs once per stream, not once per event, inbound frames arrive
+/// through `stream.inbound` and finish when the remote closes
+lib.on("echo", "1.0.0", handlers: [.varIntLengthPrefixed]) { (stream: LibP2PStream) in
+    for try await frame in stream.inbound {
+        try await stream.write(frame)
+    }
+}
+```
+
+Open an outbound stream and send messages over it:
+
+``` swift
+/// The stream's lifetime is scoped to the handler, it's closed when the body
+/// returns, throws, or the surrounding task is cancelled
+try await lib.withStream(
+    to: peer,  // a Multiaddr, PeerID, PeerInfo or ComprehensivePeer
+    forProtocol: "/echo/1.0.0",
+    withHandlers: .handlers([.varIntLengthPrefixed])
+) { stream in
+    try await stream.write(ByteBuffer(string: "Hello, libp2p!"))
+    for try await frame in stream.inbound {
+        print(String(buffer: frame)) // Hello, libp2p!
+    }
+}
+```
+
 > Note: swift-libp2p 0.4.0 is async-first. The application lifecycle (`Application.make`, `startup`, `asyncShutdown`) and the client APIs (`newRequest`, `newStream`, `broadcast`, PubSub, Discovery, …) all have native `async` forms. The `EventLoopFuture`-returning variants are deprecated and will be removed in 0.5.0.
 
 ## Contributing
