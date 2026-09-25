@@ -29,9 +29,10 @@ extension Application {
         }
 
         final class Storage: Sendable {
-            let pubSubServices: NIOLockedValueBox<[String: PubSubCore]>
+            /// Installed pubsub services, in registration order.
+            let pubSubServices: NIOLockedValueBox<SubsystemRegistry<PubSubCore>>
             init() {
-                self.pubSubServices = .init([:])
+                self.pubSubServices = .init(.init())
             }
         }
 
@@ -48,31 +49,46 @@ extension Application {
         }
 
         public func service(forKey key: String) -> PubSubCore? {
-            self.storage.pubSubServices.withLockedValue { $0[key] }
+            self.storage.pubSubServices.withLockedValue { $0.value(forKey: key) }
         }
 
         public func use(_ provider: Provider) {
             provider.run(self.application)
         }
 
+        /// Installs a pubsub service, appending it to the registration order.
+        ///
+        /// - Important: Traps if another pubsub service is already installed under `P.multicodec`.
+        ///   Use ``replace(_:)`` to override one on purpose.
         @preconcurrency public func use<P: PubSubCore>(_ makeService: @Sendable @escaping (Application) -> (P)) {
+            let service = makeService(self.application)
+            let result = self.storage.pubSubServices.withLockedValue { services in
+                services.register(service, forKey: P.multicodec)
+            }
+            if result == .duplicate {
+                duplicateRegistration("PubSub service", key: P.multicodec, replaceWith: "app.pubsub.replace(_:)")
+            }
+        }
+
+        /// Replaces the pubsub service installed under `P.multicodec`, keeping its position.
+        ///
+        /// Installs it if nothing is registered under that key yet.
+        @preconcurrency public func replace<P: PubSubCore>(_ makeService: @Sendable @escaping (Application) -> (P)) {
+            let service = makeService(self.application)
             self.storage.pubSubServices.withLockedValue { services in
-                if services[P.multicodec] != nil {
-                    fatalError("PubSubService `\(P.multicodec)` Already Installed")
-                }
-                let service = makeService(self.application)
-                services[P.multicodec] = service
+                services.replace(service, forKey: P.multicodec)
             }
         }
 
         public let application: Application
 
+        /// The installed pubsub services' keys, in registration order.
         public var available: [String] {
-            self.storage.pubSubServices.withLockedValue { $0.keys.map { $0 } }
+            self.storage.pubSubServices.withLockedValue { $0.keys }
         }
 
         internal var services: [PubSubCore] {
-            self.storage.pubSubServices.withLockedValue { $0.values.map { $0 } }
+            self.storage.pubSubServices.withLockedValue { $0.values }
         }
 
         var storage: Storage {
@@ -86,7 +102,7 @@ extension Application {
 
         public func dump() {
             print("*** Installed PubSub Services ***")
-            print(self.storage.pubSubServices.withLockedValue { $0.keys.map { $0 }.joined(separator: "\n") })
+            print(self.storage.pubSubServices.withLockedValue { $0.preferenceList })
             print("----------------------------------")
         }
 
