@@ -16,22 +16,26 @@ import NIOConcurrencyHelpers
 
 extension Application.Transports {
 
+    /// The first installed transport that can dial `ma`.
+    ///
+    /// "First" means first registered. Registration order is the declared preference order.
     public func findBest(forMultiaddr ma: Multiaddr) throws -> Transport {
-        let transports = self.storage.transports.withLockedValue { $0 }
-        guard let t = transports.first(where: { $0.value.canDial(address: ma) }) else {
+        let transports = self.storage.transports.withLockedValue { $0.values }
+        guard let transport = transports.first(where: { $0.canDial(address: ma) }) else {
             throw Errors.noTransportsForMultiaddr(ma)
         }
-        return t.value
+        return transport
     }
 
+    /// Every installed transport, in registration order.
     public func getAll() -> [Transport] {
-        self.storage.transports.withLockedValue { $0.map { $0.value } }
+        self.storage.transports.withLockedValue { $0.values }
     }
 
     /// Traverses our available transports in search for one who's capabale of dialing the provided multiaddr
     public func canDial(_ ma: Multiaddr) -> Bool {
-        let transports = self.storage.transports.withLockedValue { $0 }
-        return transports.contains(where: { $0.value.canDial(address: ma) })
+        let transports = self.storage.transports.withLockedValue { $0.values }
+        return transports.contains(where: { $0.canDial(address: ma) })
     }
 
     /// Traverses our available transports in search for one who's capabale of dialing the provided multiaddr,
