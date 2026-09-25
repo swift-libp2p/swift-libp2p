@@ -17,7 +17,14 @@ public import LibP2PCore
 public import Logging
 internal import NIOConcurrencyHelpers
 
-/// Esentially a BasicConnectionLight but adds support for Automatic Reference (Stream) Counting and closes / deinits itself when the connection is idle and empty for a given amount of time.
+/// A BasicConnectionLight but adds support for Automatic Reference (Stream) Counting and closes / deinits itself when the connection is idle and empty for a given amount of time.
+@available(
+    *,
+    deprecated,
+    message: """
+        Use BaseConnection instead. ARCConnection will be removed in swift-libp2p 0.5.0.
+        """
+)
 public class ARCConnection: AppConnection, @unchecked Sendable {
 
     public var application: Application
@@ -845,6 +852,7 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
     }
 }
 
+@available(*, deprecated)
 extension ARCConnection {
 
     public struct ConnectionStateMachine {
@@ -896,6 +904,7 @@ extension ARCConnection {
     }
 }
 
+@available(*, deprecated)
 extension ARCConnection {
     public func lastActivity() -> Date {
         guard !(self.status == .closed || self.status == .closing) else {
@@ -928,6 +937,7 @@ extension ARCConnection {
     }
 }
 
+@available(*, deprecated)
 extension ARCConnection {
     public var description: String {
         let header =
