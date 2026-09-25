@@ -208,34 +208,3 @@ extension LibP2PTests {
 
     }
 }
-
-// MARK: - Test helpers
-
-/// A `ConnectionPruner` that returns predefined verdicts and records what it was asked about.
-actor RecordingConnectionPruner: ConnectionPruner {
-    private let interval: TimeAmount?
-    private let verdicts: [UUID: ConnectionPruneAction]
-    private(set) var pruneCallCount = 0
-    private(set) var snapshots: [[ConnectionLivenessSnapshot]] = []
-    private(set) var contexts: [ConnectionPruneContext] = []
-
-    init(sweepInterval: TimeAmount? = nil, verdicts: [UUID: ConnectionPruneAction] = [:]) {
-        self.interval = sweepInterval
-        self.verdicts = verdicts
-    }
-
-    nonisolated var sweepInterval: TimeAmount? { self.interval }
-
-    func prune(
-        _ connections: [ConnectionLivenessSnapshot],
-        context: ConnectionPruneContext,
-        now: Date
-    ) async -> [UUID: ConnectionPruneAction] {
-        self.pruneCallCount += 1
-        self.snapshots.append(connections)
-        self.contexts.append(context)
-        // Only return verdicts for connections that are actually on the books.
-        let present = Set(connections.map(\.id))
-        return self.verdicts.filter { present.contains($0.key) }
-    }
-}
