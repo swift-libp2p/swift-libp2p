@@ -243,6 +243,15 @@ try await lib.withStream(
 
 > Note: swift-libp2p 0.4.0 is async-first. The application lifecycle (`Application.make`, `startup`, `asyncShutdown`) and the client APIs (`newRequest`, `newStream`, `broadcast`, PubSub, Discovery, …) all have native `async` forms. The `EventLoopFuture`-returning variants are deprecated and will be removed in 0.5.0.
 
+### Swift Versions
+
+The minimum Swift version supported by swift-libp2p releases are detailed below:
+
+SwiftNIO            | Minimum Swift Version
+--------------------|----------------------
+`0.0.0 ..< 0.4.0`  | 6.0
+`0.4.0 ...`        | 6.1
+
 ## Contributing
 
 Contributions are welcomed! This code is very much a proof of concept. I can guarantee you there's a better / safer way to accomplish the same results. Any suggestions, improvements, or even just critiques, are welcome! 
