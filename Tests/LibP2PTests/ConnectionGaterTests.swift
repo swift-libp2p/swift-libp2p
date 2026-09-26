@@ -211,7 +211,7 @@ extension LibP2PTests {
                 // Wait until the consult is actually underway, then let the timeout fire.
                 // (`NIOAsyncTestingEventLoop` time only moves when advanced manually)
                 _ = try await driving(loop) {
-                    await waitUntilTrue { await gater.started }
+                    await waitUntil { await gater.started }
                 }
                 await loop.advanceTime(by: .milliseconds(60))
 
@@ -255,7 +255,7 @@ extension LibP2PTests {
                 )
 
                 let closed = try await driving(loop) {
-                    await waitUntilTrue { closedFlag.withLockedValue { $0 } }
+                    await waitUntil { closedFlag.withLockedValue { $0 } }
                 }
                 #expect(closed)
                 #expect(await gater.securedCallCount == 1)
@@ -295,7 +295,7 @@ extension LibP2PTests {
 
                 // The muxer negotiation only begins once the verdict lands.
                 let negotiating = try await driving(loop) {
-                    await waitUntilTrue {
+                    await waitUntil {
                         (try? await Self.hasHandler(named: "upgrader", on: channel, driving: loop)) == true
                     }
                 }
@@ -345,19 +345,6 @@ extension LibP2PTests {
             return try await body()
         }
 
-        /// Polls `predicate` until it holds or the attempts run out. Needed because a gater's verdict
-        /// lands asynchronously, off the calling task.
-        private func waitUntilTrue(
-            attempts: Int = 200,
-            every: Duration = .milliseconds(5),
-            _ predicate: () async -> Bool
-        ) async -> Bool {
-            for _ in 0..<attempts {
-                if await predicate() { return true }
-                try? await Task.sleep(for: every)
-            }
-            return await predicate()
-        }
     }
 }
 

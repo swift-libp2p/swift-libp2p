@@ -16,6 +16,7 @@
 // adapted for the swift-libp2p mock muxer.
 
 public import LibP2P
+internal import NIOConcurrencyHelpers
 public import NIOCore
 
 /// A channel handler that spawns a child `Channel` per mux stream (mplex-shaped framing). Installed by

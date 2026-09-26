@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
-public import LibP2P
+import LibP2P
 import NIOConcurrencyHelpers
 public import NIOCore
 import RoutingKit
@@ -81,7 +81,7 @@ func runMalformedInputProbe(
         withRequest: Data("malformed-probe-warmup".utf8),
         withHandlers: .handlers([.varIntLengthPrefixed]),
         withTimeout: .seconds(10)
-    ).get()
+    )
     guard warmup != nil else {
         report.warn("Could not establish a connection to inject malformed bytes")
         return
@@ -126,7 +126,7 @@ func runMalformedInputProbe(
             withRequest: payload,
             withHandlers: .handlers([.varIntLengthPrefixed]),
             withTimeout: .seconds(10)
-        ).get()) == payload
+        )) == payload
     if !served {
         report.warn(
             "Peer survived malformed input but a follow-up echo did not round-trip after a fresh re-dial"

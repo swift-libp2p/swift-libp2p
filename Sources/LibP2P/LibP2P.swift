@@ -16,17 +16,14 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-@_exported public import AsyncKit
-@_exported public import ConsoleKit
-@_exported public import Foundation
+internal import ConsoleKit
 @_exported public import LibP2PCore
 public import LibP2PCrypto
 @_exported public import Logging
 @_exported public import Multiaddr
 @_exported public import NIO
-@_exported public import NIOConcurrencyHelpers
+public import NIOConcurrencyHelpers
 @_exported public import PeerID
-@_exported public import SwiftProtobuf
 
 /// Core type representing a Libp2p application.
 /// Storage / Lifecycle Abstraction Idea
@@ -253,6 +250,9 @@ public final class Application: Sendable {
         // Transports
         self.transports.initialize()
         self.transports.use(.tcp)
+        // Mark it as a default so if a user calls `app.transports.use(.tcp)`
+        // our standard registration duplication logic doesn't fatalError.
+        self.transports.markInstalledAsDefaults()
 
         // TransportUpgraders
         self.transportUpgraders.initialize()
@@ -294,6 +294,9 @@ public final class Application: Sendable {
         self.servers.initialize()
         self.clients.initialize()
         self.clients.use(.tcp)
+        // Mark it as a default so if a user calls `app.transports.use(.tcp)`
+        // our standard registration duplication logic doesn't fatalError.
+        self.clients.markInstalledAsDefaults()
 
         // PubSub Services
         self.pubsub.initialize()
@@ -505,7 +508,7 @@ public final class Application: Sendable {
         }
     }
 
-    public enum Errors: Error {
+    public enum Errors: Error, Sendable, Equatable {
         case noTransportForMultiaddr(Multiaddr)
         case unknownConnection
         case unknownPeer

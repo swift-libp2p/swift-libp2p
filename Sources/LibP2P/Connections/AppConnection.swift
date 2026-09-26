@@ -79,6 +79,43 @@ public protocol AppConnection: Connection, CustomStringConvertible {
     func prepareForClose()
 }
 
+// MARK: - Async
+
+extension AppConnection {
+
+    public func initializeChannel() async throws {
+        try await self.initializeChannel().get()
+    }
+
+    /// Attempts to open a new Stream but throws (without notifying the supplied closure) when the
+    /// Connection refused the stream, so that the caller can recover by attempting a new, cold, dial.
+    ///
+    /// See the future-based requirement for more details.
+    public func tryNewStream(
+        forProtocol proto: String,
+        withHandlers handlers: HandlerConfig = .rawHandlers([]),
+        andMiddleware middleware: MiddlewareConfig = .custom(nil),
+        closure: @escaping (@Sendable (Request) throws -> EventLoopFuture<RawResponse>)
+    ) async throws {
+        try await self.tryNewStream(
+            forProtocol: proto,
+            withHandlers: handlers,
+            andMiddleware: middleware,
+            closure: closure
+        ).get()
+    }
+
+    /// Attempts to open a new Stream but throws (without notifying the registered responder) when the
+    /// Connection refused the stream, so that the caller can recover by attempting a new, cold, dial.
+    ///
+    /// See the future-based requirement for more details.
+    public func tryNewStream(forProtocol proto: String) async throws {
+        try await self.tryNewStream(forProtocol: proto).get()
+    }
+}
+
+// MARK: - Connection Upgrading
+
 extension AppConnection {
 
     /// This method returns immediately after installing the upgrader and completes a promise upon protocol negotiation
@@ -229,7 +266,7 @@ extension AppConnection {
             self.stats.status = .closing
             self.logger.trace("Closing")
 
-            return self.closeStreams().flatMapAlways { result -> EventLoopFuture<Void> in
+            return self.closeStreams().always { result in
                 self.stats.status = .closed
                 switch result {
                 case .success:
@@ -237,6 +274,9 @@ extension AppConnection {
                 case .failure:
                     self.logger.warning("Failed to close all Streams cleanly")
                 }
+            }.flatMapError { _ in
+                self.channel.eventLoop.makeSucceededVoidFuture()
+            }.flatMap {
                 // Do any additional clean up before closing / deiniting self...
                 self.logger.trace("Proceeding to close Connection")
                 return self.channel.close(mode: .all)
@@ -254,27 +294,24 @@ extension AppConnection {
         }
 
         closePromise.completeWith(
-            self.streams.map { $0.close(gracefully: true) }.flatten(on: eventLoop).flatMapAlways {
-                result -> EventLoopFuture<Void> in
+            self.streams.map { $0.close(gracefully: true) }.flatten(on: eventLoop).always { _ in
                 timeout.cancel()
-                switch result {
-                case .failure(let err):
-                    self.logger.error("Error encountered while attempting to close streams: \(err)")
-                    return eventLoop.makeFailedFuture(Application.Connections.Errors.failedToCloseAllStreams)
-                case .success:
-                    return self.streams.compactMap { stream -> EventLoopFuture<Void>? in
-                        switch stream.streamState {
-                        case .closed, .reset:
-                            return nil
-                        default:
-                            // Ensure we fire our close event before
-                            self.logger.warning(
-                                "Force Closing Stream[\(stream.id)][\(stream.protocolCodec)][\(stream.direction)]"
-                            )
-                            return stream.on?(.closed)
-                        }
-                    }.flatten(on: eventLoop)
-                }
+            }.flatMapError { err -> EventLoopFuture<Void> in
+                self.logger.error("Error encountered while attempting to close streams: \(err)")
+                return eventLoop.makeFailedFuture(Application.Connections.Errors.failedToCloseAllStreams)
+            }.flatMap { () -> EventLoopFuture<Void> in
+                self.streams.compactMap { stream -> EventLoopFuture<Void>? in
+                    switch stream.streamState {
+                    case .closed, .reset:
+                        return nil
+                    default:
+                        // Ensure we fire our close event before
+                        self.logger.warning(
+                            "Force Closing Stream[\(stream.id)][\(stream.protocolCodec)][\(stream.direction)]"
+                        )
+                        return stream.on?(.closed)
+                    }
+                }.flatten(on: eventLoop)
             }
         )
 

@@ -16,7 +16,6 @@
 //  Modified by Brandon Toms on 5/1/22.
 //
 
-// TODO: Remove these deprecated methods along with ServerStartError in the major release.
 public protocol Server: LifecycleHandler {
     static var key: String { get }
 
@@ -27,9 +26,47 @@ public protocol Server: LifecycleHandler {
     ///   - address: The address to start the server with.
     func start(address: BindAddress?) throws
 
+    /// Start the server with the specified address.
+    ///
+    /// A default implementation bridges to the synchronous ``start(address:)``;
+    /// servers should provide a native implementation that doesn't block the calling thread.
+    /// - Parameters:
+    ///   - address: The address to start the server with.
+    func start(address: BindAddress?) async throws
+
     func shutdown()
 
+    /// Shut the server down without blocking the calling thread.
+    ///
+    /// A default implementation bridges to the synchronous ``shutdown()``;
+    /// servers should provide a native implementation that doesn't block the calling thread.
+    func shutdown() async
+
     var listeningAddress: Multiaddr { get }
+}
+
+extension Server {
+    /// Default async start, bridges to the synchronous form for servers that haven't
+    /// adopted the async surface yet.
+    public func start(address: BindAddress?) async throws {
+        try self.syncStart(address: address)
+    }
+
+    /// Default async shutdown, bridges to the synchronous form for servers that haven't
+    /// adopted the async surface yet.
+    public func shutdown() async {
+        self.syncShutdown()
+    }
+
+    /// This is needed to prevent the above default implementation from recursing onto itself
+    private func syncStart(address: BindAddress?) throws {
+        try self.start(address: address)
+    }
+
+    /// This is needed to prevent the above default implementation from recursing onto itself
+    private func syncShutdown() {
+        self.shutdown()
+    }
 }
 
 extension Server {
@@ -46,6 +83,20 @@ extension Server {
         app.logger.trace("\(self) Shutting Down!")
         self.shutdown()
     }
+
+    public func willBootAsync(_ app: Application) async throws {
+        app.logger.trace("\(self) Will Boot!")
+        try await self.start()
+    }
+
+    public func didBootAsync(_ app: Application) async throws {
+        app.logger.trace("\(self) Did Boot!")
+    }
+
+    public func shutdownAsync(_ app: Application) async {
+        app.logger.trace("\(self) Shutting Down!")
+        await self.shutdown()
+    }
 }
 
 public enum BindAddress: Equatable, Sendable {
@@ -58,6 +109,12 @@ extension Server {
     /// - Throws: An error if the server could not be started.
     public func start() throws {
         try self.start(address: nil)
+    }
+
+    /// Start the server with its default configuration, listening over a regular TCP socket.
+    /// - Throws: An error if the server could not be started.
+    public func start() async throws {
+        try await self.start(address: nil)
     }
 }
 

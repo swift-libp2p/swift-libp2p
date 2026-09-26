@@ -16,7 +16,7 @@
 //  Modified by LibP2P on 1/29/26.
 //
 
-public import LibP2P
+import LibP2P
 import NIOConcurrencyHelpers
 public import NIOCore
 

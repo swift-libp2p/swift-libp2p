@@ -51,7 +51,7 @@ extension Application {
         skipCache: Bool = false,
         timeout: TimeAmount = .seconds(3)
     ) async throws -> [Multiaddr]? {
-        try await self.resolve(multiaddr, skipCache: skipCache, timeout: timeout).get()
+        try await self._resolve(multiaddr, skipCache: skipCache, timeout: timeout).get()
     }
 
     /// Resolves a `Multiaddr` into a set of 'dialable' addresses.
@@ -69,7 +69,22 @@ extension Application {
     ///   - skipCache: Forces a fresh resolution, ignoring any cached result for this address
     ///   - timeout: How long any single resolver is given to answer before we move on without it
     /// - Returns: A set of 'dialable' `Multiaddr`s or `nil` if none exist.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async resolve(_:skipCache:timeout:) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+    )
     public func resolve(
+        _ multiaddr: Multiaddr,
+        skipCache: Bool = false,
+        timeout: TimeAmount = .seconds(3)
+    ) -> EventLoopFuture<[Multiaddr]?> {
+        self._resolve(multiaddr, skipCache: skipCache, timeout: timeout)
+    }
+
+    /// The actual implementation that both the ELF and async forms call.
+    internal func _resolve(
         _ multiaddr: Multiaddr,
         skipCache: Bool = false,
         timeout: TimeAmount = .seconds(3)
@@ -102,14 +117,15 @@ extension Application {
 
                 // Publish the addresses to our peerstore so the rest of the stack can dial them
                 return self.publishToPeerStore(resolvedAddresses: resolved, for: multiaddr, on: el)
-                    .flatMapAlways { result -> EventLoopFuture<[Multiaddr]?> in
+                    .always { result in
                         if case .failure(let error) = result {
                             self.logger.warning(
                                 "Failed to publish the resolved addresses for \(multiaddr) to our peerstore: \(error)"
                             )
                         }
-                        return el.makeSucceededFuture(resolved)
                     }
+                    .flatMapError { _ in el.makeSucceededVoidFuture() }
+                    .map { _ -> [Multiaddr]? in resolved }
             }.whenComplete { result in
                 // Settle the cache entry before the promise, so that anyone woken by the promise sees
                 // the finished entry rather than the in-flight one it replaces.
@@ -143,7 +159,7 @@ extension Application {
         skipCache: Bool = false,
         timeout: TimeAmount = .seconds(3)
     ) async throws -> Multiaddr? {
-        try await self.resolve(multiaddr, for: codecs, skipCache: skipCache, timeout: timeout).get()
+        try await self._resolve(multiaddr, for: codecs, skipCache: skipCache, timeout: timeout).get()
     }
 
     /// Resolves a `Multiaddr` into a 'dialable' address that conforms to the specified `Codec` set.
@@ -162,7 +178,23 @@ extension Application {
     ///   - skipCache: Forces a fresh resolution, ignoring any cached result for this address
     ///   - timeout: How long any single resolver is given to answer before we move on without it
     /// - Returns: A 'dialable' `Multiaddr` that conforms to the provided Codec set or `nil` if one doesn't exist.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async resolve(_:for:skipCache:timeout:) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+    )
     public func resolve(
+        _ multiaddr: Multiaddr,
+        for codecs: Set<MultiaddrProtocol>,
+        skipCache: Bool = false,
+        timeout: TimeAmount = .seconds(3)
+    ) -> EventLoopFuture<Multiaddr?> {
+        self._resolve(multiaddr, for: codecs, skipCache: skipCache, timeout: timeout)
+    }
+
+    /// The actual implementation that both the ELF and async forms call.
+    internal func _resolve(
         _ multiaddr: Multiaddr,
         for codecs: Set<MultiaddrProtocol>,
         skipCache: Bool = false,
@@ -170,7 +202,7 @@ extension Application {
     ) -> EventLoopFuture<Multiaddr?> {
         self.logger.trace("Attempting to resolve \(multiaddr) for \(self.list(codecs))")
 
-        return self.resolve(multiaddr, skipCache: skipCache, timeout: timeout).map { mas in
+        return self._resolve(multiaddr, skipCache: skipCache, timeout: timeout).map { mas in
             guard let addresses = mas, !addresses.isEmpty else {
                 return nil
             }
@@ -211,11 +243,12 @@ extension Application {
         private static let maxCacheEntries = 256
 
         final class Storage: Sendable {
-            let resolvers: NIOLockedValueBox<[String: AddressResolver]>
+            /// Installed resolvers, in registration order.
+            let resolvers: NIOLockedValueBox<SubsystemRegistry<AddressResolver>>
             let cache: NIOLockedValueBox<[Multiaddr: CacheEntry]>
             let ttl: NIOLockedValueBox<TimeAmount>
             init() {
-                self.resolvers = .init([:])
+                self.resolvers = .init(.init())
                 self.cache = .init([:])
                 self.ttl = .init(.minutes(3))
             }
@@ -233,9 +266,27 @@ extension Application {
             provider.run(self.application)
         }
 
+        /// Installs an `AddressResolver`, appending it to the consultation order.
+        ///
+        /// - Important: Traps if another resolver is already installed under `R.key`. Use
+        ///   ``replace(_:)`` to override one on purpose.
         @preconcurrency public func use<R: AddressResolver>(_ makeResolver: @Sendable @escaping (Application) -> (R)) {
             let resolver = makeResolver(self.application)
-            self.storage.resolvers.withLockedValue { $0[R.key] = resolver }
+            let result = self.storage.resolvers.withLockedValue { $0.register(resolver, forKey: R.key) }
+            if result == .duplicate {
+                duplicateRegistration("Resolver", key: R.key, replaceWith: "app.resolvers.replace(_:)")
+            }
+        }
+
+        /// Replaces the resolver installed under `R.key`, keeping its position in the consultation
+        /// order.
+        ///
+        /// Installs it if nothing is registered under that key yet.
+        @preconcurrency public func replace<R: AddressResolver>(
+            _ makeResolver: @Sendable @escaping (Application) -> (R)
+        ) {
+            let resolver = makeResolver(self.application)
+            self.storage.resolvers.withLockedValue { $0.replace(resolver, forKey: R.key) }
         }
 
         let application: Application
@@ -272,22 +323,12 @@ extension Application {
             }
         }
 
-        /// Every installed resolver, in a stable order.
-        ///
-        /// The registry is a dictionary, whose iteration order varies from run to run, so we order by key
-        /// here — otherwise the addresses an aggregated resolution reports would be ordered arbitrarily
-        /// whenever more than one resolver can serve an address.
+        /// Every installed resolver, in registration order.
         fileprivate var allResolvers: [AddressResolver] {
-            self.storage.resolvers.withLockedValue { resolvers in
-                resolvers.sorted { $0.key < $1.key }.map { $0.value }
-            }
+            self.storage.resolvers.withLockedValue { $0.values }
         }
 
-        /// Every installed resolver that can resolve the `Multiaddr`, in a stable order.
-        ///
-        /// The registry is a dictionary, whose iteration order varies from run to run, so we order by key
-        /// here — otherwise the addresses an aggregated resolution reports would be ordered arbitrarily
-        /// whenever more than one resolver can serve an address.
+        /// Every installed resolver that can resolve the `Multiaddr`, in registration order.
         fileprivate func allResolvers(for ma: Multiaddr) -> [AddressResolver] {
             self.allResolvers.filter { $0.can(resolve: ma) }
         }
@@ -370,17 +411,12 @@ extension Application {
         }
 
         var storage: Storage {
-            if self.application.isShuttingDown {
-                // Race window: this Application has begun teardown.
-                // Returning a fresh empty `Storage` lets stranded
-                // event-loop callbacks finish vacuously instead of
-                // trapping at the `fatalError` below.
-                return Storage()
-            }
-            guard let storage = self.application.storage[Key.self] else {
-                fatalError("Resolver not initialized. Configure with app.resolver.initialize()")
-            }
-            return storage
+            self.application.subsystemStorage(
+                Key.self,
+                subsystem: "Resolver",
+                initializer: "app.resolver.initialize()",
+                makeEmpty: Storage.init
+            )
         }
     }
 

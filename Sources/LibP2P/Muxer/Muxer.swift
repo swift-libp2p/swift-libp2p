@@ -14,6 +14,7 @@
 
 public import LibP2PCore
 import NIO
+import NIOConcurrencyHelpers
 import PeerID
 
 // `MuxerUpgrader` now lives in LibP2PCore (re-exported here), so muxer modules can depend on
@@ -38,10 +39,11 @@ extension Application {
             struct MuxerFactory {
                 let factory: (@Sendable (Application) -> MuxerUpgrader)
             }
-            /// Muxer Upgraders stored in order of preference
-            let muxUpgraders: NIOLockedValueBox<[String: MuxerFactory]>
+
+            /// Muxer Upgraders, in registration order, which is the order of preference.
+            let muxUpgraders: NIOLockedValueBox<SubsystemRegistry<MuxerFactory>>
             init() {
-                self.muxUpgraders = .init([:])
+                self.muxUpgraders = .init(.init())
             }
         }
 
@@ -62,12 +64,9 @@ extension Application {
         //        }
 
         public func upgrader(forKey key: String) -> MuxerUpgrader? {
-            self.storage.muxUpgraders.withLockedValue {
-                if let factory = $0.first(where: { $0.key == key })?.value.factory {
-                    return factory(self.application)
-                } else {
-                    return nil
-                }
+            self.storage.muxUpgraders.withLockedValue { upgraders in
+                guard let factory = upgraders.value(forKey: key)?.factory else { return nil }
+                return factory(self.application)
             }
         }
 
@@ -102,45 +101,49 @@ extension Application {
             for provider in providers { provider.run(self.application) }
         }
 
+        /// Installs a muxer module, appending it to the preference list.
+        ///
+        /// - Important: Traps if another muxer is already installed under `M.key`. Use
+        ///   ``replace(_:)`` to override one on purpose.
         @preconcurrency public func use<M: MuxerUpgrader>(_ makeUpgrader: @Sendable @escaping (Application) -> (M)) {
+            let result = self.storage.muxUpgraders.withLockedValue { muxers in
+                muxers.register(.init(factory: makeUpgrader), forKey: M.key)
+            }
+            if result == .duplicate {
+                duplicateRegistration("Muxer module", key: M.key, replaceWith: "app.muxers.replace(_:)")
+            }
+        }
+
+        /// Replaces the muxer installed under `M.key`, keeping its position in the preference list.
+        ///
+        /// Installs it if nothing is registered under that key yet.
+        @preconcurrency public func replace<M: MuxerUpgrader>(
+            _ makeUpgrader: @Sendable @escaping (Application) -> (M)
+        ) {
             self.storage.muxUpgraders.withLockedValue { muxers in
-                guard muxers[M.key] == nil else {
-                    self.application.logger.warning("`\(M.key)` Muxer Module Already Installed - Skipping")
-                    return
-                }
-                muxers[M.key] = .init(factory: makeUpgrader)
+                muxers.replace(.init(factory: makeUpgrader), forKey: M.key)
             }
         }
 
         public let application: Application
 
+        /// The installed muxers' keys, in order of preference.
         public var available: [String] {
-            self.storage.muxUpgraders.withLockedValue { $0.map { $0.key } }
+            self.storage.muxUpgraders.withLockedValue { $0.keys }
         }
 
         var storage: Storage {
-            if self.application.isShuttingDown {
-                // Race window: this Application has begun teardown.
-                // Returning a fresh empty `Storage` lets stranded
-                // event-loop callbacks finish vacuously instead of
-                // trapping at the `fatalError` below.
-                return Storage()
-            }
-            guard let storage = self.application.storage[Key.self] else {
-                fatalError("Muxer Upgraders not initialized. Initialize with app.muxers.initialize()")
-            }
-            return storage
+            self.application.subsystemStorage(
+                Key.self,
+                subsystem: "Muxer Upgraders",
+                initializer: "app.muxers.initialize()",
+                makeEmpty: Storage.init
+            )
         }
 
         public func dump() {
-            print("*** Installed Muxer Modules ***")
-            print(
-                self.storage.muxUpgraders.withLockedValue {
-                    $0.keys.enumerated().map { "[\($0.offset + 1)] - \($0.element)" }.joined(
-                        separator: "\n"
-                    )
-                }
-            )
+            print("*** Installed Muxer Modules (in order of preference) ***")
+            print(self.storage.muxUpgraders.withLockedValue { $0.preferenceList })
             print("----------------------------------")
         }
     }

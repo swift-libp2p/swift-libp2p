@@ -13,12 +13,26 @@
 //===----------------------------------------------------------------------===//
 
 public import LibP2PCore
+internal import NIOConcurrencyHelpers
 
-public class BootstrapPeerDiscovery: Discovery, LifecycleHandler, @unchecked Sendable {
+public final class BootstrapPeerDiscovery: Discovery, LifecycleHandler, Sendable {
     public static let key: String = "bootstrap"
-    public var onPeerDiscovered: (@Sendable (PeerInfo) -> Void)?
 
-    internal var on: ((PeerDiscoveryEvent) -> Void)? = nil
+    public var onPeerDiscovered: (@Sendable (PeerInfo) -> Void)? {
+        get { self.callbacks.withLockedValue { $0.onPeerDiscovered } }
+        set { self.callbacks.withLockedValue { $0.onPeerDiscovered = newValue } }
+    }
+
+    internal var on: (@Sendable (PeerDiscoveryEvent) -> Void)? {
+        get { self.callbacks.withLockedValue { $0.on } }
+        set { self.callbacks.withLockedValue { $0.on = newValue } }
+    }
+
+    private struct Callbacks {
+        var onPeerDiscovered: (@Sendable (PeerInfo) -> Void)? = nil
+        var on: (@Sendable (PeerDiscoveryEvent) -> Void)? = nil
+    }
+    private let callbacks = NIOLockedValueBox(Callbacks())
 
     //public private(set) var state:ServiceLifecycleState
 

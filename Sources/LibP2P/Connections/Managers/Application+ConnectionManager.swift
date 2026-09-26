@@ -127,8 +127,11 @@ extension Application {
         }
 
         /// Specify the type of AppConnection to use when establishing a Connection to a remote peer.
-        /// Note: The built in options are `BaseConnection`, `BasicConnectionLight` and `ARCConnection`
-        /// Note: There's also a `DummyConnection` available for embedded testing.
+        ///
+        /// Defaults to `BaseConnection`.
+        ///
+        /// - Note: There's also a `DummyConnection` available in the `LibP2PTesting` library for
+        ///   embedded testing.
         public func use(connectionType: AppConnection.Type) {
             self.storage.connectionType.withLockedValue { $0 = connectionType }
         }
@@ -195,21 +198,16 @@ extension Application {
 
         let application: Application
 
+        /// - Note: The `PreferringLive` variant, and load-bearing here: teardown itself (notably
+        ///   `closeAllConnections()`) runs with `isShuttingDown` already set and has to reach the
+        ///   *real* manager to drain and reject connections.
         var storage: Storage {
-            // Prefer the real storage whenever it still exists — even after
-            // `isShuttingDown` has been set. This lets teardown itself (notably
-            // `closeAllConnections()`) reach the *real* ConnectionManager to drain
-            // and reject connections, instead of a vacuous throwaway. We only fall
-            // back once `storage.clear()` has actually removed our key: at that
-            // point `isShuttingDown` lets stranded event-loop callbacks racing the
-            // teardown finish vacuously instead of tripping the `fatalError`.
-            if let storage = self.application.storage[Key.self] {
-                return storage
-            }
-            if self.application.isShuttingDown {
-                return Storage()
-            }
-            fatalError("ConnectionManager not initialized. Configure with app.connectionManager.initialize()")
+            self.application.subsystemStoragePreferringLive(
+                Key.self,
+                subsystem: "ConnectionManager",
+                initializer: "app.connectionManager.initialize()",
+                makeEmpty: Storage.init
+            )
         }
 
         public func generateConnection(
@@ -254,6 +252,13 @@ extension Application {
         /// The registry is keyed by `ma.description`, which encapsulates both the target peer and the
         /// full network stack, so only dials to the same peer over the same stack coalesce — dials
         /// to a different stack (a different address) remain independent.
+        ///
+        /// - Important: `internal` on purpose. The client path already wraps every
+        ///   `Transport.dial(address:)` in this call (see `Application._newStream`), so a transport
+        ///   must not call it again from inside its own `dial.
+        ///
+        /// - Important: Transport implementations should hand their connected channel to
+        ///   ``adoptOutbound(channel:remoteAddress:expectedRemotePeer:)``.
         func dial(
             to ma: Multiaddr,
             startDial: @escaping @Sendable () -> EventLoopFuture<AppConnection>
@@ -312,8 +317,14 @@ extension Application {
         /// - Inbound connections are gated before registration, so a pending / denied connection
         ///   doesn't count towards our max connections. This approval / rejectection is bound to
         ///   ``defaultUpgradeTimeout``, at which point the connection is failed.
+        ///
         /// - Outbound connections were already gated pre-dial (with `shouldDial`) and go
         ///   straight to the manager.
+        ///
+        /// - Important: Transport implementations should go through
+        ///   ``adoptInbound(channel:remoteAddress:gaterTimeout:)``  and / or
+        ///   ``adoptOutbound(channel:remoteAddress:expectedRemotePeer:)`` which handles
+        ///   consulting the ConnectionGater and installing the appropriate default channel handlers.
         func admitConnection(
             _ conn: AppConnection,
             gaterTimeout: TimeAmount = Connections.defaultUpgradeTimeout
@@ -354,7 +365,21 @@ extension Application {
             }
         }
 
+        @available(
+            *,
+            deprecated,
+            message:
+                "Use the async getTotalConnectionCount() instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+        )
         public func getTotalConnectionCount() -> EventLoopFuture<UInt64> {
+            self._getTotalConnectionCount()
+        }
+
+        public func getTotalConnectionCount() async throws -> UInt64 {
+            try await self._getTotalConnectionCount().get()
+        }
+
+        internal func _getTotalConnectionCount() -> EventLoopFuture<UInt64> {
             self.storage.manager.withLockedValue { manager in
                 if let basicMan = manager as? BasicInMemoryConnectionManager {
                     return basicMan.getTotalConnectionCount()
@@ -363,7 +388,21 @@ extension Application {
             }
         }
 
+        @available(
+            *,
+            deprecated,
+            message:
+                "Use the async getTotalStreamCount() instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+        )
         public func getTotalStreamCount() -> EventLoopFuture<UInt64> {
+            self._getTotalStreamCount()
+        }
+
+        public func getTotalStreamCount() async throws -> UInt64 {
+            try await self._getTotalStreamCount().get()
+        }
+
+        internal func _getTotalStreamCount() -> EventLoopFuture<UInt64> {
             self.storage.manager.withLockedValue { manager in
                 if let basicMan = manager as? BasicInMemoryConnectionManager {
                     return basicMan.getTotalStreamCount()

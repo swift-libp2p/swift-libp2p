@@ -14,7 +14,7 @@
 
 import Foundation
 public import LibP2P
-public import LibP2PCrypto
+import LibP2PCrypto
 import NIOConcurrencyHelpers
 import NIOCore
 import RoutingKit
@@ -65,7 +65,7 @@ public func runTransportConformance(
 
     tptInstallEchoRoute(on: host, proto: echoProto)
 
-    let clientEvents = HarnessEventRecorder()
+    let clientEvents = EventRecorder()
     clientEvents.subscribe(to: client)
 
     do {
@@ -85,7 +85,7 @@ public func runTransportConformance(
             listenAddr != nil ? "\(listenAddr!)" : "no listen addresses announced"
         )
 
-        guard listenAddr != nil, let addr = try? host.harnessDialableAddress else {
+        guard listenAddr != nil, let addr = try? host.dialableAddress else {
             report.warn("No dialable host address — skipping dial-based checks")
             try await client.asyncShutdown()
             try await host.asyncShutdown()
@@ -93,9 +93,7 @@ public func runTransportConformance(
         }
 
         // MARK: canDial (warn + skip dial checks if the transport rejects its own listen address)
-        let el = client.eventLoopGroup.next()
-        let canDial = (try? await client.transports.canDial(addr, on: el).get()) ?? false
-        guard canDial else {
+        guard client.transports.canDial(addr) else {
             report.warn("Transport canDial() rejected its own loopback listen address — skipping dial checks")
             try await client.asyncShutdown()
             try await host.asyncShutdown()
@@ -111,14 +109,14 @@ public func runTransportConformance(
             withRequest: warmup,
             withHandlers: .handlers([.varIntLengthPrefixed]),
             withTimeout: requestTimeout
-        ).get()
+        )
         report.check(
             "Dial + echo round-trips (bytes move peer-to-peer)",
             warmupResponse == warmup,
             warmupResponse == warmup ? nil : "sent \(warmup.count)B, received \(warmupResponse.count)B"
         )
 
-        let reachedUpgraded = await harnessWaitUntil {
+        let reachedUpgraded = await waitUntil {
             let conns = (try? await client.connections.getConnections(on: nil).get()) ?? []
             return conns.contains { $0.isMuxed && $0.stats.status == .upgraded }
         }
@@ -145,7 +143,7 @@ public func runTransportConformance(
                     withRequest: payload,
                     withHandlers: .handlers([.varIntLengthPrefixed]),
                     withTimeout: requestTimeout
-                ).get()
+                )
                 report.check(
                     "Round-trip \(size)B payload",
                     response == payload,
@@ -157,7 +155,7 @@ public func runTransportConformance(
         }
 
         // MARK: Lifecycle events (client side)
-        _ = await harnessWaitUntil { clientEvents.contains("closedStream") }
+        _ = await waitUntil { clientEvents.contains("closedStream") }
         report.check("Emits .connected event", clientEvents.contains("connected"))
         report.check("Emits .upgraded event", clientEvents.contains("upgraded"))
         report.check("Emits .remotePeer event", clientEvents.contains("remotePeer"))
@@ -179,7 +177,7 @@ public func runTransportConformance(
 
         // MARK: Clean teardown emits .disconnected
         _ = try? await client.connections.closeAllConnections().get()
-        let disconnected = await harnessWaitUntil { clientEvents.contains("disconnected") }
+        let disconnected = await waitUntil { clientEvents.contains("disconnected") }
         report.check("Clean teardown emits .disconnected", disconnected)
 
         try await client.asyncShutdown()

@@ -382,4 +382,44 @@ extension LibP2PTests {
             }
         }
     }
+
+    @Suite("RoutesBuilderGroupingTests")
+    struct RoutesBuilderGroupingTests {
+
+        @Test("grouped(path:handlers:) prefixes the routes it builds")
+        func groupedWithPathPrefixesRoutes() async throws {
+            try await withApp { app in
+                let group = app.routes.grouped(
+                    [PathComponent(stringLiteral: "prefixed")],
+                    handlers: [.newLineDelimited]
+                )
+                group.on([PathComponent(stringLiteral: "1.0.0")]) { _ -> Response<ByteBuffer> in .close }
+
+                #expect(app.routes.all.map { $0.description }.contains("/prefixed/1.0.0"))
+            }
+        }
+
+        /// The handler-only overload has no path to contribute, so it must not invent one.
+        @Test("grouped(handlers:) leaves the route path untouched")
+        func groupedWithoutPathLeavesRoutesAlone() async throws {
+            try await withApp { app in
+                let group = app.routes.grouped([.newLineDelimited])
+                group.on([PathComponent(stringLiteral: "unprefixed")]) { _ -> Response<ByteBuffer> in .close }
+
+                #expect(app.routes.all.map { $0.description }.contains("/unprefixed"))
+            }
+        }
+
+        /// `grouped(path:handlers:)` with an empty handler list still has to honour `path`, the old
+        /// `handlers.count > 0` early-out returned `self` and dropped the prefix entirely.
+        @Test("grouped(path:handlers:) honours the path even with no handlers")
+        func groupedWithPathAndNoHandlersStillPrefixes() async throws {
+            try await withApp { app in
+                let group = app.routes.grouped([PathComponent(stringLiteral: "bare")], handlers: [])
+                group.on([PathComponent(stringLiteral: "1.0.0")]) { _ -> Response<ByteBuffer> in .close }
+
+                #expect(app.routes.all.map { $0.description }.contains("/bare/1.0.0"))
+            }
+        }
+    }
 }

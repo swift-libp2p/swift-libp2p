@@ -71,22 +71,15 @@ extension Application {
 
         let application: Application
 
+        /// - Note: The `PreferringLive` variant, so stranded event-loop callbacks racing teardown
+        ///   reuse the configured `EventBus` instead of minting a throwaway one per access.
         var storage: Storage {
-            if self.application.isShuttingDown {
-                // Race window: this Application has begun teardown. Hand
-                // back the real storage while it's still present so
-                // stranded event-loop callbacks reuse the configured
-                // `EventBus` instead of minting a throwaway one on every
-                // access. Only once `storage.clear()` has removed it do we
-                // fall back to a fresh empty `Storage`, letting those
-                // callbacks finish vacuously instead of trapping at the
-                // `fatalError` below.
-                return self.application.storage[Key.self] ?? Storage()
-            }
-            guard let storage = self.application.storage[Key.self] else {
-                fatalError("EventBus not initialized. Configure with app.eventbus.initialize()")
-            }
-            return storage
+            self.application.subsystemStoragePreferringLive(
+                Key.self,
+                subsystem: "EventBus",
+                initializer: "app.eventbus.initialize()",
+                makeEmpty: Storage.init
+            )
         }
     }
 }

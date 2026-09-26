@@ -15,7 +15,17 @@
 public import Foundation
 public import LibP2PCore
 public import Logging
+internal import NIOConcurrencyHelpers
 
+/// A minimal `AppConnection`, it multiplexes streams but does no idle teardown, stream gating or
+/// stream pruning.
+@available(
+    *,
+    deprecated,
+    message: """
+        Use BaseConnection instead. BasicConnectionLight will be removed in swift-libp2p 0.5.0.
+        """
+)
 public class BasicConnectionLight: AppConnection, @unchecked Sendable {
 
     public var application: Application
@@ -727,6 +737,7 @@ public class BasicConnectionLight: AppConnection, @unchecked Sendable {
     }
 }
 
+@available(*, deprecated)
 extension BasicConnectionLight {
 
     public struct ConnectionStateMachine {
@@ -778,6 +789,7 @@ extension BasicConnectionLight {
     }
 }
 
+@available(*, deprecated)
 extension BasicConnectionLight {
     public func lastActivity() -> Date {
         guard !(self.status == .closed || self.status == .closing) else {
@@ -810,6 +822,7 @@ extension BasicConnectionLight {
     }
 }
 
+@available(*, deprecated)
 extension BasicConnectionLight {
     public var description: String {
         let header =

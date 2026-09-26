@@ -205,12 +205,7 @@ public final class TCPServer: Server, @unchecked Sendable {
     }
 
     public func start(address: BindAddress?) throws {
-        // Flip our didStart
-        try self.state.withLockedValue { state in
-            guard !state.didStart else { throw Errors.alreadyStarted }
-            guard !state.didShutdown else { throw Errors.alreadyShutdown }
-            state.didStart = true
-        }
+        let configuration = try self.prepareStart(address: address)
 
         // Revert didStart if we fail to bind, so a recoverable failure (address already in
         // use, say) can still be retried by the caller.
@@ -219,6 +214,50 @@ public final class TCPServer: Server, @unchecked Sendable {
             if !boundSuccessfully {
                 self.state.withLockedValue { $0.didStart = false }
             }
+        }
+
+        // Start the actual TCPServer
+        let connection = try TCPServerConnection.start(
+            application: self.application,
+            responder: self.responder,
+            configuration: configuration,
+            on: self.eventLoopGroup
+        ).wait()
+
+        self.completeStart(connection: connection, configuration: configuration)
+        boundSuccessfully = true
+    }
+
+    public func start(address: BindAddress?) async throws {
+        let configuration = try self.prepareStart(address: address)
+
+        // Revert didStart if we fail to bind, so a recoverable failure (address already in
+        // use, say) can still be retried by the caller.
+        var boundSuccessfully = false
+        defer {
+            if !boundSuccessfully {
+                self.state.withLockedValue { $0.didStart = false }
+            }
+        }
+
+        // Start the actual TCPServer
+        let connection = try await TCPServerConnection.start(
+            application: self.application,
+            responder: self.responder,
+            configuration: configuration,
+            on: self.eventLoopGroup
+        ).get()
+
+        self.completeStart(connection: connection, configuration: configuration)
+        boundSuccessfully = true
+    }
+
+    /// Flips `didStart` and resolves the effective configuration for this start attempt.
+    private func prepareStart(address: BindAddress?) throws -> Configuration {
+        try self.state.withLockedValue { state in
+            guard !state.didStart else { throw Errors.alreadyStarted }
+            guard !state.didShutdown else { throw Errors.alreadyShutdown }
+            state.didStart = true
         }
 
         var configuration = self.configuration
@@ -232,6 +271,11 @@ public final class TCPServer: Server, @unchecked Sendable {
             configuration.address = .unixDomainSocket(path: socketPath)
         }
 
+        return configuration
+    }
+
+    /// Records the bound connection, then logs and announces the listen addresses.
+    private func completeStart(connection: TCPServerConnection, configuration: Configuration) {
         func addressDescription(for configuration: Configuration) -> String {
             switch configuration.address {
             case .hostname(let hostname, let port):
@@ -241,16 +285,7 @@ public final class TCPServer: Server, @unchecked Sendable {
             }
         }
 
-        // start the actual TCPServer
-        let connection = try TCPServerConnection.start(
-            application: self.application,
-            responder: self.responder,
-            configuration: configuration,
-            on: self.eventLoopGroup
-        ).wait()
-
         self.state.withLockedValue { $0.connection = connection }
-        boundSuccessfully = true
 
         if let la = connection.channel.localAddress {
             self.configuration.logger.notice("TCP Server Started")
@@ -273,7 +308,32 @@ public final class TCPServer: Server, @unchecked Sendable {
     }
 
     public func shutdown() {
-        // Grab our connection and the announced addresses in one step, so a second `shutdown()` is a no-op
+        guard let (connection, announced) = self.beginShutdown() else { return }
+
+        do {
+            try connection.close(timeout: self.configuration.shutdownTimeout).wait()
+        } catch {
+            self.configuration.logger.error("Could not stop TCP server: \(error)")
+        }
+
+        self.finishShutdown(announced: announced)
+    }
+
+    public func shutdown() async {
+        guard let (connection, announced) = self.beginShutdown() else { return }
+
+        do {
+            try await connection.close(timeout: self.configuration.shutdownTimeout).get()
+        } catch {
+            self.configuration.logger.error("Could not stop TCP server: \(error)")
+        }
+
+        self.finishShutdown(announced: announced)
+    }
+
+    /// Claims the live connection and announced addresses in one step, so a second `shutdown()`
+    /// is a no-op. Returns `nil` when there's nothing to shut down.
+    private func beginShutdown() -> (connection: TCPServerConnection, announced: [Multiaddr])? {
         let (connection, announced) = self.state.withLockedValue {
             state -> (TCPServerConnection?, [Multiaddr]) in
             guard !state.didShutdown, let connection = state.connection else { return (nil, []) }
@@ -283,14 +343,12 @@ public final class TCPServer: Server, @unchecked Sendable {
             state.announcedAddresses = []
             return (connection, announced)
         }
-        guard let connection else { return }
-
+        guard let connection else { return nil }
         self.configuration.logger.trace("Requesting TCP server shutdown")
-        do {
-            try connection.close(timeout: self.configuration.shutdownTimeout).wait()
-        } catch {
-            self.configuration.logger.error("Could not stop TCP server: \(error)")
-        }
+        return (connection, announced)
+    }
+
+    private func finishShutdown(announced: [Multiaddr]) {
         self.configuration.logger.trace("TCP server shutting down")
 
         // Balance the `.listen` events posted at start-up.
@@ -396,33 +454,15 @@ private final class TCPServerConnection: Sendable {
                 guard let remoteAddress = try? channel.remoteAddress?.toMultiaddr() else {
                     return channel.eventLoop.makeFailedFuture(TCP.Errors.invalidMultiaddr)
                 }  //.always({ _ in channel.close(mode: .all) }) }
-                let conn = application.connectionManager.generateConnection(
-                    channel: channel,
-                    direction: .inbound,
-                    remoteAddress: remoteAddress,
-                    expectedRemotePeer: nil
-                )
 
-                // Consult the ConnectionGater and add the new inbound connection to our
-                // ConnectionManager. A rejection fails this future and the channel closes
-                // before any handshake bytes move.
-                return application.connectionManager.admitConnection(conn).flatMap {
-                    // `QuiesceOnShutdownHandler` sits at the head so that when the
-                    // server begins quiescing it closes this accepted channel — see
-                    // its doc comment. `BackPressureHandler` follows it.
-                    channel.pipeline.addHandlers(
-                        [QuiesceOnShutdownHandler(), BackPressureHandler()],
-                        position: .first
-                    ).flatMap {
-                        // Initialize the new inbound channel
-                        conn.initializeChannel()
-                    }
-                }.flatMapError { error in
-                    // Ensure we close the channel upon an error
-                    channel.close(mode: .all).flatMapAlways { _ in
-                        channel.eventLoop.makeFailedFuture(error)
-                    }
-                }
+                // Hand the accepted channel to the ConnectionManager, which consults the
+                // ConnectionGater, registers the connection, installs the quiesce /
+                // backpressure handlers, and initializes the channel. A rejection fails this
+                // future and the channel closes before any handshake bytes move.
+                return application.connectionManager.adoptInbound(
+                    channel: channel,
+                    remoteAddress: remoteAddress
+                ).map { _ in }
             }
 
             // Enable TCP_NODELAY for the accepted Channels.
@@ -494,11 +534,16 @@ private final class TCPServerConnection: Sendable {
 /// quiesce blocked until the server's `shutdownTimeout` elapses (surfacing as `serverStopTookTooLong`).
 /// Installing this at the head of each accepted channel makes graceful server shutdown prompt,
 /// independent of whether the connection manager also closed the connection.
-final class QuiesceOnShutdownHandler: ChannelInboundHandler, Sendable {
-    typealias InboundIn = ByteBuffer
-    typealias InboundOut = ByteBuffer
+///
+/// - Note: ``Application/Connections/adoptInbound(channel:remoteAddress:gaterTimeout:)`` already
+///   install this for you.
+public final class QuiesceOnShutdownHandler: ChannelInboundHandler, Sendable {
+    public typealias InboundIn = ByteBuffer
+    public typealias InboundOut = ByteBuffer
 
-    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+    public init() {}
+
+    public func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
         // Forward first, so handlers further down the pipeline still observe the quiesce before
         // the channel is torn out from under them.
         context.fireUserInboundEventTriggered(event)

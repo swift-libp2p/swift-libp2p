@@ -88,17 +88,12 @@ extension Application {
         }
 
         var storage: Storage {
-            if self.application.isShuttingDown {
-                // Race window: this Application has begun teardown.
-                // Returning a fresh empty `Storage` lets stranded
-                // event-loop callbacks finish vacuously instead of
-                // trapping at the `fatalError` below.
-                return Storage()
-            }
-            guard let storage = self.application.storage[Key.self] else {
-                fatalError("Topology::Registration not initialized. Initialize with app.topology.initialize()")
-            }
-            return storage
+            self.application.subsystemStorage(
+                Key.self,
+                subsystem: "Topology::Registration",
+                initializer: "app.topology.initialize()",
+                makeEmpty: Storage.init
+            )
         }
 
         public func willBoot(_ application: Application) throws {

@@ -36,6 +36,8 @@ extension LibP2PTests {
     struct ConnectionLifecycleTests {
 
         /// Every `AppConnection` implementation the `Application` can be configured with.
+        ///
+        /// - Note: `ARCConnection` and `BasicConnectionLight` are deprecated for removal in 0.5.0.
         static let connectionTypes: [AppConnection.Type] = [
             ARCConnection.self,
             BasicConnectionLight.self,
@@ -292,7 +294,7 @@ extension LibP2PTests {
                 )
                 let loop = app.eventLoopGroup.next()
                 let channel = NIOAsyncTestingChannel()
-                let connection = BasicConnectionLight(
+                let connection = BaseConnection(
                     application: app,
                     channel: channel,
                     direction: .inbound,
@@ -330,7 +332,7 @@ extension LibP2PTests {
                 )
                 let loop = app.eventLoopGroup.next()
                 let channel = NIOAsyncTestingChannel()
-                let connection = BasicConnectionLight(
+                let connection = BaseConnection(
                     application: app,
                     channel: channel,
                     direction: .inbound,
@@ -420,7 +422,7 @@ extension LibP2PTests {
                 )
                 let loop = app.eventLoopGroup.next()
                 let channel = NIOAsyncTestingChannel()
-                let connection = BasicConnectionLight(
+                let connection = BaseConnection(
                     application: app,
                     channel: channel,
                     direction: .inbound,

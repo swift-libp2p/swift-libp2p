@@ -17,7 +17,7 @@
 //
 
 public import NIOCore
-public import NIOHTTP1
+import NIOHTTP1
 
 /// Can convert `self` to a `Response`.
 ///

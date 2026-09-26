@@ -12,9 +12,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import LibP2PCrypto
+public import LibP2P
+import LibP2PCrypto
 
-internal class DummyConnection: Connection, @unchecked Sendable {
+/// An inert, zero-config `Connection` stub for tests that don't need a live transport.
+///
+/// It is initialized `.closed` and every operation fails by design.
+///
+/// - Note: For standing up *real* muxed streams over an `EmbeddedChannel`,
+///   use ``TestConnection`` instead.
+public final class DummyConnection: Connection, @unchecked Sendable {
     public var channel: Channel
 
     public var logger: Logger
@@ -88,7 +95,7 @@ internal class DummyConnection: Connection, @unchecked Sendable {
         throw Errors.notImplementedYet
     }
 
-    func newStream(forProtocol: String) {
+    public func newStream(forProtocol: String) {
         return
     }
 

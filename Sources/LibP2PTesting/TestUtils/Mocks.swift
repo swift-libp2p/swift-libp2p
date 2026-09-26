@@ -22,10 +22,8 @@ public import PeerID
 // MARK: - MockStream
 
 /// A minimal in-memory `_Stream` backed by its own `EmbeddedChannel`. `close` / `reset` transition the
-/// tracked `streamState` and fire the `on` event callback, mirroring how a real muxed stream behaves —
+/// tracked `streamState` and fire the `on` event callback, mirroring how a real muxed stream behaves,
 /// without any of the wire framing.
-///
-/// Lives in `LibP2PTestUtils` so it can be shared across every test suite.
 public final class MockStream: _Stream, @unchecked Sendable {
     public let channel: Channel
     public let id: UInt64
@@ -81,7 +79,7 @@ public final class MockStream: _Stream, @unchecked Sendable {
 // MARK: - MockMuxer
 
 /// A stand-in `Muxer` that hands back `MockStream`s and tracks them in its `streams` list. It performs no
-/// wire framing, so it is only suitable for in-process bookkeeping — it cannot multiplex real bytes over a
+/// wire framing, so it is only suitable for in-process bookkeeping, it cannot multiplex real bytes over a
 /// socket. Registration into the upgrade pipeline is done via `MockMuxerUpgrader`.
 public final class MockMuxer: Muxer, @unchecked Sendable {
     public static var protocolCodec: String { MockMuxerUpgrader.key }
@@ -157,7 +155,7 @@ public final class MockMuxer: Muxer, @unchecked Sendable {
     }
 }
 
-// MARK: - MockMuxerUpgrader (registrable)
+// MARK: - MockMuxerUpgrader
 
 /// Registers a `MockMuxer` into the connection-upgrade pipeline. On `upgradeConnection` it installs a small
 /// retainer handler on the connection's channel (so the otherwise weakly-held `Muxer` survives) and fulfils
@@ -198,9 +196,9 @@ extension Application.MuxerUpgraders.Provider {
     }
 }
 
-// MARK: - MockSecurity (registrable)
+// MARK: - MockSecurity
 
-/// A pass-through "security" upgrader: it performs no encryption and no wire handshake. It immediately
+/// A pass-through "security" upgrader, it performs no encryption and no wire handshake. It immediately
 /// fulfils the secured promise, reporting the remote peer taken from the dialed multiaddr
 /// (`connection.expectedRemotePeer`). Register identically on both peers so their byte streams stay aligned.
 public struct MockSecurity: SecurityUpgrader {

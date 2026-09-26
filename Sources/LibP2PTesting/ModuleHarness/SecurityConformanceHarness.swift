@@ -57,8 +57,14 @@ public func runSecurityConformance(
     let probeProto = "/sec-harness-probe/1.0.0"
     let requestTimeout: TimeAmount = .seconds(15)
 
-    let host = try await makeHarnessNode(security: security, muxer: muxer, logLevel: logLevel)
-    let client = try await makeHarnessNode(security: security, muxer: muxer, logLevel: logLevel)
+    let host = try await makeTestNode(logLevel: logLevel) { app in
+        app.security.use(security)
+        app.muxers.use(muxer)
+    }
+    let client = try await makeTestNode(logLevel: logLevel) { app in
+        app.security.use(security)
+        app.muxers.use(muxer)
+    }
 
     secInstallEchoRoute(on: host, proto: echoProto)
     secInstallHoldRoute(on: host, proto: holdProto)
@@ -67,8 +73,8 @@ public func runSecurityConformance(
     let (streamProbeProvider, streamProbes) = makeStreamProbeProvider()
     installProbeEchoRoute(on: host, proto: probeProto, probeProvider: streamProbeProvider)
 
-    let clientEvents = HarnessEventRecorder()
-    let hostEvents = HarnessEventRecorder()
+    let clientEvents = EventRecorder()
+    let hostEvents = EventRecorder()
     clientEvents.subscribe(to: client)
     hostEvents.subscribe(to: host)
 
@@ -76,7 +82,7 @@ public func runSecurityConformance(
         try await host.startup()
         try await client.startup()
 
-        let addr = try host.harnessDialableAddress
+        let addr = try host.dialableAddress
 
         // MARK: Handshake completes → upgrade + negotiated codec
         let warmup = Data("warmup".utf8)
@@ -86,14 +92,14 @@ public func runSecurityConformance(
             withRequest: warmup,
             withHandlers: .handlers([.varIntLengthPrefixed]),
             withTimeout: requestTimeout
-        ).get()
+        )
         report.check(
             "Warm-up echo round-trips through the secured connection",
             warmupResponse == warmup,
             warmupResponse == warmup ? nil : "sent \(warmup.count)B, received \(warmupResponse.count)B"
         )
 
-        let reachedUpgraded = await harnessWaitUntil {
+        let reachedUpgraded = await waitUntil {
             let conns = (try? await client.connections.getConnections(on: nil).get()) ?? []
             return conns.contains { $0.stats.status == .upgraded }
         }
@@ -136,9 +142,9 @@ public func runSecurityConformance(
                 withRequest: markerData,
                 withHandlers: .handlers([.varIntLengthPrefixed]),
                 withTimeout: requestTimeout
-            ).get()
+            )
             // Give the tapped inbound a beat to flush through.
-            _ = await harnessWaitUntil { tap.byteCount > 0 }
+            _ = await waitUntil { tap.byteCount > 0 }
 
             if markerResponse == markerData {
                 let onWireInClear = containsSubsequence(tap.captured(), marker)
@@ -168,7 +174,7 @@ public func runSecurityConformance(
                     withRequest: payload,
                     withHandlers: .handlers([.varIntLengthPrefixed]),
                     withTimeout: requestTimeout
-                ).get()
+                )
                 report.check(
                     "Round-trip \(size)B payload",
                     response == payload,
@@ -180,38 +186,31 @@ public func runSecurityConformance(
         }
 
         // MARK: Concurrent streams
+        // All requests are launched before any is awaited, so they genuinely overlap on the wire.
         if concurrentStreams > 0 {
-            let el = client.eventLoopGroup.next()
-            var expected: [Data] = []
-            var futures: [EventLoopFuture<Data>] = []
-            for i in 0..<concurrentStreams {
-                let payload = Data("concurrent-\(i)-".utf8) + secRandomData(count: 4096)
-                expected.append(payload)
-                futures.append(
-                    client.newRequest(
-                        to: addr,
-                        forProtocol: echoProto,
-                        withRequest: payload,
-                        withHandlers: .handlers([.varIntLengthPrefixed]),
-                        withTimeout: requestTimeout
-                    )
-                )
+            let payloads = (0..<concurrentStreams).map { i in
+                Data("concurrent-\(i)-".utf8) + secRandomData(count: 4096)
             }
-            let results = try await EventLoopFuture.whenAllComplete(futures, on: el).get()
-            var allMatched = true
-            for (i, result) in results.enumerated() {
-                switch result {
-                case .success(let data) where data == expected[i]:
-                    continue
-                default:
-                    allMatched = false
+            let allMatched = await withTaskGroup(of: Bool.self) { group in
+                for payload in payloads {
+                    group.addTask {
+                        let response = try? await client.newRequest(
+                            to: addr,
+                            forProtocol: echoProto,
+                            withRequest: payload,
+                            withHandlers: .handlers([.varIntLengthPrefixed]),
+                            withTimeout: requestTimeout
+                        )
+                        return response == payload
+                    }
                 }
+                return await group.reduce(true) { $0 && $1 }
             }
             report.check("\(concurrentStreams) concurrent streams each round-trip independently", allMatched)
         }
 
         // MARK: Lifecycle events (client side)
-        _ = await harnessWaitUntil { clientEvents.contains("closedStream") }
+        _ = await waitUntil { clientEvents.contains("closedStream") }
         report.check("Emits .connected event", clientEvents.contains("connected"))
         report.check("Emits .upgraded event", clientEvents.contains("upgraded"))
         report.check("Emits .remotePeer event", clientEvents.contains("remotePeer"))
@@ -264,8 +263,8 @@ public func runSecurityConformance(
             withRequest: Data("probe".utf8),
             withHandlers: .handlers([.varIntLengthPrefixed]),
             withTimeout: requestTimeout
-        ).get()
-        _ = await harnessWaitUntil { streamProbes.withLockedValue { $0.contains { $0.readCompletes > 0 } } }
+        )
+        _ = await waitUntil { streamProbes.withLockedValue { $0.contains { $0.readCompletes > 0 } } }
         let probes = streamProbes.withLockedValue { $0 }
         let totalReads = probes.reduce(0) { $0 + $1.reads }
         let sawReadComplete = probes.contains { $0.sawReadCompleteAfterRead }
@@ -279,14 +278,14 @@ public func runSecurityConformance(
 
         // MARK: Stream reset (see runMuxerConformance for the testReset caveat)
         if testReset {
-            try? client.newStream(
+            try? await client.newStream(
                 to: addr,
                 forProtocol: holdProto,
                 withHandlers: .handlers([.varIntLengthPrefixed])
             ) { req in
                 req.eventLoop.makeSucceededFuture(RawResponse(payload: ByteBuffer()))
             }
-            let holdOpened = await harnessWaitUntil {
+            let holdOpened = await waitUntil {
                 clientEvents.openedStreams(forProtocol: holdProto).contains { $0.streamState == .open }
             }
             let holdStreamToReset =
@@ -294,7 +293,7 @@ public func runSecurityConformance(
                 ?? clientEvents.openedStreams(forProtocol: holdProto).first
             if holdOpened, let holdStream = holdStreamToReset {
                 _ = try? await holdStream.reset().get()
-                let becameReset = await harnessWaitUntil { holdStream.streamState == .reset }
+                let becameReset = await waitUntil { holdStream.streamState == .reset }
                 report.check(
                     "reset() transitions stream to .reset",
                     becameReset,
@@ -302,7 +301,7 @@ public func runSecurityConformance(
                 )
                 let writeRejected = await secWriteIsRejected(on: holdStream)
                 report.check("Write on a reset stream is rejected", writeRejected)
-                let propagated = await harnessWaitUntil { hostEvents.closedStream(forProtocol: holdProto) }
+                let propagated = await waitUntil { hostEvents.closedStream(forProtocol: holdProto) }
                 report.check("Reset propagates to the peer (host observes stream close)", propagated)
             } else {
                 report.warn("Could not open a hold stream to verify reset semantics")
@@ -326,7 +325,7 @@ public func runSecurityConformance(
                     withRequest: Data("mismatch-probe".utf8),
                     withHandlers: .handlers([.varIntLengthPrefixed]),
                     withTimeout: requestTimeout
-                ).get()
+                )
                 mismatchRejected = false
             } catch {
                 mismatchRejected = true

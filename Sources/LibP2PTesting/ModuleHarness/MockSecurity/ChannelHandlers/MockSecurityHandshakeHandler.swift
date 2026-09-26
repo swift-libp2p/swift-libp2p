@@ -13,8 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 public import LibP2P
-public import LibP2PCrypto
+import LibP2PCrypto
 import NIOConcurrencyHelpers
+import SwiftProtobuf
 
 /// Plaintext V2
 ///

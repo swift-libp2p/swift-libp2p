@@ -98,8 +98,6 @@ extension Application {
     }
 
     public struct Servers: Sendable {
-        typealias KeyedServer = (key: String, value: Server)
-
         public struct Provider: Sendable {
             let run: @Sendable (Application) -> Void
 
@@ -113,10 +111,10 @@ extension Application {
         }
 
         final class Storage: Sendable {
-            let servers: NIOLockedValueBox<[KeyedServer]>
-            //var makeServer: ((Application) -> Server)?
+            /// Installed servers, in registration order.
+            let servers: NIOLockedValueBox<SubsystemRegistry<Server>>
             init() {
-                self.servers = .init([])
+                self.servers = .init(.init())
             }
         }
 
@@ -132,13 +130,27 @@ extension Application {
             provider.run(self.application)
         }
 
-        public func use<S: Server>(_ makeServer: @escaping (Application) -> (S)) {
+        /// Installs a server, appending it to the registration order.
+        ///
+        /// - Important: Traps if another server is already installed under `S.key`. Use
+        ///   ``replace(_:)`` to override one on purpose.
+        @preconcurrency public func use<S: Server>(_ makeServer: @Sendable @escaping (Application) -> (S)) {
+            let server = makeServer(self.application)
+            let result = self.storage.servers.withLockedValue { servers in
+                servers.register(server, forKey: S.key)
+            }
+            if result == .duplicate {
+                duplicateRegistration("Server", key: S.key, replaceWith: "app.servers.replace(_:)")
+            }
+        }
+
+        /// Replaces the server installed under `S.key`, keeping its position.
+        ///
+        /// Installs it if nothing is registered under that key yet.
+        @preconcurrency public func replace<S: Server>(_ makeServer: @Sendable @escaping (Application) -> (S)) {
+            let server = makeServer(self.application)
             self.storage.servers.withLockedValue { servers in
-                guard !servers.contains(where: { $0.key == S.key }) else {
-                    self.application.logger.warning("`\(S.key)` Server Already Installed - Skipping")
-                    return
-                }
-                servers.append((S.key, makeServer(self.application)))
+                servers.replace(server, forKey: S.key)
             }
         }
 
@@ -147,21 +159,15 @@ extension Application {
         }
 
         public func server(forKey key: String) -> Server? {
-            self.storage.servers.withLockedValue { servers in
-                servers.first(where: { $0.key == key })?.value
-            }
+            self.storage.servers.withLockedValue { $0.value(forKey: key) }
         }
 
         public var available: [String] {
-            self.storage.servers.withLockedValue { servers in
-                servers.map { $0.key }
-            }
+            self.storage.servers.withLockedValue { $0.keys }
         }
 
         internal var allServers: [Server] {
-            self.storage.servers.withLockedValue { servers in
-                servers.map { $0.value }
-            }
+            self.storage.servers.withLockedValue { $0.values }
         }
 
         public var command: ServeCommand {
@@ -193,17 +199,12 @@ extension Application {
         let application: Application
 
         var storage: Storage {
-            if self.application.isShuttingDown {
-                // Race window: this Application has begun teardown.
-                // Returning a fresh empty `Storage` lets stranded
-                // event-loop callbacks finish vacuously instead of
-                // trapping at the `fatalError` below.
-                return Storage()
-            }
-            guard let storage = self.application.storage[Key.self] else {
-                fatalError("Servers not initialized. Configure with app.servers.initialize()")
-            }
-            return storage
+            self.application.subsystemStorage(
+                Key.self,
+                subsystem: "Servers",
+                initializer: "app.servers.initialize()",
+                makeEmpty: Storage.init
+            )
         }
     }
 }

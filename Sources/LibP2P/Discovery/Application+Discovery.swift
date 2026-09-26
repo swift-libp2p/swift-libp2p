@@ -30,9 +30,10 @@ extension Application {
         }
 
         final class Storage: Sendable {
-            let discoveryServices: NIOLockedValueBox<[String: Discovery]>
+            /// Installed discovery services, in registration order.
+            let discoveryServices: NIOLockedValueBox<SubsystemRegistry<Discovery>>
             init() {
-                self.discoveryServices = .init([:])
+                self.discoveryServices = .init(.init())
             }
         }
 
@@ -53,56 +54,72 @@ extension Application {
         //        }
 
         public func service(forKey key: String) -> Discovery? {
-            self.storage.discoveryServices.withLockedValue { $0[key] }
+            self.storage.discoveryServices.withLockedValue { $0.value(forKey: key) }
         }
 
         public func use(_ provider: Provider) {
             provider.run(self.application)
         }
 
+        /// Installs a discovery service, appending it to the registration order.
+        ///
+        /// - Important: Traps if another discovery service is already installed under `D.key`. Use
+        ///   ``replace(_:)`` to override one on purpose.
         @preconcurrency public func use<D: Discovery>(_ makeService: @Sendable @escaping (Application) -> (D)) {
-            self.storage.discoveryServices.withLockedValue { services in
-                if services[D.key] != nil {
-                    fatalError("DiscoveryService `\(D.key)` Already Installed")
-                }
-                var service = makeService(self.application)
-                service.onPeerDiscovered = self.onPeerDiscovered
-                // Maybe we just rely on individual modules to register themselves if need be...
-                // if let lifeCycleService = service as? LifecycleHandler {
-                //     self.application.logger.info("Auto registering \(service) as a lifecycle handler")
-                //     self.application.lifecycle.use(lifeCycleService)
-                // }
-                services[D.key] = service
+            let service = self.prepared(makeService)
+            let result = self.storage.discoveryServices.withLockedValue { services in
+                services.register(service, forKey: D.key)
             }
+            if result == .duplicate {
+                duplicateRegistration("Discovery service", key: D.key, replaceWith: "app.discovery.replace(_:)")
+            }
+        }
+
+        /// Replaces the discovery service installed under `D.key`, keeping its position.
+        ///
+        /// Installs it if nothing is registered under that key yet.
+        @preconcurrency public func replace<D: Discovery>(_ makeService: @Sendable @escaping (Application) -> (D)) {
+            let service = self.prepared(makeService)
+            self.storage.discoveryServices.withLockedValue { services in
+                services.replace(service, forKey: D.key)
+            }
+        }
+
+        /// Builds a service and wires our discovery callback onto it, for both `use` and `replace`.
+        private func prepared<D: Discovery>(_ makeService: @Sendable (Application) -> (D)) -> D {
+            var service = makeService(self.application)
+            service.onPeerDiscovered = self.onPeerDiscovered
+            // Maybe we just rely on individual modules to register themselves if need be...
+            // if let lifeCycleService = service as? LifecycleHandler {
+            //     self.application.logger.info("Auto registering \(service) as a lifecycle handler")
+            //     self.application.lifecycle.use(lifeCycleService)
+            // }
+            return service
         }
 
         public let application: Application
 
+        /// The installed discovery services' keys, in registration order.
         public var available: [String] {
-            self.storage.discoveryServices.withLockedValue { $0.keys.map { $0 } }
+            self.storage.discoveryServices.withLockedValue { $0.keys }
         }
 
         internal var services: [Discovery] {
-            self.storage.discoveryServices.withLockedValue { $0.values.map { $0 } }
+            self.storage.discoveryServices.withLockedValue { $0.values }
         }
 
         var storage: Storage {
-            if self.application.isShuttingDown {
-                // Race window: this Application has begun teardown.
-                // Returning a fresh empty `Storage` lets stranded
-                // event-loop callbacks finish vacuously instead of
-                // trapping at the `fatalError` below.
-                return Storage()
-            }
-            guard let storage = self.application.storage[Key.self] else {
-                fatalError("Discovery Services not initialized. Initialize with app.discovery.initialize()")
-            }
-            return storage
+            self.application.subsystemStorage(
+                Key.self,
+                subsystem: "Discovery Services",
+                initializer: "app.discovery.initialize()",
+                makeEmpty: Storage.init
+            )
         }
 
         public func dump() {
             print("*** Installed Discovery Services ***")
-            print(self.storage.discoveryServices.withLockedValue { $0.keys.map { $0 }.joined(separator: "\n") })
+            print(self.storage.discoveryServices.withLockedValue { $0.preferenceList })
             print("----------------------------------")
         }
 
@@ -132,7 +149,22 @@ extension Application.DiscoveryServices {
         case service(String)
     }
 
+    /// Announces the given service registration on our discovery services.
+    @available(
+        *,
+        deprecated,
+        message: "Use the async announce(_:) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+    )
     public func announce(_ service: ServiceRegistration) -> EventLoopFuture<TimeAmount> {
+        self._announce(service)
+    }
+
+    /// Announces the given service registration on our discovery services.
+    public func announce(_ service: ServiceRegistration) async throws -> TimeAmount {
+        try await self._announce(service).get()
+    }
+
+    internal func _announce(_ service: ServiceRegistration) -> EventLoopFuture<TimeAmount> {
         guard case .service(let proto) = service else {
             return application.eventLoopGroup.any().makeFailedFuture(Errors.notYetImplemented)
         }

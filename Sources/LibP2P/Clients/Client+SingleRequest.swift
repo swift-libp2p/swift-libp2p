@@ -15,12 +15,23 @@
 public import Foundation
 import NIOConcurrencyHelpers
 public import NIOCore
-import VarInt
 
 extension Application {
+
     /// A method on libp2p that acts as a request / response mechanism for streams
     ///
-    /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
+    /// The stream is negotiated, the request sent, the response delivered, then the stream is closed.
+    ///
+    /// - Note: Install framing handlers via `withHandlers:` (e.g. `.varIntFrameDecoder`,
+    /// `.newLineDelimited`, `.fixedLengthFramed(frameLength:)`) so each `.data` event is one
+    /// complete message, the default `.firstFrame` then completes the request the moment the
+    /// first message arrives.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async newRequest(to:forProtocol:...) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+    )
     public func newRequest(
         to ma: Multiaddr,
         forProtocol proto: String,
@@ -28,10 +39,134 @@ extension Application {
         style: SingleRequest.Style = .responseExpected,
         withHandlers handlers: HandlerConfig = .rawHandlers([]),
         andMiddleware middleware: MiddlewareConfig = .custom(nil),
+        expecting completion: SingleRequest.ResponseCompletion = .firstFrame,
         withTimeout timeout: TimeAmount = .seconds(3)
     ) -> EventLoopFuture<Data> {
-        let promise = self.eventLoopGroup.next().makePromise(of: Data.self)
-        //let singleRequest =
+        self._newRequest(
+            toTarget: ma,
+            forProtocol: proto,
+            withRequest: ByteBuffer(bytes: request),
+            style: style,
+            withHandlers: handlers,
+            andMiddleware: middleware,
+            expecting: completion,
+            withTimeout: timeout
+        ).map { Data($0.readableBytesView) }
+    }
+
+    /// A method on libp2p that acts as a request / response mechanism for streams
+    ///
+    /// `target` may be any ``RequestTarget`` (e.g. `Multiaddr`, `PeerID`, or `PeerInfo`)
+    ///
+    /// The stream is negotiated, the request sent, the response delivered, then the stream is closed.
+    ///
+    /// - Note: Install framing handlers via `withHandlers:` (e.g. `.varIntFrameDecoder`,
+    /// `.newLineDelimited`, `.fixedLengthFramed(frameLength:)`) so each `.data` event is one
+    /// complete message, the default `.firstFrame` then completes the request the moment the
+    /// first message arrives.
+    public func newRequest<Target: RequestTarget>(
+        to target: Target,
+        forProtocol proto: String,
+        withRequest request: Data,
+        style: SingleRequest.Style = .responseExpected,
+        withHandlers handlers: HandlerConfig = .rawHandlers([]),
+        andMiddleware middleware: MiddlewareConfig = .custom(nil),
+        expecting completion: SingleRequest.ResponseCompletion = .firstFrame,
+        withTimeout timeout: TimeAmount = .seconds(3)
+    ) async throws -> Data {
+        let response = try await self.newRequest(
+            to: target,
+            forProtocol: proto,
+            withRequest: ByteBuffer(bytes: request),
+            style: style,
+            withHandlers: handlers,
+            andMiddleware: middleware,
+            expecting: completion,
+            withTimeout: timeout
+        )
+        return Data(response.readableBytesView)
+    }
+
+    /// A method on libp2p that acts as a request / response mechanism for streams.
+    ///
+    /// `target` may be any ``RequestTarget`` (e.g. `Multiaddr`, `PeerID`, or `PeerInfo`)
+    ///
+    /// The stream is negotiated, the request sent, the response delivered, then the stream is closed.
+    ///
+    /// - Note: Install framing handlers via `withHandlers:` (e.g. `.varIntFrameDecoder`,
+    /// `.newLineDelimited`, `.fixedLengthFramed(frameLength:)`) so each `.data` event is one
+    /// complete message, the default `.firstFrame` then completes the request the moment the
+    /// first message arrives.
+    public func newRequest<Target: RequestTarget>(
+        to target: Target,
+        forProtocol proto: String,
+        withRequest request: ByteBuffer,
+        style: SingleRequest.Style = .responseExpected,
+        withHandlers handlers: HandlerConfig = .rawHandlers([]),
+        andMiddleware middleware: MiddlewareConfig = .custom(nil),
+        expecting completion: SingleRequest.ResponseCompletion = .firstFrame,
+        withTimeout timeout: TimeAmount = .seconds(3)
+    ) async throws -> ByteBuffer {
+        try await self._newRequest(
+            toTarget: target,
+            forProtocol: proto,
+            withRequest: request,
+            style: style,
+            withHandlers: handlers,
+            andMiddleware: middleware,
+            expecting: completion,
+            withTimeout: timeout
+        ).get()
+    }
+
+    /// A method on libp2p that acts as a request / response mechanism for streams
+    ///
+    /// The stream is negotiated, the request sent, the response delivered, then the stream is closed.
+    ///
+    /// - Note: Install framing handlers via `withHandlers:` (e.g. `.varIntFrameDecoder`,
+    /// `.newLineDelimited`, `.fixedLengthFramed(frameLength:)`) so each `.data` event is one
+    /// complete message, the default `.firstFrame` then completes the request the moment the
+    /// first message arrives.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use the async newRequest(to:forProtocol:...) instead. The EventLoopFuture form will be removed in swift-libp2p 0.5.0"
+    )
+    public func newRequest(
+        to peer: PeerID,
+        forProtocol proto: String,
+        withRequest request: Data,
+        style: SingleRequest.Style = .responseExpected,
+        withHandlers handlers: HandlerConfig = .rawHandlers([]),
+        andMiddleware middleware: MiddlewareConfig = .custom(nil),
+        expecting completion: SingleRequest.ResponseCompletion = .firstFrame,
+        withTimeout timeout: TimeAmount = .seconds(3)
+    ) -> EventLoopFuture<Data> {
+        self._newRequest(
+            toTarget: peer,
+            forProtocol: proto,
+            withRequest: ByteBuffer(bytes: request),
+            style: style,
+            withHandlers: handlers,
+            andMiddleware: middleware,
+            expecting: completion,
+            withTimeout: timeout
+        ).map { Data($0.readableBytesView) }
+    }
+
+    /// The actual internal implementation that both the ELF and Async versions call.
+    internal func _newRequest(
+        to ma: Multiaddr,
+        forProtocol proto: String,
+        withRequest request: ByteBuffer,
+        style: SingleRequest.Style,
+        withHandlers handlers: HandlerConfig,
+        andMiddleware middleware: MiddlewareConfig,
+        expecting completion: SingleRequest.ResponseCompletion,
+        withTimeout timeout: TimeAmount
+    ) -> EventLoopFuture<ByteBuffer> {
+        let promise = self.eventLoopGroup.next().makePromise(of: ByteBuffer.self)
         promise.completeWith(
             SingleRequest(
                 to: ma,
@@ -39,6 +174,7 @@ extension Application {
                 withRequest: request,
                 withHandlers: handlers,
                 andMiddleware: middleware,
+                expecting: completion,
                 on: self.eventLoopGroup.next(),
                 host: self,
                 withTimeout: timeout
@@ -47,38 +183,37 @@ extension Application {
         return promise.futureResult
     }
 
-    /// A method on libp2p that acts as a request / response mechanism for streams
+    /// The single target-resolving engine behind every `newRequest(to:…)` form.
     ///
-    /// The stream is negotiated, the data sent, the response buffered and provided once ready, then the stream is closed...
-    public func newRequest(
-        to peer: PeerID,
+    /// Resolves `target` to a dialable address via ``RequestTarget/dialAddress(for:on:)``, then hands
+    /// it off to the multiaddr implementation.
+    ///
+    /// - Note: The `toTarget:` label (rather than `to:`) keeps this from overloading against the
+    ///   `Multiaddr` implementation above. `Multiaddr` is itself a `RequestTarget`, so a shared
+    ///   label would make the generic form a candidate for its own body and recurse.
+    internal func _newRequest<Target: RequestTarget>(
+        toTarget target: Target,
         forProtocol proto: String,
-        withRequest request: Data,
-        style: SingleRequest.Style = .responseExpected,
-        withHandlers handlers: HandlerConfig = .rawHandlers([]),
-        andMiddleware middleware: MiddlewareConfig = .custom(nil),
-        withTimeout timeout: TimeAmount = .seconds(3)
-    ) -> EventLoopFuture<Data> {
+        withRequest request: ByteBuffer,
+        style: SingleRequest.Style,
+        withHandlers handlers: HandlerConfig,
+        andMiddleware middleware: MiddlewareConfig,
+        expecting completion: SingleRequest.ResponseCompletion,
+        withTimeout timeout: TimeAmount
+    ) -> EventLoopFuture<ByteBuffer> {
         let el = self.eventLoopGroup.next()
 
-        return self.peers.getAddresses(forPeer: peer, on: el).flatMap { addresses -> EventLoopFuture<Data> in
-            guard !addresses.isEmpty else { return el.makeFailedFuture(Errors.noKnownAddressesForPeer) }
-
-            // Check to see if we have a transport thats capable of dialing any of these addresses...
-            // - TODO: Maybe instead of just returning the first transport found, we return the best transport (like one that's already muxed, or with low latency, or recently interacted with)
-            return self.transports.canDialAny(addresses, on: el).flatMap { match -> EventLoopFuture<Data> in
-                let singleRequest = SingleRequest(
-                    to: match,
-                    overProtocol: proto,
-                    withRequest: request,
-                    withHandlers: handlers,
-                    andMiddleware: middleware,
-                    on: self.eventLoopGroup.next(),
-                    host: self,
-                    withTimeout: timeout
-                )
-                return singleRequest.resume(style: style)
-            }
+        return target.dialAddress(for: self, on: el).flatMap { ma -> EventLoopFuture<ByteBuffer> in
+            self._newRequest(
+                to: ma,
+                forProtocol: proto,
+                withRequest: request,
+                style: style,
+                withHandlers: handlers,
+                andMiddleware: middleware,
+                expecting: completion,
+                withTimeout: timeout
+            )
         }
     }
 
@@ -101,12 +236,15 @@ extension Application {
 
     public final class SingleRequest: Sendable {
         let eventloop: EventLoop
-        let promise: EventLoopPromise<Data>
+        let promise: EventLoopPromise<ByteBuffer>
         let multiaddr: Multiaddr
         let proto: String
-        let request: Data
+        /// The payload, held as a `ByteBuffer` because that's what the pipeline wants. The `Data`
+        /// entry points convert once, on the way in.
+        let request: ByteBuffer
         let handlers: HandlerConfig
         let middleware: MiddlewareConfig
+        let completion: ResponseCompletion
 
         let host: Application
 
@@ -118,26 +256,44 @@ extension Application {
 
         let timeout: TimeAmount
         let timeoutTask: NIOLockedValueBox<Scheduled<Void>?>
-        var timeoutResets: Int { _timeoutResets.withLockedValue { $0 } }
-        let _timeoutResets: NIOLockedValueBox<Int> = .init(3)
 
-        /// The total size of the response we're accumulating, VarInt length prefix **included**, or
-        /// `nil` while we haven't decided the response is length prefixed.
-        let expectedResponseBytes: NIOLockedValueBox<Int?> = .init(nil)
+        /// The response accumulated so far under `.untilClosed`; `nil` until the first `.data` event.
         let buffer: NIOLockedValueBox<ByteBuffer?> = .init(nil)
-        let chunks: NIOLockedValueBox<UInt8> = .init(0)
 
+        /// Wether or not this request should stay open, expecting a response from the peer.
         public enum Style: Sendable {
+            /// Stay open and accumulate the response bytes until framed, or timeout triggers.
             case responseExpected
+
+            /// As soon as the bytes are written to the network, close the connection and return.
             case noResponseExpected
+        }
+
+        /// How a `newRequest` decides the response is complete.
+        public enum ResponseCompletion: Sendable, Equatable {
+            /// The first `.data` event is the entire response.
+            ///
+            /// This is correct whenever the installed `withHandlers:` frame the inbound stream
+            /// (`.varIntFrameDecoder`, `.newLineDelimited`, `.fixedLengthFramed(frameLength:)`, ...):
+            /// the decoder delivers exactly one complete message per `.data` event. It is also
+            /// correct for raw single-read request/response exchanges.
+            case firstFrame
+
+            /// Accumulate `.data` events until the remote closes the stream; the accumulated
+            /// bytes are the response. Use when the protocol signals completion via EOF.
+            ///
+            /// - Important: This requires the remote to actually close the stream. Protocols that
+            ///   hold streams open must install framing handlers and use ``firstFrame`` instead.
+            case untilClosed
         }
 
         init(
             to ma: Multiaddr,
             overProtocol proto: String,
-            withRequest request: Data,
+            withRequest request: ByteBuffer,
             withHandlers handlers: HandlerConfig = .rawHandlers([]),
             andMiddleware middleware: MiddlewareConfig = .custom(nil),
+            expecting completion: ResponseCompletion = .firstFrame,
             on el: EventLoop,
             host: Application,
             withTimeout timeout: TimeAmount = .seconds(3)
@@ -149,8 +305,9 @@ extension Application {
             self.request = request
             self.handlers = handlers
             self.middleware = middleware
+            self.completion = completion
             self.timeout = timeout
-            self.promise = self.eventloop.makePromise(of: Data.self)
+            self.promise = self.eventloop.makePromise(of: ByteBuffer.self)
             self._hasBegun = .init(false)
             self._hasCompleted = .init(false)
             self.timeoutTask = .init(nil)
@@ -160,150 +317,87 @@ extension Application {
         //    print("Single Request Deinitialized")
         //}
 
-        func resume(style: Style = .responseExpected) -> EventLoopFuture<Data> {
+        func resume(style: Style = .responseExpected) -> EventLoopFuture<ByteBuffer> {
             guard !self.hasBegun else { return self.eventloop.makeFailedFuture(SingleRequestError.failedToOpenStream) }
             self._hasBegun.withLockedValue { $0 = true }
 
-            do {
-                try host.newStream(
-                    to: self.multiaddr,
-                    forProtocol: self.proto,
-                    withHandlers: self.handlers,
-                    andMiddleware: self.middleware
-                ) { req -> EventLoopFuture<RawResponse> in
-                    switch req.event {
-                    case .ready:
-                        // If the stream is ready and we have data to send... let's send it...
-                        return req.eventLoop.makeSucceededFuture(
-                            RawResponse(payload: req.allocator.buffer(bytes: Array(self.request)))
-                        ).always { _ in
-                            if style == .noResponseExpected {
-                                self._hasCompleted.withLockedValue { $0 = true }
-                                self.cancelTimeoutTask()
-                                req.shouldClose()
-                                self.promise.succeed(Data())
-                            }
-                        }
-
-                    case .data(let response):
-                        var chunks = self.chunks.withLockedValue { $0 }
-                        if chunks == 0 {
-                            // Check if the response is uVarInt length prefixed...
-                            if let expected = Self.announcedResponseLength(of: response),
-                                expected > response.readableBytes
-                            {
-                                // We need to buffer...
-                                self.expectedResponseBytes.withLockedValue { $0 = expected }
-                                self.buffer.withLockedValue { $0 = response }
-                                chunks += 1
-                                self.chunks.withLockedValue { $0 = chunks }
-                                // Stay Open...
-                                self.resetTimeoutTask()
-                                return req.eventLoop.makeSucceededFuture(
-                                    RawResponse(payload: req.allocator.buffer(bytes: []))
-                                )
-                            }
-
+            // Ask our host to open the stream
+            host._newStream(
+                to: self.multiaddr,
+                forProtocol: self.proto,
+                withHandlers: self.handlers,
+                andMiddleware: self.middleware
+            ) { req -> EventLoopFuture<RawResponse> in
+                switch req.event {
+                case .ready:
+                    // If the stream is ready and we have data to send... let's send it...
+                    return req.eventLoop.makeSucceededFuture(
+                        RawResponse(payload: self.request)
+                    ).always { _ in
+                        if style == .noResponseExpected {
                             self._hasCompleted.withLockedValue { $0 = true }
                             self.cancelTimeoutTask()
                             req.shouldClose()
-                            self.promise.succeed(Data(response.readableBytesView))
-                        } else {
-                            // Append the next response onto the buffer and check to see if we've meet the length prefix
-                            chunks += 1
-                            self.buffer.withLockedValue { buffer in
-                                buffer!.writeBytes(response.readableBytesView)
-                                let expected = self.expectedResponseBytes.withLockedValue { $0! }
-                                if buffer!.readableBytes >= expected {
-                                    self._hasCompleted.withLockedValue { $0 = true }
-                                    self.cancelTimeoutTask()
-                                    req.shouldClose()
-                                    self.promise.succeed(Data(buffer!.readableBytesView))
-                                } else {
-                                    // Stay open
-                                    self.resetTimeoutTask()
-                                }
-                            }
-                            self.chunks.withLockedValue { $0 = chunks }
+                            self.promise.succeed(ByteBuffer())
                         }
+                    }
 
-                    case .closed:
-                        if !self.hasCompleted {
-                            self._hasCompleted.withLockedValue { $0 = true }
+                case .data(let response):
+                    switch self.completion {
+                    case .firstFrame:
+                        self._hasCompleted.withLockedValue { $0 = true }
+                        self.cancelTimeoutTask()
+                        req.shouldClose()
+                        self.promise.succeed(response)
+                    case .untilClosed:
+                        // Accumulate until the remote closes; the single timeout bounds the whole request.
+                        self.buffer.withLockedValue { buffer in
+                            if buffer == nil {
+                                buffer = response
+                            } else {
+                                buffer!.writeBytes(response.readableBytesView)
+                            }
+                        }
+                    }
+
+                case .closed:
+                    if !self.hasCompleted {
+                        self._hasCompleted.withLockedValue { $0 = true }
+                        let buffered = self.buffer.withLockedValue { $0 }
+                        if self.completion == .untilClosed, let buffered, buffered.readableBytes > 0 {
+                            self.promise.succeed(buffered)
+                        } else {
                             req.logger.error("Stream Closed before we got our response")
                             self.promise.fail(SingleRequestError.failedToOpenStream)
                         }
-                        self.cancelTimeoutTask()
-                        req.shouldClose()
-
-                    case .error(let error):
-                        self._hasCompleted.withLockedValue { $0 = true }
-                        req.logger.error("Stream Error - \(error)")
-                        self.promise.fail(error)
-                        self.cancelTimeoutTask()
-                        req.shouldClose()
                     }
+                    self.cancelTimeoutTask()
+                    req.shouldClose()
 
-                    return req.eventLoop.makeSucceededFuture(RawResponse(payload: req.allocator.buffer(bytes: [])))
-                }
-
-                /// Enforce a timeout on the request...
-                self.startTimeoutTask()
-
-            } catch {
-                self.eventloop.execute {
+                case .error(let error):
+                    self._hasCompleted.withLockedValue { $0 = true }
+                    req.logger.error("Stream Error - \(error)")
                     self.promise.fail(error)
+                    self.cancelTimeoutTask()
+                    req.shouldClose()
                 }
+
+                return req.eventLoop.makeSucceededFuture(RawResponse(payload: req.allocator.buffer(bytes: [])))
+            }.whenComplete { result in
+                self.host.logger.trace("SingleRequest[\(self.proto)] result => \(result)")
             }
 
-            return self.promise.futureResult
-        }
-
-        /// The total size `response` announces when its leading bytes look like a uVarInt length
-        /// prefix.
-        ///
-        /// This is a *heuristic*, not framing. A single request client doesn't know whether the
-        /// protocol it's buffering, length prefixes, its responses, so the bounds below are what keep
-        /// an ordinary complete response from being mistaken for a truncated length prefixed one,
-        /// which would leave us waiting for bytes that are never coming, until the timeout.
-        /// An announcement is only believed when:
-        ///
-        /// - the chunk in hand is already large enough to plausibly be a truncated large response,
-        ///   so small complete responses are never second guessed, and
-        /// - it decodes to a non-zero length no greater than `maxAnnouncedLength`.
-        ///
-        /// Install `.varIntLengthPrefixed` handlers instead when the protocol *is* known to be
-        /// length prefixed, `VarIntFrameDecoder` does real framing and needs none of this.
-        ///
-        /// - Returns: The expected total byte count, or `nil` when the leading bytes shouldn't be
-        ///   read as a length prefix.
-        private static func announcedResponseLength(of response: ByteBuffer) -> Int? {
-            /// Announcements above this are not believed to be length prefixes.
-            let maxAnnouncedLength: UInt64 = 40960
-            /// Chunks at or below this are taken as complete, prefix shaped leading bytes or not.
-            let minChunkToTreatAsTruncated = 2000
-
-            guard response.readableBytes > minChunkToTreatAsTruncated,
-                // A malformed or non-minimal prefix isn't a length prefix as far as we're concerned.
-                let prefix = try? response.getVarInt(at: response.readerIndex, limit: maxAnnouncedLength),
-                prefix.value > 0
-            else { return nil }
-
-            // `limit` bounds the value, so this can't trap.
-            return prefix.byteCount + Int(prefix.value)
-        }
-
-        private func resetTimeoutTask() {
-            guard self.timeoutResets > 0 else { return }
-            self._timeoutResets.withLockedValue { $0 -= 1 }
-            self.timeoutTask.withLockedValue { $0?.cancel() }
+            // Enforce a timeout on the request...
             self.startTimeoutTask()
+
+            // Return the future result
+            return self.promise.futureResult
         }
 
         /// Enforce a timeout on the request.
         /// - Note: capture `self` STRONGLY. This scheduled task is the request's guaranteed
-        ///   settlement path. If a dial fails *before* a stream is established, the cached
-        ///   stream-event closure — the only other strong reference to this request — is released
+        ///   settlement path. If a dial fails before a stream is established, the cached
+        ///   stream-event closure (the only other strong reference to this request) is released
         ///   during connection teardown. A `[weak self]` here would then find `self` already
         ///   deallocated and silently no-op, leaking the promise forever (callers of `.get()` wait forever).
         ///   Holding `self` keeps the request alive until this fires or is cancelled on completion,
@@ -314,14 +408,19 @@ extension Application {
                     guard self.hasBegun && !self.hasCompleted else { return }
                     self._hasCompleted.withLockedValue { $0 = true }
 
+                    // A timeout is always a failure, a partial response is never delivered as
+                    // success. Trace log what accumulated if we're in `.untilClosed` mode.
                     self.buffer.withLockedValue { buffer in
-                        if let buffer {
-                            //if we have something in the buffer at this point, send it along...
-                            self.promise.succeed(Data(buffer.readableBytesView))
-                        } else {
-                            self.promise.fail(SingleRequestError.timedOut)
+                        if let buffer, buffer.readableBytes > 0 {
+                            self.host.logger.debug(
+                                "SingleRequest[\(self.proto)] timed out with \(buffer.readableBytes) bytes accumulated"
+                            )
+                            self.host.logger.trace(
+                                "SingleRequest[\(self.proto)] partial response: \(Array(buffer.readableBytesView))"
+                            )
                         }
                     }
+                    self.promise.fail(SingleRequestError.timedOut)
                 }
             }
         }

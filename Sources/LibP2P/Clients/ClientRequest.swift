@@ -14,7 +14,7 @@
 
 public import Multiaddr
 
-public struct ClientRequest {
+public struct ClientRequest: Sendable {
     public var addr: Multiaddr
     public var payload: ByteBuffer?
     public var `protocol`: String

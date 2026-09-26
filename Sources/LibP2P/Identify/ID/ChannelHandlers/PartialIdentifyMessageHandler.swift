@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 public import NIO
+internal import SwiftProtobuf
 
 extension Application.ChildChannelHandlers.Provider {
 

@@ -13,4 +13,3 @@
 //===----------------------------------------------------------------------===//
 
 @_documentation(visibility: internal) @_exported import LibP2P
-@_documentation(visibility: internal) @_exported import LibP2PTestUtils

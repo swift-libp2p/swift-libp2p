@@ -13,7 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 public import LibP2P
-public import LibP2PCrypto
+import LibP2PCrypto
+public import NIOConcurrencyHelpers
 
 /// A minimal `Connection` for wiring a MUXER handler onto an `EmbeddedChannel`.
 ///
@@ -134,8 +135,9 @@ public final class WritabilityObserver: ChannelInboundHandler, @unchecked Sendab
 /// of `Handler`, and shuttles atomic packets of type `Packet` between them.
 ///
 /// `Handler` is expected to be a `ChannelDuplexHandler` whose inbound and outbound "atom" is
-/// `Packet` — e.g. the YAMUX muxer operating on `Frame`s, or a hypothetical mplex muxer
-/// operating on its own message type.
+/// `Packet`
+///
+/// - Example: The YAMUX muxer operating on `YAMUX.Frame`s
 public struct EmbeddedPair<Handler: ChannelDuplexHandler, Packet>
 where Handler.InboundIn == Packet, Handler.OutboundOut == Packet {
     public let loop: EmbeddedEventLoop

@@ -17,7 +17,6 @@
 //
 
 import NIOCore
-public import NIOHTTP1
 public import RoutingKit
 
 extension RoutesBuilder {

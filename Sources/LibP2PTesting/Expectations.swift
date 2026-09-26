@@ -17,7 +17,6 @@
 //
 
 import Foundation
-public import LibP2PTestUtils
 import Testing
 
 //public func expectContent<D>(

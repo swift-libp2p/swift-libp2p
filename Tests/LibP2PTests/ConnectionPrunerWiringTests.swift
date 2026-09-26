@@ -83,7 +83,7 @@ extension LibP2PTests {
 
                 // The pruner is skipped when there's no connections, so register a connection.
                 let channel = NIOAsyncTestingChannel()
-                let connection = BasicConnectionLight(
+                let connection = BaseConnection(
                     application: app,
                     channel: channel,
                     direction: .inbound,
@@ -93,7 +93,7 @@ extension LibP2PTests {
                 try await manager.addConnection(connection, on: app.eventLoopGroup.next()).get()
 
                 // Two consults prove the sweep repeats, not merely that one prune ran.
-                let sweptRepeatedly = await waitUntilTrue(attempts: 600) { await pruner.pruneCallCount >= 2 }
+                let sweptRepeatedly = await waitUntil(attempts: 600) { await pruner.pruneCallCount >= 2 }
                 #expect(sweptRepeatedly)
 
                 try await manager.closeAllConnections().get()
@@ -110,10 +110,10 @@ extension LibP2PTests {
                 let loop = app.eventLoopGroup.next()
 
                 var channels: [NIOAsyncTestingChannel] = []
-                func liveConnection(_ direction: ConnectionStats.Direction) throws -> BasicConnectionLight {
+                func liveConnection(_ direction: ConnectionStats.Direction) throws -> BaseConnection {
                     let channel = NIOAsyncTestingChannel()
                     channels.append(channel)
-                    return BasicConnectionLight(
+                    return BaseConnection(
                         application: app,
                         channel: channel,
                         direction: direction,
@@ -154,7 +154,7 @@ extension LibP2PTests {
 
                 // `.close` closes the connection...
                 await channels[0].testingEventLoop.run()
-                let closed = await waitUntilTrue { toClose.status == .closed }
+                let closed = await waitUntil { toClose.status == .closed }
                 #expect(closed)
                 // ...while `.unregister` only drops the bookkeeping.
                 await channels[1].testingEventLoop.run()
@@ -179,7 +179,7 @@ extension LibP2PTests {
                 // `DummyConnection` is initialized `.closed`.
                 let closed = DummyConnection(direction: .inbound)
                 let channel = NIOAsyncTestingChannel()
-                let live = BasicConnectionLight(
+                let live = BaseConnection(
                     application: app,
                     channel: channel,
                     direction: .inbound,
@@ -206,51 +206,5 @@ extension LibP2PTests {
             }
         }
 
-        // MARK: - Helpers
-
-        /// Polls `predicate` until it holds or the attempts run out. Needed because prune verdicts
-        /// (and the closes they trigger) land asynchronously, off the calling task.
-        private func waitUntilTrue(
-            attempts: Int = 200,
-            every: Duration = .milliseconds(5),
-            _ predicate: () async -> Bool
-        ) async -> Bool {
-            for _ in 0..<attempts {
-                if await predicate() { return true }
-                try? await Task.sleep(for: every)
-            }
-            return await predicate()
-        }
-    }
-}
-
-// MARK: - Test helpers
-
-/// A `ConnectionPruner` that returns predefined verdicts and records what it was asked about.
-actor RecordingConnectionPruner: ConnectionPruner {
-    private let interval: TimeAmount?
-    private let verdicts: [UUID: ConnectionPruneAction]
-    private(set) var pruneCallCount = 0
-    private(set) var snapshots: [[ConnectionLivenessSnapshot]] = []
-    private(set) var contexts: [ConnectionPruneContext] = []
-
-    init(sweepInterval: TimeAmount? = nil, verdicts: [UUID: ConnectionPruneAction] = [:]) {
-        self.interval = sweepInterval
-        self.verdicts = verdicts
-    }
-
-    nonisolated var sweepInterval: TimeAmount? { self.interval }
-
-    func prune(
-        _ connections: [ConnectionLivenessSnapshot],
-        context: ConnectionPruneContext,
-        now: Date
-    ) async -> [UUID: ConnectionPruneAction] {
-        self.pruneCallCount += 1
-        self.snapshots.append(connections)
-        self.contexts.append(context)
-        // Only return verdicts for connections that are actually on the books.
-        let present = Set(connections.map(\.id))
-        return self.verdicts.filter { present.contains($0.key) }
     }
 }

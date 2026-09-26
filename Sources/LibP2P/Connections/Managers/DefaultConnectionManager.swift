@@ -234,7 +234,10 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     }
 
     func getBestConnectionForPeer(peer: PeerID, on loop: EventLoop?) -> EventLoopFuture<Connection> {
-        connectionsInvolvingPeer(peer: peer).flatMapThrowing { connections -> Connection in
+        // Only return connections whos remotePeer matches the peer
+        eventLoop.submit { () -> [Connection] in
+            self.connections.values.filter { $0.remotePeer == peer }
+        }.flatMapThrowing { connections -> Connection in
             //Or some other check like ping / latency / last seen / etc...
             guard let best = connections.first(where: { $0.status == .upgraded }) else {
                 throw ConnectionManagerError.noConnectionToPeer
@@ -354,7 +357,7 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
 
     func closeConnectionsToPeer(peer: PeerID, on loop: EventLoop?) -> EventLoopFuture<Bool> {
         connectionsInvolvingPeer(peer: peer).flatMap { connections -> EventLoopFuture<Bool> in
-            connections.map { $0.close() }.flatten(on: self.eventLoop).transform(to: true)
+            connections.map { $0.close() }.flatten(on: self.eventLoop).map { true }
         }.hop(to: loop ?? eventLoop)
     }
 

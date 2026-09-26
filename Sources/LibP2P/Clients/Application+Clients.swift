@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 public import LibP2PCore
+internal import NIOConcurrencyHelpers
 
 extension Application {
     public var clients: Clients {
@@ -33,9 +34,10 @@ extension Application {
             struct ClientFactory {
                 let factory: (@Sendable (Application) -> Client)
             }
-            let clients: NIOLockedValueBox<[String: ClientFactory]>
+            /// Installed clients, in registration order.
+            let clients: NIOLockedValueBox<SubsystemRegistry<ClientFactory>>
             init() {
-                self.clients = .init([:])
+                self.clients = .init(.init())
             }
         }
 
@@ -53,11 +55,8 @@ extension Application {
 
         public func client(forKey key: String) -> Client? {
             self.storage.clients.withLockedValue { clients in
-                if let c = clients[key] {
-                    return c.factory(self.application)
-                } else {
-                    return nil
-                }
+                guard let factory = clients.value(forKey: key)?.factory else { return nil }
+                return factory(self.application)
             }
         }
 
@@ -65,37 +64,57 @@ extension Application {
             provider.run(self.application)
         }
 
+        /// Installs a `Client` under `key`, appending it to the registration order.
+        ///
+        /// - Important: Traps if another client is already installed under `key`. Use
+        ///   ``replace(key:_:)`` to override one on purpose, including the TCP client the
+        ///   `Application` installs for you.
         @preconcurrency public func use(key: String, _ client: @Sendable @escaping (Application) -> (Client)) {
-            self.storage.clients.withLockedValue { clients in
-                clients[key] = .init(factory: client)
+            let result = self.storage.clients.withLockedValue { clients in
+                clients.register(.init(factory: client), forKey: key)
             }
+            if result == .duplicate {
+                duplicateRegistration("Client", key: key, replaceWith: "app.clients.replace(key:_:)")
+            }
+        }
+
+        /// Replaces the client installed under `key`, keeping its position.
+        ///
+        /// Installs it if nothing is registered under that key yet.
+        @preconcurrency public func replace(key: String, _ client: @Sendable @escaping (Application) -> (Client)) {
+            self.storage.clients.withLockedValue { clients in
+                clients.replace(.init(factory: client), forKey: key)
+            }
+        }
+
+        /// Marks everything installed so far as an `Application` built-in default.
+        ///
+        /// Called by the bootstrap after it installs the TCP client, so providers don't each need a
+        /// default-aware twin. A later explicit ``use(key:_:)`` of a defaulted key takes it over
+        /// silently rather than tripping the duplicate trap.
+        internal func markInstalledAsDefaults() {
+            self.storage.clients.withLockedValue { $0.markInstalledAsDefaults() }
         }
 
         public let application: Application
 
+        /// The installed clients' keys, in registration order.
         public var available: [String] {
-            self.storage.clients.withLockedValue {
-                $0.keys.map { $0 }
-            }
+            self.storage.clients.withLockedValue { $0.keys }
         }
 
         var storage: Storage {
-            if self.application.isShuttingDown {
-                // Race window: this Application has begun teardown.
-                // Returning a fresh empty `Storage` lets stranded
-                // event-loop callbacks finish vacuously instead of
-                // trapping at the `fatalError` below.
-                return Storage()
-            }
-            guard let storage = self.application.storage[Key.self] else {
-                fatalError("Clients not initialized. Initialize with app.clients.initialize()")
-            }
-            return storage
+            self.application.subsystemStorage(
+                Key.self,
+                subsystem: "Clients",
+                initializer: "app.clients.initialize()",
+                makeEmpty: Storage.init
+            )
         }
 
         public func dump() {
             print("*** Installed Clients ***")
-            print(self.storage.clients.withLockedValue { $0.keys.map { $0 }.joined(separator: "\n") })
+            print(self.storage.clients.withLockedValue { $0.preferenceList })
             print("----------------------------------")
         }
     }

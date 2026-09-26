@@ -45,7 +45,7 @@ extension LibP2PTests {
                 // The verdict arrives via `eventLoop.execute` from a `Task`, so drive the loop while we
                 // poll. `NIOAsyncTestingEventLoop` is thread-safe, unlike `EmbeddedEventLoop`.
                 let droppedIt = try await driving(loop) {
-                    await waitUntilTrue { muxer.wasAskedToRemove(child) }
+                    await waitUntil { muxer.wasAskedToRemove(child) }
                 }
                 #expect(droppedIt)
 
@@ -74,7 +74,7 @@ extension LibP2PTests {
 
                 // multistream-select lands once the verdict does, not before.
                 let negotiating = try await driving(loop) {
-                    await waitUntilTrue {
+                    await waitUntil {
                         (try? await Self.hasHandler(named: "upgrader", on: child, driving: loop)) == true
                     }
                 }
@@ -137,7 +137,7 @@ extension LibP2PTests {
 
                 let initialized: EventLoopFuture<Void> = connection.inboundMuxedChildChannelInitializer(child)
                 try await driving(loop) { try await initialized.get() }
-                _ = try await driving(loop) { await waitUntilTrue { await gater.inboundCallCount == 1 } }
+                _ = try await driving(loop) { await waitUntil { await gater.inboundCallCount == 1 } }
 
                 #expect(await gater.offeredProtocols == app.routes.all.map { $0.description })
 
@@ -161,7 +161,7 @@ extension LibP2PTests {
                 try await driving(loop) { try await initialized.get() }
 
                 let droppedIt = try await driving(loop) {
-                    await waitUntilTrue { muxer.wasAskedToRemove(child) }
+                    await waitUntil { muxer.wasAskedToRemove(child) }
                 }
                 #expect(droppedIt)
                 #expect(try await Self.hasHandler(named: "upgrader", on: child, driving: loop) == false)
@@ -187,7 +187,7 @@ extension LibP2PTests {
                 try await driving(loop) { try await initialized.get() }
 
                 let negotiating = try await driving(loop) {
-                    await waitUntilTrue {
+                    await waitUntil {
                         (try? await Self.hasHandler(named: "upgrader", on: child, driving: loop)) == true
                     }
                 }
@@ -218,7 +218,7 @@ extension LibP2PTests {
                 }
 
                 let failed = try await driving(loop) {
-                    await waitUntilTrue { !reported.withLockedValue { $0 }.isEmpty }
+                    await waitUntil { !reported.withLockedValue { $0 }.isEmpty }
                 }
                 #expect(failed)
                 #expect(reported.withLockedValue { $0 }.first?.contains("never this peer") == true)
@@ -248,7 +248,7 @@ extension LibP2PTests {
                 }
 
                 let asked = try await driving(loop) {
-                    await waitUntilTrue { muxer.newStreamCallCount == 1 }
+                    await waitUntil { muxer.newStreamCallCount == 1 }
                 }
                 #expect(asked)
                 #expect(muxer.requestedProtocols == ["/echo/1.0.0"])
@@ -288,7 +288,7 @@ extension LibP2PTests {
                 let initialized: EventLoopFuture<Void> = base.inboundMuxedChildChannelInitializer(child)
                 try await driving(loop) { try await initialized.get() }
                 let droppedIt = try await driving(loop) {
-                    await waitUntilTrue { muxer.wasAskedToRemove(child) }
+                    await waitUntil { muxer.wasAskedToRemove(child) }
                 }
                 #expect(droppedIt)
                 #expect(await gater.inboundCallCount == 1)
@@ -357,19 +357,6 @@ extension LibP2PTests {
             return try await body()
         }
 
-        /// Polls `predicate` until it holds or the attempts run out. Needed because a gater's verdict —
-        /// and the teardown it triggers — land asynchronously, off the calling task.
-        private func waitUntilTrue(
-            attempts: Int = 200,
-            every: Duration = .milliseconds(5),
-            _ predicate: () async -> Bool
-        ) async -> Bool {
-            for _ in 0..<attempts {
-                if await predicate() { return true }
-                try? await Task.sleep(for: every)
-            }
-            return await predicate()
-        }
     }
 }
 

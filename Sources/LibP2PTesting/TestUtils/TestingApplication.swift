@@ -16,9 +16,8 @@
 //  Modified by LibP2P on 1/29/26.
 //
 
-public import LibP2PCrypto
-
-@testable public import LibP2P
+public import LibP2P
+import LibP2PCrypto
 
 extension Application {
     public enum Method {
@@ -131,7 +130,7 @@ extension Application {
     //        }
     //    }
 
-    package struct InMemory {
+    package struct InMemory: Sendable {
         let app: Application
         package init(app: Application) throws {
             self.app = app

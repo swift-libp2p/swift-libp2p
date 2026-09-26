@@ -14,6 +14,7 @@
 
 public import LibP2PCore
 import NIO
+import NIOConcurrencyHelpers
 import PeerID
 
 // `SecurityUpgrader` now lives in LibP2PCore (re-exported here), so security modules can depend
@@ -24,7 +25,7 @@ extension Application {
         .init(application: self)
     }
 
-    public struct SecurityUpgraders {
+    public struct SecurityUpgraders: Sendable {
         public struct Provider: Sendable {
             let run: @Sendable (Application) -> Void
 
@@ -37,10 +38,11 @@ extension Application {
             struct SecurityFactory {
                 let factory: (@Sendable (Application) -> SecurityUpgrader)
             }
-            /// Security Upgraders stored in order of preference
-            let secUpgraders: NIOLockedValueBox<[String: SecurityFactory]>
+
+            /// Security Upgraders, in registration order, which is the order of preference.
+            let secUpgraders: NIOLockedValueBox<SubsystemRegistry<SecurityFactory>>
             init() {
-                self.secUpgraders = .init([:])
+                self.secUpgraders = .init(.init())
             }
         }
 
@@ -61,12 +63,9 @@ extension Application {
         //        }
 
         public func upgrader(forKey key: String) -> SecurityUpgrader? {
-            self.storage.secUpgraders.withLockedValue {
-                if let factory = $0.first(where: { $0.key == key })?.value.factory {
-                    return factory(self.application)
-                } else {
-                    return nil
-                }
+            self.storage.secUpgraders.withLockedValue { upgraders in
+                guard let factory = upgraders.value(forKey: key)?.factory else { return nil }
+                return factory(self.application)
             }
         }
 
@@ -104,20 +103,36 @@ extension Application {
             for provider in providers { provider.run(self.application) }
         }
 
+        /// Installs a security module, appending it to the preference list.
+        ///
+        /// - Important: Traps if another security module is already installed under `S.key`. Use
+        ///   ``replace(_:)`` to override one on purpose.
         @preconcurrency public func use<S: SecurityUpgrader>(_ makeUpgrader: @Sendable @escaping (Application) -> (S)) {
+            let result = self.storage.secUpgraders.withLockedValue { security in
+                security.register(.init(factory: makeUpgrader), forKey: S.key)
+            }
+            if result == .duplicate {
+                duplicateRegistration("Security module", key: S.key, replaceWith: "app.security.replace(_:)")
+            }
+        }
+
+        /// Replaces the security module installed under `S.key`, keeping its position in the
+        /// preference list.
+        ///
+        /// Installs it if nothing is registered under that key yet.
+        @preconcurrency public func replace<S: SecurityUpgrader>(
+            _ makeUpgrader: @Sendable @escaping (Application) -> (S)
+        ) {
             self.storage.secUpgraders.withLockedValue { security in
-                guard security[S.key] == nil else {
-                    self.application.logger.warning("`\(S.key)` Security Module Already Installed - Skipping")
-                    return
-                }
-                security[S.key] = .init(factory: makeUpgrader)
+                security.replace(.init(factory: makeUpgrader), forKey: S.key)
             }
         }
 
         public let application: Application
 
+        /// The installed security modules' keys, in order of preference.
         public var available: [String] {
-            self.storage.secUpgraders.withLockedValue { $0.map { $0.key } }
+            self.storage.secUpgraders.withLockedValue { $0.keys }
         }
 
         //        public var installers:[SecurityProtocolInstaller] {
@@ -125,28 +140,17 @@ extension Application {
         //        }
 
         var storage: Storage {
-            if self.application.isShuttingDown {
-                // Race window: this Application has begun teardown.
-                // Returning a fresh empty `Storage` lets stranded
-                // event-loop callbacks finish vacuously instead of
-                // trapping at the `fatalError` below.
-                return Storage()
-            }
-            guard let storage = self.application.storage[Key.self] else {
-                fatalError("Transport Upgraders not initialized. Initialize with app.security.initialize()")
-            }
-            return storage
+            self.application.subsystemStorage(
+                Key.self,
+                subsystem: "Security Upgraders",
+                initializer: "app.security.initialize()",
+                makeEmpty: Storage.init
+            )
         }
 
         public func dump() {
-            print("*** Installed Security Modules ***")
-            print(
-                self.storage.secUpgraders.withLockedValue {
-                    $0.keys.enumerated().map { "[\($0.offset + 1)] - \($0.element)" }.joined(
-                        separator: "\n"
-                    )
-                }
-            )
+            print("*** Installed Security Modules (in order of preference) ***")
+            print(self.storage.secUpgraders.withLockedValue { $0.preferenceList })
             print("----------------------------------")
         }
     }

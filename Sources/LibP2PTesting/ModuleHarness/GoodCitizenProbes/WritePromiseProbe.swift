@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
-public import LibP2P
+import LibP2P
 import NIOConcurrencyHelpers
 public import NIOCore
 
@@ -100,20 +100,20 @@ func runWritePromiseProbe(
     client: Application,
     addr: Multiaddr,
     holdProto: String,
-    clientEvents: HarnessEventRecorder,
+    clientEvents: EventRecorder,
     strict: Bool,
     report: inout ConformanceReport
 ) async {
     let checkName = "Stream write future is tied to the socket write (not completed prematurely)"
 
-    try? client.newStream(
+    try? await client.newStream(
         to: addr,
         forProtocol: holdProto,
         withHandlers: .handlers([.varIntLengthPrefixed])
     ) { req in
         req.eventLoop.makeSucceededFuture(RawResponse(payload: ByteBuffer()))
     }
-    let opened = await harnessWaitUntil {
+    let opened = await waitUntil {
         clientEvents.openedStreams(forProtocol: holdProto).contains { $0.streamState == .open }
     }
     guard opened,
@@ -148,7 +148,7 @@ func runWritePromiseProbe(
     // Release the flush (drives the socket write for a correctly-threaded promise), then wait — bounded —
     // for the future to complete. Combined with `completedWhileGated` this classifies the module.
     try? await connChannel.eventLoop.submit { gate.openGate() }.get()
-    let resolvedAfterFlush = await harnessWaitUntil(attempts: 100, everyMillis: 20) {
+    let resolvedAfterFlush = await waitUntil(attempts: 100, every: .milliseconds(20)) {
         completed.withLockedValue { $0 }
     }
 

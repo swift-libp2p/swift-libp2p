@@ -53,8 +53,14 @@ public func runMuxerConformance(
     let eventsProto = "/mux-harness-events/1.0.0"
     let requestTimeout: TimeAmount = .seconds(15)
 
-    let host = try await makeHarnessNode(security: security, muxer: muxer, logLevel: logLevel)
-    let client = try await makeHarnessNode(security: security, muxer: muxer, logLevel: logLevel)
+    let host = try await makeTestNode(logLevel: logLevel) { app in
+        app.security.use(security)
+        app.muxers.use(muxer)
+    }
+    let client = try await makeTestNode(logLevel: logLevel) { app in
+        app.security.use(security)
+        app.muxers.use(muxer)
+    }
 
     installEchoRoute(on: host, proto: echoProto)
     installHoldRoute(on: host, proto: holdProto)
@@ -66,8 +72,8 @@ public func runMuxerConformance(
     let (streamProbeProvider, streamProbes) = makeStreamProbeProvider()
     installProbeEchoRoute(on: host, proto: probeProto, probeProvider: streamProbeProvider)
 
-    let clientEvents = HarnessEventRecorder()
-    let hostEvents = HarnessEventRecorder()
+    let clientEvents = EventRecorder()
+    let hostEvents = EventRecorder()
     clientEvents.subscribe(to: client)
     hostEvents.subscribe(to: host)
 
@@ -75,7 +81,7 @@ public func runMuxerConformance(
         try await host.startup()
         try await client.startup()
 
-        let addr = try host.harnessDialableAddress
+        let addr = try host.dialableAddress
 
         // MARK: Upgrade reached + negotiated codec
         // A warm-up echo forces the connection through the full upgrade pipeline.
@@ -86,14 +92,14 @@ public func runMuxerConformance(
             withRequest: warmup,
             withHandlers: .handlers([.varIntLengthPrefixed]),
             withTimeout: requestTimeout
-        ).get()
+        )
         report.check(
             "Warm-up echo round-trips",
             warmupResponse == warmup,
             warmupResponse == warmup ? nil : "sent \(warmup.count)B, received \(warmupResponse.count)B"
         )
 
-        let reachedUpgraded = await harnessWaitUntil {
+        let reachedUpgraded = await waitUntil {
             let conns = (try? await client.connections.getConnections(on: nil).get()) ?? []
             return conns.contains { $0.isMuxed && $0.stats.status == .upgraded }
         }
@@ -128,7 +134,7 @@ public func runMuxerConformance(
                     withRequest: payload,
                     withHandlers: .handlers([.varIntLengthPrefixed]),
                     withTimeout: requestTimeout
-                ).get()
+                )
                 report.check(
                     "Round-trip \(size)B payload",
                     response == payload,
@@ -142,31 +148,23 @@ public func runMuxerConformance(
         // MARK: Concurrent streams (multiplexing independence)
         // All requests are launched before any is awaited, so they genuinely overlap on the wire.
         if concurrentStreams > 0 {
-            let el = client.eventLoopGroup.next()
-            var expected: [Data] = []
-            var futures: [EventLoopFuture<Data>] = []
-            for i in 0..<concurrentStreams {
-                let payload = Data("concurrent-\(i)-".utf8) + randomData(count: 4096)
-                expected.append(payload)
-                futures.append(
-                    client.newRequest(
-                        to: addr,
-                        forProtocol: echoProto,
-                        withRequest: payload,
-                        withHandlers: .handlers([.varIntLengthPrefixed]),
-                        withTimeout: requestTimeout
-                    )
-                )
+            let payloads = (0..<concurrentStreams).map { i in
+                Data("concurrent-\(i)-".utf8) + randomData(count: 4096)
             }
-            let results = try await EventLoopFuture.whenAllComplete(futures, on: el).get()
-            var allMatched = true
-            for (i, result) in results.enumerated() {
-                switch result {
-                case .success(let data) where data == expected[i]:
-                    continue
-                default:
-                    allMatched = false
+            let allMatched = await withTaskGroup(of: Bool.self) { group in
+                for payload in payloads {
+                    group.addTask {
+                        let response = try? await client.newRequest(
+                            to: addr,
+                            forProtocol: echoProto,
+                            withRequest: payload,
+                            withHandlers: .handlers([.varIntLengthPrefixed]),
+                            withTimeout: requestTimeout
+                        )
+                        return response == payload
+                    }
                 }
+                return await group.reduce(true) { $0 && $1 }
             }
             report.check(
                 "\(concurrentStreams) concurrent streams each round-trip independently",
@@ -175,7 +173,7 @@ public func runMuxerConformance(
         }
 
         // MARK: Lifecycle events (client side)
-        _ = await harnessWaitUntil { clientEvents.contains("closedStream") }
+        _ = await waitUntil { clientEvents.contains("closedStream") }
         report.check("Emits .connected event", clientEvents.contains("connected"))
         report.check("Emits .upgraded event", clientEvents.contains("upgraded"))
         report.check("Emits .openedStream event", clientEvents.contains("openedStream"))
@@ -226,8 +224,8 @@ public func runMuxerConformance(
             withRequest: Data("probe".utf8),
             withHandlers: .handlers([.varIntLengthPrefixed]),
             withTimeout: requestTimeout
-        ).get()
-        _ = await harnessWaitUntil { streamProbes.withLockedValue { $0.contains { $0.readCompletes > 0 } } }
+        )
+        _ = await waitUntil { streamProbes.withLockedValue { $0.contains { $0.readCompletes > 0 } } }
         let probes = streamProbes.withLockedValue { $0 }
         let totalReads = probes.reduce(0) { $0 + $1.reads }
         let sawReadComplete = probes.contains { $0.sawReadCompleteAfterRead }
@@ -249,14 +247,14 @@ public func runMuxerConformance(
             // Open a client-controlled stream to the hold route. We use the closure-based `newStream` (not
             // the fire-and-forget variant) so the outbound stream has a responder and actually opens; the
             // closure itself is a no-op since we only need a live stream handle to reset.
-            try? client.newStream(
+            try? await client.newStream(
                 to: addr,
                 forProtocol: holdProto,
                 withHandlers: .handlers([.varIntLengthPrefixed])
             ) { req in
                 req.eventLoop.makeSucceededFuture(RawResponse(payload: ByteBuffer()))
             }
-            let holdOpened = await harnessWaitUntil {
+            let holdOpened = await waitUntil {
                 clientEvents.openedStreams(forProtocol: holdProto).contains { $0.streamState == .open }
             }
             let holdStreamToReset =
@@ -264,7 +262,7 @@ public func runMuxerConformance(
                 ?? clientEvents.openedStreams(forProtocol: holdProto).first
             if holdOpened, let holdStream = holdStreamToReset {
                 _ = try? await holdStream.reset().get()
-                let becameReset = await harnessWaitUntil { holdStream.streamState == .reset }
+                let becameReset = await waitUntil { holdStream.streamState == .reset }
                 report.check(
                     "reset() transitions stream to .reset",
                     becameReset,
@@ -272,7 +270,7 @@ public func runMuxerConformance(
                 )
                 let writeRejected = await writeIsRejected(on: holdStream)
                 report.check("Write on a reset stream is rejected", writeRejected)
-                let propagated = await harnessWaitUntil { hostEvents.closedStream(forProtocol: holdProto) }
+                let propagated = await waitUntil { hostEvents.closedStream(forProtocol: holdProto) }
                 report.check("Reset propagates to the peer (host observes stream close)", propagated)
                 // Idempotency: a second reset() on an already-reset stream must settle without crashing or
                 // leaking a promise (guards the class of bugs fixed when reset was first enabled).
@@ -286,14 +284,14 @@ public func runMuxerConformance(
         }
 
         // MARK: Idempotency — double graceful close must not crash or leak a promise
-        try? client.newStream(
+        try? await client.newStream(
             to: addr,
             forProtocol: holdProto,
             withHandlers: .handlers([.varIntLengthPrefixed])
         ) { req in
             req.eventLoop.makeSucceededFuture(RawResponse(payload: ByteBuffer()))
         }
-        let closeOpened = await harnessWaitUntil {
+        let closeOpened = await waitUntil {
             clientEvents.openedStreams(forProtocol: holdProto).contains { $0.streamState == .open }
         }
         if closeOpened,
@@ -318,17 +316,17 @@ public func runMuxerConformance(
         // muxer-dependent (some fire errorCaught+inactive, some only inactive) — so the hard contract is
         // "responder is notified of the teardown", with a `.error`-specific advisory. We reuse a reset to
         // generate the terminal event, so that half of the check requires `testReset`.
-        try? client.newStream(
+        try? await client.newStream(
             to: addr,
             forProtocol: eventsProto,
             withHandlers: .handlers([.varIntLengthPrefixed])
         ) { req in
             req.eventLoop.makeSucceededFuture(RawResponse(payload: ByteBuffer()))
         }
-        let eventsOpened = await harnessWaitUntil {
+        let eventsOpened = await waitUntil {
             clientEvents.openedStreams(forProtocol: eventsProto).contains { $0.streamState == .open }
         }
-        let sawReady = await harnessWaitUntil { observedHostEvents.withLockedValue { $0.contains("ready") } }
+        let sawReady = await waitUntil { observedHostEvents.withLockedValue { $0.contains("ready") } }
         if testReset,
             eventsOpened,
             let eventsStream = clientEvents.openedStreams(forProtocol: eventsProto).first(where: {
@@ -336,7 +334,7 @@ public func runMuxerConformance(
             })
         {
             _ = try? await eventsStream.reset().get()
-            let sawTerminal = await harnessWaitUntil {
+            let sawTerminal = await waitUntil {
                 observedHostEvents.withLockedValue { $0.contains("closed") || $0.contains("error") }
             }
             let observed = observedHostEvents.withLockedValue { $0 }

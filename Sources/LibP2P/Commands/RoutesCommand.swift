@@ -13,10 +13,11 @@
 //===----------------------------------------------------------------------===//
 //
 //  Created by Vapor
-//  Modified by Brandon Toms on 5/1/22.
+//  Modified by swift-libp2p on 5/1/22.
 //
 
 public import ConsoleKit
+import LibP2PCrypto
 import NIO
 import RoutingKit
 
@@ -84,7 +85,7 @@ public final class RoutesCommand: AsyncCommand {
 
                         if let handlers = context.application.responder.pipelineConfig(
                             for: route.description,
-                            on: DummyConnection()
+                            on: RoutePreviewConnection()
                         ) {
                             for handler in handlers {
                                 var handlerDescription = "\(type(of: handler))"
@@ -227,5 +228,78 @@ extension Console {
         }
 
         hr()
+    }
+}
+
+/// A minimum `Connection` handed to `Responder.pipelineConfig(for:on:)` as the
+/// `routes` command navigates each route's handler list for display.
+private final class RoutePreviewConnection: Connection, @unchecked Sendable {
+    var channel: Channel = NIOAsyncTestingChannel()
+    var logger: Logger = Logger(label: "RoutePreviewConnection")
+    var id: UUID
+    var state: ConnectionState = .closed
+    var localAddr: Multiaddr? = nil
+    var remoteAddr: Multiaddr? = nil
+    var localPeer: PeerID
+    var remotePeer: PeerID? = nil
+    var stats: ConnectionStats
+    var tags: Any? = nil
+    var registry: [UInt64: LibP2PCore.Stream] = [:]
+    var streams: [LibP2PCore.Stream] = []
+    var muxer: Muxer? = nil
+    var isMuxed: Bool = false
+    var status: ConnectionStats.Status = .closed
+    var timeline: [ConnectionStats.Status: Date] = [:]
+
+    init() {
+        let id = UUID()
+        self.id = id
+        self.localPeer = try! PeerID(.Ed25519)
+        self.stats = ConnectionStats(uuid: id, direction: .inbound)
+    }
+
+    func inboundMuxedChildChannelInitializer(_ childChannel: Channel) -> EventLoopFuture<Void> {
+        self.channel.eventLoop.makeFailedFuture(Errors.routePreviewOnly)
+    }
+
+    func outboundMuxedChildChannelInitializer(_ childChannel: Channel, protocol: String) -> EventLoopFuture<Void> {
+        self.channel.eventLoop.makeFailedFuture(Errors.routePreviewOnly)
+    }
+
+    func newStream(_ protos: [String]) -> EventLoopFuture<LibP2PCore.Stream> {
+        self.channel.eventLoop.makeFailedFuture(Errors.routePreviewOnly)
+    }
+
+    func newStreamSync(_ proto: String) throws -> LibP2PCore.Stream {
+        throw Errors.routePreviewOnly
+    }
+
+    func newStreamHandlerSync(_ proto: String) throws -> StreamHandler {
+        throw Errors.routePreviewOnly
+    }
+
+    func newStream(forProtocol: String) {
+        return
+    }
+
+    func removeStream(id: UInt64) -> EventLoopFuture<Void> {
+        self.channel.eventLoop.makeFailedFuture(Errors.routePreviewOnly)
+    }
+
+    func acceptStream(_ stream: LibP2PCore.Stream, protocol: String, metadata: [String]) -> EventLoopFuture<Bool> {
+        self.channel.eventLoop.makeFailedFuture(Errors.routePreviewOnly)
+    }
+
+    @discardableResult
+    func hasStream(forProtocol proto: String, direction: ConnectionStats.Direction? = nil) -> LibP2PCore.Stream? {
+        nil
+    }
+
+    func close() -> EventLoopFuture<Void> {
+        self.channel.eventLoop.makeFailedFuture(Errors.routePreviewOnly)
+    }
+
+    enum Errors: Error {
+        case routePreviewOnly
     }
 }
