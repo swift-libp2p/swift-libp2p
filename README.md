@@ -247,8 +247,8 @@ try await lib.withStream(
 
 The minimum Swift version supported by swift-libp2p releases are detailed below:
 
-SwiftNIO            | Minimum Swift Version
---------------------|----------------------
+LibP2P             | Minimum Swift Version
+-------------------|----------------------
 `0.0.0 ..< 0.4.0`  | 6.0
 `0.4.0 ...`        | 6.1
 
