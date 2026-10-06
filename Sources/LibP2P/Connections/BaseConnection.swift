@@ -439,11 +439,7 @@ extension BaseConnection {
 
 extension BaseConnection {
 
-    public enum NewStreamMode {
-        case openStream
-        case ifOneDoesntAlreadyExist
-        case ifOutboundDoesntAlreadyExist
-    }
+    public typealias NewStreamMode = Application.Connections.NewStreamMode
 
     private struct StreamCache {
         /// Distinguishes two requests for the same protocol, so a refusal removes the right one.

@@ -38,6 +38,14 @@ public protocol AppConnection: Connection, CustomStringConvertible {
     ///   here because responding through the application's routes is an application-layer concern.
     func newStream(forProtocol proto: String)
 
+    /// Opens a new outbound stream for `proto`, delegating to the application's registered route
+    /// handlers, unless `mode` says an existing stream should be reused.
+    ///
+    /// - Note: A default implementation is provided. It checks ``LibP2PCore/Connection/hasStream(forProtocol:direction:)``
+    ///   but can't see streams that are still being negotiated, so conformers that track pending
+    ///   streams should implement this themselves (as `BaseConnection` does).
+    func newStream(forProtocol proto: String, mode: Application.Connections.NewStreamMode)
+
     //func newStream(forProtocol proto:String, withResponder responder:Responder)
     func newStream(
         forProtocol proto: String,
@@ -77,6 +85,36 @@ public protocol AppConnection: Connection, CustomStringConvertible {
     ///
     /// - Note: Called on the Connection's `EventLoop`, before we transition to `.closing`.
     func prepareForClose()
+}
+
+/// How ``AppConnection/newStream(forProtocol:mode:)`` treats streams that already exist for the protocol.
+extension Application.Connections {
+    public enum NewStreamMode: Sendable {
+        
+        /// Always open a new stream
+        case openStream
+        
+        /// Only open a stream if there isn't one for the protocol, in either direction
+        case ifOneDoesntAlreadyExist
+        
+        /// Only open a stream if there isn't an outbound one for the protocol
+        case ifOutboundDoesntAlreadyExist
+        
+    }
+}
+
+extension AppConnection {
+    public func newStream(forProtocol proto: String, mode: Application.Connections.NewStreamMode) {
+        switch mode {
+        case .openStream:
+            break
+        case .ifOneDoesntAlreadyExist:
+            guard self.hasStream(forProtocol: proto, direction: nil) == nil else { return }
+        case .ifOutboundDoesntAlreadyExist:
+            guard self.hasStream(forProtocol: proto, direction: .outbound) == nil else { return }
+        }
+        self.newStream(forProtocol: proto)
+    }
 }
 
 // MARK: - Async

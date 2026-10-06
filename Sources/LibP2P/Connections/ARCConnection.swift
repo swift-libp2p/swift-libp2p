@@ -614,11 +614,7 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
         self.channel.eventLoop.makeFailedFuture(Application.Connections.Errors.notImplementedYet)
     }
 
-    public enum NewStreamMode {
-        case openStream
-        case ifOneDoesntAlreadyExist
-        case ifOutboundDoesntAlreadyExist
-    }
+    public typealias NewStreamMode = Application.Connections.NewStreamMode
 
     private struct StreamCache {
         let proto: String
