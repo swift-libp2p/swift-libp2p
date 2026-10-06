@@ -603,7 +603,7 @@ public class BasicConnectionLight: AppConnection, @unchecked Sendable {
             /// If the connection has already closed (e.g. a coalesced cold dial whose shared
             /// connection failed to upgrade), fail fast instead of queueing a stream that will never
             /// open and would otherwise only surface as a timeout.
-            guard self.stats.status != .closed && self.stats.status != .closing else {
+            guard self.acceptsNewStreams else {
                 self.logger.debug("Refusing new `\(proto)` stream — connection is \(self.stats.status)")
                 throw Application.Connections.Errors.connectionUpgradeFailed
             }

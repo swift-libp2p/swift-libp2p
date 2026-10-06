@@ -721,7 +721,7 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
 
         return self.eventLoop.submit {
             /// If the connection has already closed, fail fast.
-            guard self.stats.status != .closed && self.stats.status != .closing else {
+            guard self.acceptsNewStreams else {
                 self.logger.debug("Refusing new `\(proto)` stream — connection is \(self.stats.status)")
                 throw Application.Connections.Errors.connectionUpgradeFailed
             }

@@ -251,7 +251,7 @@ final class BasicInMemoryConnectionManager: ConnectionManager, @unchecked Sendab
     /// Attempts to classify our ability to connect to a given peer (returning .notConnected, if we know nothing about them)
     func connectedness(peer: PeerID, on loop: EventLoop?) -> EventLoopFuture<Connectedness> {
         connectionsInvolvingPeer(peer: peer).map { conns -> Connectedness in
-            if conns.contains(where: { $0.status != .closing && $0.status != .closed }) {
+            if conns.contains(where: { $0.acceptsNewStreams }) {
                 return .connected
             }
 
