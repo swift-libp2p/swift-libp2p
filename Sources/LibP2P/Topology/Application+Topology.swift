@@ -134,7 +134,7 @@ extension Application {
             let registrations = self.storage.registrations.withLockedValue { $0 }
 
             for registration in registrations {
-                guard registration.handler.onNewStream != nil else { return }
+                guard registration.handler.onNewStream != nil else { continue }
                 if registration.protocols.stringValue == stream.protocolCodec {
                     self.application.logger.trace("Topology::Issuing onNewStream for \(registration)")
                     registration.handler.onNewStream?(stream)
@@ -163,7 +163,7 @@ extension Application {
                     return
                 case .success(let protocols):
                     for registration in registrations {
-                        guard registration.handler.onDisconnect != nil else { return }
+                        guard registration.handler.onDisconnect != nil else { continue }
                         if registration.isInterestedIn(change: protocols) {
                             self.application.logger.trace("Topology::Issuing onDisconnect for \(registration)")
                             registration.handler.onDisconnect?(peer)
