@@ -182,52 +182,66 @@ extension Application {
         open: @escaping @Sendable (AppConnection) -> Void
     ) -> EventLoopFuture<Void> {
         let el = self.eventLoopGroup.next()
-        // BUG in SwiftNIO (please report), unleakable promise leaked.:474: Fatal error: leaking promise created at (file: "BUG in SwiftNIO (please report), unleakable promise leaked.", line: 474)
-        return self.resolveAddressForBestTransport(to, on: el).flatMap { ma -> EventLoopFuture<Void> in
-            /// Opens the stream on a brand new Connection to `ma`.
-            @Sendable func coldDial() -> EventLoopFuture<Void> {
-                self.logger.trace("Attempting to open new Connection")
-                guard let transport = try? self.transports.findBest(forMultiaddr: ma) else {
-                    return el.makeFailedFuture(Errors.noTransportForMultiaddr(ma))
-                }
-                self.logger.trace("Found Transport for dialing peer \(transport)")
-                /// Coalesce concurrent cold dials to this address onto a single connection.
-                return self.connectionManager.dial(to: ma) {
-                    transport.dial(address: ma).flatMapThrowing { connection -> AppConnection in
-                        guard let conn = connection as? AppConnection else {
-                            throw Errors.noTransportForMultiaddr(ma)
-                        }
-                        return conn
-                    }
-                }.flatMap { conn -> EventLoopFuture<Void> in
-                    self.logger.trace("Asking Connection to open a new stream for `\(proto)`")
-                    open(conn)
-                    return conn.channel.eventLoop.makeSucceededVoidFuture()
-                }
+        return self._connection(to: to, on: el).flatMap { found -> EventLoopFuture<Void> in
+            guard found.reused else {
+                self.logger.trace("Asking Connection to open a new stream for `\(proto)`")
+                open(found.connection)
+                return el.makeSucceededVoidFuture()
             }
 
-            return self.connections.getConnectionsTo(ma, onlyMuxed: false, on: el).flatMap {
-                existingConnections -> EventLoopFuture<Void> in
+            /// Ask the connection we're reusing to open our stream.
+            return tryOpen(found.connection).flatMapError { error in
+                self.logger.debug(
+                    "Connection[\(found.connection.id.uuidString.prefix(5))] refused a `\(proto)` stream (\(error)) — dialing a fresh one"
+                )
+                /// fallback to a fresh cold dial
+                return self._coldDial(found.ma, on: el).map { conn in
+                    self.logger.trace("Asking Connection to open a new stream for `\(proto)`")
+                    open(conn)
+                }
+            }
+        }
+    }
+
+    /// Finds a connection `to` Multiaddr, reusing an existing one when it can.
+    /// Shared by ``connect(to:timeout:)`` and every `newStream(to:...)`.
+    ///
+    /// - Returns: the resolved address, the connection, and whether it was an existing connection or not.
+    private func _connection(
+        to: Multiaddr,
+        on el: EventLoop
+    ) -> EventLoopFuture<(ma: Multiaddr, connection: AppConnection, reused: Bool)> {
+        self.resolveAddressForBestTransport(to, on: el).flatMap { ma in
+            self.connections.getConnectionsTo(ma, onlyMuxed: false, on: el).flatMap { existingConnections in
                 self.logger.trace("We have \(existingConnections.count) existing connections")
 
-                /// Reuse an existing Connection only while it can still carry streams.
+                /// Reuse an existing Connection only while it can still support new streams.
                 let reusable =
                     existingConnections
-                    .first { $0.status != .closing && $0.status != .closed } as? AppConnection
+                    .first { $0.acceptsNewStreams } as? AppConnection
 
-                guard let capableConn = reusable else { return coldDial() }
-
-                /// We have an existing capable connection, lets reuse it!
-                self.logger.trace("Reusing Existing Connection[\(capableConn.id.uuidString.prefix(5))]")
-
-                /// Ask the connection to open our stream.
-                return tryOpen(capableConn).flatMapError { error in
-                    self.logger.debug(
-                        "Connection[\(capableConn.id.uuidString.prefix(5))] refused a `\(proto)` stream (\(error)) — dialing a fresh one"
-                    )
-                    /// fallback to a fresh cold dial
-                    return coldDial()
+                if let reusable {
+                    self.logger.trace("Reusing Existing Connection[\(reusable.id.uuidString.prefix(5))]")
+                    return el.makeSucceededFuture((ma, reusable, true))
                 }
+                return self._coldDial(ma, on: el).map { (ma, $0, false) }
+            }
+        }
+    }
+
+    /// Opens a brand new Connection to `ma`, coalescing concurrent cold dials to the same address.
+    private func _coldDial(_ ma: Multiaddr, on el: EventLoop) -> EventLoopFuture<AppConnection> {
+        self.logger.trace("Attempting to open new Connection")
+        guard let transport = try? self.transports.findBest(forMultiaddr: ma) else {
+            return el.makeFailedFuture(Errors.noTransportForMultiaddr(ma))
+        }
+        self.logger.trace("Found Transport for dialing peer \(transport)")
+        return self.connectionManager.dial(to: ma) {
+            transport.dial(address: ma).flatMapThrowing { connection -> AppConnection in
+                guard let conn = connection as? AppConnection else {
+                    throw Errors.noTransportForMultiaddr(ma)
+                }
+                return conn
             }
         }
     }
