@@ -2,7 +2,7 @@
 //
 // This source file is part of the swift-libp2p open source project
 //
-// Copyright (c) 2022-2025 swift-libp2p project authors
+// Copyright (c) 2022-2026 swift-libp2p project authors
 // Licensed under MIT
 //
 // See LICENSE for license information
@@ -12,10 +12,15 @@
 //
 //===----------------------------------------------------------------------===//
 
+public import Foundation
 public import LibP2PCore
 import NIOConcurrencyHelpers
 
-public struct TopologyRegistration: CustomStringConvertible, Sendable {
+public struct TopologyRegistration: CustomStringConvertible, Identifiable, Sendable {
+
+    /// Identifies this registration, so it can be removed with ``Application/TopologyRegistrations/unregister(_:)``.
+    public let id = UUID()
+
     let min: Int
     let max: Int
     let protocols: SemVerProtocol
@@ -35,23 +40,19 @@ public struct TopologyRegistration: CustomStringConvertible, Sendable {
         self.protocols = SemVerProtocol(`protocol`)!
     }
 
-    //    public init(protocol:String, min:Int = 0, max:Int = Int.max, onNewPeer:@escaping(PeerID, Connection) -> Void, onPeerDisconnected:@escaping(PeerID, Connection) -> Void) {
-    //        self.min = min
-    //        self.max = max
-    //        self.handler = handler
-    //        self.protocols = SemVerProtocol(`protocol`)!
-    //    }
-
     public var description: String {
         if max < Int.max {
-            return "Topology: [\(min):\(max)] -> \(protocols.stringValue)"
+            return self.consoleTag + "[\(min):\(max)] -> \(protocols.stringValue)"
         } else {
-            return "Topology: [Min:\(min)] -> \(protocols.stringValue)"
+            return self.consoleTag + "[Min:\(min)] -> \(protocols.stringValue)"
         }
     }
 
+    private var consoleTag: String {
+        "Topology[\(id.uuidString.prefix(5))]"
+    }
+
     func isInterestedIn(change: [SemVerProtocol]) -> Bool {
-        //print("Am I `\(protocols.stringValue)` interested in this change `\(change.map({ $0.stringValue }).joined(separator: ", "))`")
         change.contains(protocols)
     }
 }
@@ -80,11 +81,29 @@ extension Application {
 
         public let application: Application
 
-        public func register(_ registration: TopologyRegistration) {
+        /// Registers a topology, returning the registrations ID for use with ``unregister(_:)``.
+        @discardableResult
+        public func register(_ registration: TopologyRegistration) -> TopologyRegistration.ID {
             self.application.logger.info("Topology::New Registration for \(registration)")
             self.storage.registrations.withLockedValue {
                 $0.append(registration)
             }
+            return registration.id
+        }
+
+        /// Removes the TopologyRegistration with the given ID
+        ///
+        /// - Note: An event that's already being dispatched may still reach the handlers once.
+        /// - Returns: `true` if a registration with that `id` was found and removed.
+        @discardableResult
+        public func unregister(_ id: TopologyRegistration.ID) -> Bool {
+            let removed = self.storage.registrations.withLockedValue { registrations in
+                let before = registrations.count
+                registrations.removeAll { $0.id == id }
+                return registrations.count < before
+            }
+            if removed { self.application.logger.info("Topology::Removed Registration \(id)") }
+            return removed
         }
 
         var storage: Storage {
