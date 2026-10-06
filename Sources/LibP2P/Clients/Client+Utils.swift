@@ -388,4 +388,65 @@ extension Application {
     ) async throws {
         try await self._newStream(toTarget: target, forProtocol: proto).get()
     }
+
+    /// Connects to `target` without opening a stream, reusing an existing connection when there is one.
+    ///
+    /// Returns once the connection is secured and muxed, at which point identify has started.
+    ///
+    /// - Parameters:
+    ///   - target: any ``RequestTarget`` (e.g. `Multiaddr`, `PeerID`, or `PeerInfo`).
+    ///   - timeout: How long to wait for the connection to finish upgrading (defaults to 10 seconds).
+    /// - Returns: The `AppConnection` to this peer
+    /// - Throws: Dial failures, `Application.Connections.Errors.timedOut` if the connection doesn't
+    ///   upgrade within `timeout`, and `.connectionUpgradeFailed` if it closes before upgrading.
+    /// - Important: Transports must not call this from inside their own `dial`: it coalesces onto the
+    ///   pending dial to the same address, and would wait on itself forever.
+    @discardableResult
+    public func connect<Target: RequestTarget>(
+        to target: Target,
+        timeout: TimeAmount = .seconds(10)
+    ) async throws -> AppConnection {
+        let el = self.eventLoopGroup.next()
+        let ma = try await target.dialAddress(for: self, on: el).get()
+        let connection = try await self._connection(to: ma, on: el).get().connection
+        try await self.waitUntilUpgraded(connection, timeout: timeout)
+        return connection
+    }
+
+    /// Suspends until `connection` is secured and muxed.
+    private func waitUntilUpgraded(_ connection: AppConnection, timeout: TimeAmount) async throws {
+        /// Subscribe before checking the status, so an upgrade landing in between isn't missed.
+        let events = self.events.subscribe(to: [.upgraded, .disconnected])
+
+        switch connection.status {
+        case .upgraded: return
+        case .closing, .closed: throw Application.Connections.Errors.connectionUpgradeFailed
+        case .opening, .open: break
+        }
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                for await event in events {
+                    switch event {
+                    case .upgraded(let upgraded) where upgraded.id == connection.id:
+                        return
+                    case .disconnected(let disconnected, _) where disconnected.id == connection.id:
+                        throw Application.Connections.Errors.connectionUpgradeFailed
+                    default:
+                        continue
+                    }
+                }
+                /// The bus stopped delivering events, fall back to the status.
+                guard connection.status == .upgraded else {
+                    throw Application.Connections.Errors.connectionUpgradeFailed
+                }
+            }
+            group.addTask {
+                try await Task.sleep(for: .nanoseconds(timeout.nanoseconds))
+                throw Application.Connections.Errors.timedOut
+            }
+            defer { group.cancelAll() }
+            try await group.next()
+        }
+    }
 }
