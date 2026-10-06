@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import Foundation
 import LibP2PCrypto
 import LibP2PTesting
 import NIOConcurrencyHelpers
@@ -113,6 +114,58 @@ extension LibP2PTests {
                 #expect(await waitUntil { received.withLockedValue { !$0.isEmpty } })
                 #expect(received.withLockedValue { $0 } == [peer.b58String])
                 #expect(wrongProtocol.withLockedValue { $0 } == 0)
+            }
+        }
+
+        // MARK: - Unregistration
+
+        /// A handler that counts the new streams it's told about.
+        static func counting(_ count: NIOLockedValueBox<Int>) -> TopologyHandler {
+            TopologyHandler(onConnect: { _, _ in }, onNewStream: { _ in count.withLockedValue { $0 += 1 } })
+        }
+
+        @Test("registering returns the registration's id")
+        func registerReturnsTheRegistrationsID() async throws {
+            try await withApp { app in
+                let registration = TopologyRegistration(protocol: Self.echo, handler: TopologyHandler(onConnect: { _, _ in }))
+                #expect(app.topology.register(registration) == registration.id)
+                #expect(app.topology.unregister(registration.id))
+            }
+        }
+
+        @Test("An unregistered handler stops receiving events")
+        func unregisteringStopsDispatch() async throws {
+            try await withApp { app in
+                let removed = NIOLockedValueBox(0)
+                let kept = NIOLockedValueBox(0)
+                let removedID = app.topology.register(TopologyRegistration(protocol: Self.echo, handler: Self.counting(removed)))
+                app.topology.register(TopologyRegistration(protocol: Self.echo, handler: Self.counting(kept)))
+
+                let first = Self.echoStream()
+                app.events.post(.openedStream(first))
+                #expect(await waitUntil { removed.withLockedValue { $0 } == 1 && kept.withLockedValue { $0 } == 1 })
+
+                #expect(app.topology.unregister(removedID))
+
+                let second = Self.echoStream()
+                app.events.post(.openedStream(second))
+                // The kept registration proves the second event was dispatched.
+                #expect(await waitUntil { kept.withLockedValue { $0 } == 2 })
+                #expect(removed.withLockedValue { $0 } == 1)
+                _ = (first, second)
+            }
+        }
+
+        @Test("Unregistering an unknown or already removed id returns false")
+        func unregisteringAnUnknownIDReturnsFalse() async throws {
+            try await withApp { app in
+                #expect(app.topology.unregister(UUID()) == false)
+
+                let id = app.topology.register(
+                    TopologyRegistration(protocol: Self.echo, handler: TopologyHandler(onConnect: { _, _ in }))
+                )
+                #expect(app.topology.unregister(id))
+                #expect(app.topology.unregister(id) == false)
             }
         }
     }
