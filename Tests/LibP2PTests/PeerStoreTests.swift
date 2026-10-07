@@ -420,7 +420,9 @@ extension LibP2PTests {
                 )
 
                 // The unsigned fields are still stored for `remote`, so wait for those before checking.
-                #expect(await waitUntil { ((try? await app.peers.getProtocols(forPeer: remote)) ?? []).isEmpty == false })
+                #expect(
+                    await waitUntil { ((try? await app.peers.getProtocols(forPeer: remote)) ?? []).isEmpty == false }
+                )
                 #expect(try await app.peers.getMostRecentSignedRecord(forPeer: remote) == nil)
                 #expect((try? await app.peers.getMostRecentSignedRecord(forPeer: impostor)) == nil)
             }

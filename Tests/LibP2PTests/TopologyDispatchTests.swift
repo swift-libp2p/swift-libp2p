@@ -127,7 +127,10 @@ extension LibP2PTests {
         @Test("registering returns the registration's id")
         func registerReturnsTheRegistrationsID() async throws {
             try await withApp { app in
-                let registration = TopologyRegistration(protocol: Self.echo, handler: TopologyHandler(onConnect: { _, _ in }))
+                let registration = TopologyRegistration(
+                    protocol: Self.echo,
+                    handler: TopologyHandler(onConnect: { _, _ in })
+                )
                 #expect(app.topology.register(registration) == registration.id)
                 #expect(app.topology.unregister(registration.id))
             }
@@ -138,7 +141,9 @@ extension LibP2PTests {
             try await withApp { app in
                 let removed = NIOLockedValueBox(0)
                 let kept = NIOLockedValueBox(0)
-                let removedID = app.topology.register(TopologyRegistration(protocol: Self.echo, handler: Self.counting(removed)))
+                let removedID = app.topology.register(
+                    TopologyRegistration(protocol: Self.echo, handler: Self.counting(removed))
+                )
                 app.topology.register(TopologyRegistration(protocol: Self.echo, handler: Self.counting(kept)))
 
                 let first = Self.echoStream()

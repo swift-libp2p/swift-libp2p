@@ -90,16 +90,16 @@ public protocol AppConnection: Connection, CustomStringConvertible {
 /// How ``AppConnection/newStream(forProtocol:mode:)`` treats streams that already exist for the protocol.
 extension Application.Connections {
     public enum NewStreamMode: Sendable {
-        
+
         /// Always open a new stream
         case openStream
-        
+
         /// Only open a stream if there isn't one for the protocol, in either direction
         case ifOneDoesntAlreadyExist
-        
+
         /// Only open a stream if there isn't an outbound one for the protocol
         case ifOutboundDoesntAlreadyExist
-        
+
     }
 }
 
