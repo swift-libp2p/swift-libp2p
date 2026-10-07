@@ -456,7 +456,8 @@ internal final class BasicInMemoryPeerStore: PeerStore {
                     addresses: existing.addresses,
                     protocols: existing.protocols,
                     metadata: existing.metadata,
-                    records: existing.records
+                    records: existing.records,
+                    signedRecords: existing.signedRecords
                 )
                 /// Replace the dictionary key too.
                 state.store.removeValue(forKey: existing.id)
@@ -589,9 +590,38 @@ internal final class BasicInMemoryPeerStore: PeerStore {
 
     // MARK: - Record Book
 
-    /// Stores a signed `PeerRecord`, creating the peer if they're not present in the PeerStore already
+    /// Stores a raw `PeerRecord`, creating the peer if they're not present in the PeerStore already
     /// and merging the record's addresses into the address book.
     func add(record: PeerRecord, on: EventLoop? = nil) -> EventLoopFuture<Void> {
+        self.insert(record, envelope: nil)
+        return self.succeed(on: on)
+    }
+
+    /// Stores the signed `PeerRecord` in it's `SealedEnvelope` so it can be distributed in it's original form.
+    /// Otherwise behaves like ``add(record:on:)``.
+    func add(signedRecord envelope: SealedEnvelope, on: EventLoop? = nil) -> EventLoopFuture<Void> {
+        let record: PeerRecord
+        do {
+            record = try PeerRecord(signedEnvelope: envelope)
+        } catch {
+            return self.fail(error, on: on)
+        }
+        self.insert(record, envelope: envelope)
+        return self.succeed(on: on)
+    }
+
+    /// The envelope of the most recent record that arrived signed, or nil if none did.
+    func getMostRecentSignedRecord(forPeer peer: PeerID, on: EventLoop? = nil) -> EventLoopFuture<SealedEnvelope?> {
+        self.withStore(on: on) { state in
+            Result { try self.livePeer(peer, in: state).mostRecentSignedRecord }
+        }
+    }
+
+    /// Inserts a `PeerRecord` (and its `SealedEnvelope`) into our `PeerStore`.
+    /// - Creates the peer if they're not present in the PeerStore already.
+    /// - Merges the record's addresses into the address book.
+    /// - Note: Shared by ``add(record:on:)`` and ``add(signedRecord:on:)``.
+    private func insert(_ record: PeerRecord, envelope: SealedEnvelope?) {
         let peer = record.peerID
         self.state.withLockedValue { state in
             let compPeer: ComprehensivePeer
@@ -606,7 +636,14 @@ internal final class BasicInMemoryPeerStore: PeerStore {
                 state.store[peer] = compPeer
             }
 
-            let inserted = compPeer.insert(record: record, keepingMostRecent: self.configuration.maxRecordsPerPeer)
+            let limit = self.configuration.maxRecordsPerPeer
+            let inserted: Bool
+            if let envelope {
+                /// The record was already decoded from this envelope, so this can't throw.
+                inserted = (try? compPeer.insert(signedRecord: envelope, keepingMostRecent: limit)) ?? false
+            } else {
+                inserted = compPeer.insert(record: record, keepingMostRecent: limit)
+            }
             if !inserted {
                 self.logger.debug(
                     "PeerStore::Skipping Duplicate PeerRecord Entry - Sequence Number: \(record.sequenceNumber)"
@@ -619,7 +656,6 @@ internal final class BasicInMemoryPeerStore: PeerStore {
                 _ = self.pruneOldest(&state, percent: self.configuration.prunePercentWhenFull)
             }
         }
-        return self.succeed(on: on)
     }
 
     /// Returns all of the Records we have for the specified peer.
