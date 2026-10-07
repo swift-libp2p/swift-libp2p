@@ -17,6 +17,7 @@ import LibP2PCore
 import LibP2PCrypto
 import LibP2PTesting
 import NIOCore
+import SwiftProtobuf
 import Testing
 
 @testable import LibP2P
@@ -205,6 +206,223 @@ extension LibP2PTests {
                 let addresses = try await store.getAddresses(forPeer: peer)
                 #expect(addresses.count == 1)
                 #expect((try? addresses.first?.getPeerID()) == peer)
+            }
+        }
+
+        /// A record sealed by its own peer, round-tripped through the wire format like a received one.
+        private static func signedRecord(_ peer: PeerID, seq: UInt64, port: Int = 4001) throws -> SealedEnvelope {
+            let record = PeerRecord(
+                peerID: peer,
+                multiaddrs: [try Multiaddr("/ip4/127.0.0.1/tcp/\(port)")],
+                sequenceNumber: seq
+            )
+            return try SealedEnvelope(
+                marshaledEnvelope: record.seal(withPrivateKey: peer).marshal(),
+                verifiedWithPublicKey: nil
+            )
+        }
+
+        @Test("add(signedRecord:) keeps the envelope alongside the record and merges its addresses")
+        func signedRecordKeepsTheEnvelope() async throws {
+            try await Self.withStore { store in
+                let peer = try Self.randomPeer()
+                let envelope = try Self.signedRecord(peer, seq: 1)
+
+                try await store.add(signedRecord: envelope)
+
+                #expect(try await store.getRecords(forPeer: peer).map(\.sequenceNumber) == [1])
+                #expect(try await store.getAddresses(forPeer: peer).count == 1)
+                let stored = try #require(try await store.getMostRecentSignedRecord(forPeer: peer))
+                #expect(try stored.marshal() == envelope.marshal())
+            }
+        }
+
+        @Test("add(record:) stores no envelope, and a later signed copy attaches one")
+        func unsignedRecordHasNoEnvelopeUntilASignedCopyArrives() async throws {
+            try await Self.withStore { store in
+                let peer = try Self.randomPeer()
+                let envelope = try Self.signedRecord(peer, seq: 1)
+                try await store.add(record: try PeerRecord(signedEnvelope: envelope))
+                #expect(try await store.getRecords(forPeer: peer).count == 1)
+                #expect(try await store.getMostRecentSignedRecord(forPeer: peer) == nil)
+
+                try await store.add(signedRecord: envelope)
+                #expect(try await store.getRecords(forPeer: peer).count == 1)
+                #expect(try await store.getMostRecentSignedRecord(forPeer: peer) != nil)
+            }
+        }
+
+        @Test("A signed record upgrades an ID-only peer to its public key, keeping the envelope")
+        func signedRecordUpgradesAnIDOnlyKey() async throws {
+            try await Self.withStore { store in
+                let full = try Self.randomPeer()
+                let idOnly = try PeerID(cid: try full.traditionalB58String())
+                try await store.add(key: idOnly)
+
+                try await store.add(signedRecord: try Self.signedRecord(full, seq: 1))
+
+                // The record's PeerID is decoded from the public key, so that's what we upgrade to.
+                #expect(try await store.getKey(forPeer: full.b58String).type == .isPublic)
+                #expect(try await store.getMostRecentSignedRecord(forPeer: full) != nil)
+                #expect(try await store.count() == 1)
+            }
+        }
+
+        @Test("Upgrading a peer's key keeps its signed records")
+        func keyUpgradeKeepsSignedRecords() async throws {
+            try await Self.withStore { store in
+                let full = try Self.randomPeer()
+                let idOnly = try PeerID(cid: try full.traditionalB58String())
+                try await store.add(key: idOnly)
+                try await store.add(signedRecord: try Self.signedRecord(full, seq: 1))
+
+                // A further upgrade (public → private) preserves the envelope.
+                try await store.add(key: full)
+
+                #expect(try await store.getKey(forPeer: full.b58String).type == full.type)
+                #expect(try await store.getMostRecentSignedRecord(forPeer: full) != nil)
+                #expect(try await store.count() == 1)
+            }
+        }
+
+        @Test("An unsigned record carrying the public key upgrades an ID-only peer")
+        func addRecordUpgradesAnIDOnlyKey() async throws {
+            try await Self.withStore { store in
+                let full = try Self.randomPeer()
+                let idOnly = try PeerID(cid: try full.traditionalB58String())
+                let publicKey = try PeerID(marshaledPublicKey: Data(full.marshalPublicKey()))
+                try await store.add(key: idOnly)
+
+                try await store.add(
+                    record: PeerRecord(
+                        peerID: publicKey,
+                        multiaddrs: [try Multiaddr("/ip4/127.0.0.1/tcp/4001")],
+                        sequenceNumber: 1
+                    )
+                )
+
+                #expect(try await store.getKey(forPeer: full.b58String).type == .isPublic)
+                #expect(try await store.getRecords(forPeer: full).count == 1)
+                #expect(try await store.count() == 1)
+            }
+        }
+
+        @Test("A record with an ID-only PeerID never downgrades the stored key")
+        func addRecordNeverDowngradesTheKey() async throws {
+            try await Self.withStore { store in
+                let full = try Self.randomPeer()
+                let idOnly = try PeerID(cid: try full.traditionalB58String())
+                try await store.add(key: full)
+
+                try await store.add(
+                    record: PeerRecord(
+                        peerID: idOnly,
+                        multiaddrs: [try Multiaddr("/ip4/127.0.0.1/tcp/4001")],
+                        sequenceNumber: 1
+                    )
+                )
+
+                #expect(try await store.getKey(forPeer: full.b58String).type == full.type)
+                #expect(try await store.getRecords(forPeer: full).count == 1)
+                #expect(try await store.count() == 1)
+            }
+        }
+
+        // MARK: - Identify → Record Book
+        //
+        // These drive identify's consume path directly: over the in-package mock muxer the identify
+        // response never reaches the requester, so a live two-node exchange can't be observed here
+        // (integration-tests covers identify over yamux / mplex).
+
+        /// An identify message advertising `peer`'s signed record with sequence number `seq`.
+        private static func identifyPayload(from peer: PeerID, seq: UInt64) throws -> Data {
+            let address = try Multiaddr("/ip4/127.0.0.1/tcp/4001")
+            var message = IdentifyMessage()
+            message.publicKey = try #require(peer.keyPair?.publicKey).marshal()
+            message.protocols = ["/echo/1.0.0"]
+            message.listenAddrs = [try address.encapsulating(peer: peer).binaryPacked()]
+            let record = PeerRecord(peerID: peer, multiaddrs: [address], sequenceNumber: seq)
+            message.signedPeerRecord = Data(try record.seal(withPrivateKey: peer).marshal())
+            return try message.serializedData()
+        }
+
+        private static func identify(_ app: Application) throws -> LibP2P.Identify {
+            try #require(app.identify as? LibP2P.Identify)
+        }
+
+        @Test("Identify stores the remote peer's signed record, exactly as it was signed")
+        func identifyStoresTheSignedRecord() async throws {
+            try await withApp { app in
+                let remote = try Self.randomPeer()
+                let connection = DummyConnection()
+                connection.remotePeer = remote
+
+                try Self.identify(app).consumeIdentifyMessage(
+                    payload: Self.identifyPayload(from: remote, seq: 1),
+                    id: nil,
+                    connection: connection
+                )
+
+                #expect(await waitUntil { (try? await app.peers.getMostRecentSignedRecord(forPeer: remote)) != nil })
+                let envelope = try #require(try await app.peers.getMostRecentSignedRecord(forPeer: remote))
+                #expect(try PeerRecord(signedEnvelope: envelope).sequenceNumber == 1)
+                // It still verifies against the remote's key once re-marshaled, so it can be handed to other peers.
+                _ = try SealedEnvelope(
+                    marshaledEnvelope: envelope.marshal(),
+                    verifiedWithPublicKey: remote.marshalPublicKey()
+                )
+            }
+        }
+
+        @Test("Identify push stores the remote peer's newer signed record")
+        func identifyPushStoresTheSignedRecord() async throws {
+            try await withApp { app in
+                let remote = try Self.randomPeer()
+                let connection = DummyConnection()
+                connection.remotePeer = remote
+                let identify = try Self.identify(app)
+
+                identify.consumeIdentifyMessage(
+                    payload: try Self.identifyPayload(from: remote, seq: 1),
+                    id: nil,
+                    connection: connection
+                )
+                identify.consumePushIdentifyMessage(
+                    payload: try Self.identifyPayload(from: remote, seq: 2),
+                    id: nil,
+                    connection: connection
+                )
+
+                #expect(
+                    await waitUntil {
+                        guard let envelope = try? await app.peers.getMostRecentSignedRecord(forPeer: remote) else {
+                            return false
+                        }
+                        return (try? PeerRecord(signedEnvelope: envelope).sequenceNumber) == 2
+                    }
+                )
+            }
+        }
+
+        @Test("Identify ignores a signed record that isn't from the peer on the connection")
+        func identifyIgnoresAnotherPeersSignedRecord() async throws {
+            try await withApp { app in
+                let remote = try Self.randomPeer()
+                let impostor = try Self.randomPeer()
+                let connection = DummyConnection()
+                connection.remotePeer = remote
+
+                // A validly signed record, but for a different peer than the one we authenticated.
+                try Self.identify(app).consumeIdentifyMessage(
+                    payload: Self.identifyPayload(from: impostor, seq: 1),
+                    id: nil,
+                    connection: connection
+                )
+
+                // The unsigned fields are still stored for `remote`, so wait for those before checking.
+                #expect(await waitUntil { ((try? await app.peers.getProtocols(forPeer: remote)) ?? []).isEmpty == false })
+                #expect(try await app.peers.getMostRecentSignedRecord(forPeer: remote) == nil)
+                #expect((try? await app.peers.getMostRecentSignedRecord(forPeer: impostor)) == nil)
             }
         }
 
