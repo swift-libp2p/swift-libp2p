@@ -449,19 +449,7 @@ internal final class BasicInMemoryPeerStore: PeerStore {
     func add(key: PeerID, on: EventLoop? = nil) -> EventLoopFuture<Void> {
         self.state.withLockedValue { state in
             if let existing = state.store[key] {
-                /// Only ever upgrade the key (dont replace a public key with an id only)
-                guard Self.value(of: key.type) > Self.value(of: existing.id.type) else { return }
-                let upgraded = ComprehensivePeer(
-                    id: key,
-                    addresses: existing.addresses,
-                    protocols: existing.protocols,
-                    metadata: existing.metadata,
-                    records: existing.records,
-                    signedRecords: existing.signedRecords
-                )
-                /// Replace the dictionary key too.
-                state.store.removeValue(forKey: existing.id)
-                state.store[key] = upgraded
+                _ = self.upgradeIfRicher(existing, to: key, in: &state)
             } else {
                 let compPeer = ComprehensivePeer(id: key)
                 /// Set the peers discovered metadata
@@ -477,6 +465,30 @@ internal final class BasicInMemoryPeerStore: PeerStore {
             }
         }
         return self.succeed(on: on)
+    }
+
+    /// Swaps the `existing` PeerID for `key` when `key` carries more info (e.g. a public key where we only
+    /// had the ID previously), keeping everything else we know about the peer.
+    ///
+    /// - Returns: the upgraded peer or `existing` if unchanged.
+    private func upgradeIfRicher(
+        _ existing: ComprehensivePeer,
+        to key: PeerID,
+        in state: inout State
+    ) -> ComprehensivePeer {
+        guard Self.value(of: key.type) > Self.value(of: existing.id.type) else { return existing }
+        let upgraded = ComprehensivePeer(
+            id: key,
+            addresses: existing.addresses,
+            protocols: existing.protocols,
+            metadata: existing.metadata,
+            records: existing.records,
+            signedRecords: existing.signedRecords
+        )
+        /// Replace the dictionary key too.
+        state.store.removeValue(forKey: existing.id)
+        state.store[key] = upgraded
+        return upgraded
     }
 
     /// A PeerID's ranking/value based on it's keypair type
@@ -626,7 +638,9 @@ internal final class BasicInMemoryPeerStore: PeerStore {
         self.state.withLockedValue { state in
             let compPeer: ComprehensivePeer
             if let existing = state.store[peer] {
-                compPeer = existing
+                /// A record whose PeerID carries the key (always true for signed records) proves the key,
+                /// since the ID is derived from it, so take the chance to upgrade an ID-only entry.
+                compPeer = self.upgradeIfRicher(existing, to: peer, in: &state)
             } else {
                 compPeer = ComprehensivePeer(id: peer)
                 compPeer.setMetadata(
