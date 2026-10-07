@@ -439,11 +439,7 @@ extension BaseConnection {
 
 extension BaseConnection {
 
-    public enum NewStreamMode {
-        case openStream
-        case ifOneDoesntAlreadyExist
-        case ifOutboundDoesntAlreadyExist
-    }
+    public typealias NewStreamMode = Application.Connections.NewStreamMode
 
     private struct StreamCache {
         /// Distinguishes two requests for the same protocol, so a refusal removes the right one.
@@ -558,7 +554,7 @@ extension BaseConnection {
             // If the connection has already closed (e.g. a coalesced cold dial whose shared
             // connection failed to upgrade), fail fast instead of queueing a stream that will never
             // open and would otherwise only surface as a timeout.
-            guard self.stats.status != .closed && self.stats.status != .closing else {
+            guard self.acceptsNewStreams else {
                 self.logger.debug("Refusing new `\(proto)` stream — connection is \(self.stats.status)")
                 throw Application.Connections.Errors.connectionUpgradeFailed
             }

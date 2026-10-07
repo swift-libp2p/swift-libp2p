@@ -29,11 +29,13 @@ let package = Package(
     dependencies: [
         // Dependencies declare other packages that this package depends on.
         // LibP2P Core
-        .package(url: "https://github.com/swift-libp2p/swift-libp2p-core.git", .upToNextMinor(from: "0.6.0")),
+        .package(url: "https://github.com/swift-libp2p/swift-libp2p-core.git", .upToNextMinor(from: "0.6.1")),
         // LibP2P Multiaddr
         .package(url: "https://github.com/swift-libp2p/swift-multiaddr.git", .upToNextMinor(from: "0.2.4")),
         // LibP2P Peer Identities
         .package(url: "https://github.com/swift-libp2p/swift-peer-id.git", .upToNextMinor(from: "0.2.3")),
+        // LibP2P Multihash
+        .package(url: "https://github.com/swift-libp2p/swift-multihash.git", .upToNextMinor(from: "0.3.0")),
         // Swift NIO for all things networking
         .package(url: "https://github.com/apple/swift-nio.git", .upToNextMajor(from: "2.87.0")),
         .package(url: "https://github.com/apple/swift-nio-extras.git", .upToNextMajor(from: "1.25.0")),
@@ -60,6 +62,7 @@ let package = Package(
                 .product(name: "LibP2PCore", package: "swift-libp2p-core"),
                 .product(name: "Multiaddr", package: "swift-multiaddr"),
                 .product(name: "PeerID", package: "swift-peer-id"),
+                .product(name: "Multihash", package: "swift-multihash"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
                 .product(name: "NIOExtras", package: "swift-nio-extras"),

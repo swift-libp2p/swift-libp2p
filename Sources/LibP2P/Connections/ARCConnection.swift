@@ -614,11 +614,7 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
         self.channel.eventLoop.makeFailedFuture(Application.Connections.Errors.notImplementedYet)
     }
 
-    public enum NewStreamMode {
-        case openStream
-        case ifOneDoesntAlreadyExist
-        case ifOutboundDoesntAlreadyExist
-    }
+    public typealias NewStreamMode = Application.Connections.NewStreamMode
 
     private struct StreamCache {
         let proto: String
@@ -725,7 +721,7 @@ public class ARCConnection: AppConnection, @unchecked Sendable {
 
         return self.eventLoop.submit {
             /// If the connection has already closed, fail fast.
-            guard self.stats.status != .closed && self.stats.status != .closing else {
+            guard self.acceptsNewStreams else {
                 self.logger.debug("Refusing new `\(proto)` stream — connection is \(self.stats.status)")
                 throw Application.Connections.Errors.connectionUpgradeFailed
             }

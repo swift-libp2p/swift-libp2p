@@ -15,7 +15,7 @@
 import Foundation
 public import LibP2P
 import NIOConcurrencyHelpers
-public import NIOCore
+import NIOCore
 import RoutingKit
 
 /// Exercises a `Security` module for conformance with libp2p's contracts.

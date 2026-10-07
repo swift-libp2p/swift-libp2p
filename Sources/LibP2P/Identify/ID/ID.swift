@@ -199,7 +199,7 @@ extension Identify {
 
             /// The signed peer record is optional per the spec. When present, verify it
             /// and confirm it belongs to the authenticated peer before trusting it.
-            let peerRecord = self.verifiedPeerRecord(
+            let signedPeerRecord = self.verifiedSignedRecord(
                 from: remoteIdentify,
                 expectedPeer: identifiedPeer,
                 connection: connection
@@ -208,7 +208,7 @@ extension Identify {
             connection.logger.trace("Identify::Updating PeerStore with Identified Peer")
             self.updateIdentifiedPeerInPeerStore(
                 identifiedPeer: identifiedPeer,
-                peerRecord: peerRecord,
+                signedPeerRecord: signedPeerRecord,
                 identifyMessage: remoteIdentify,
                 connection: connection
             )
@@ -238,11 +238,13 @@ extension Identify {
     /// - the record's peer ID matches the peer we authenticated on this connection.
     ///
     /// Otherwise returns `nil` (the caller still stores the message's unsigned fields).
-    private func verifiedPeerRecord(
+    ///
+    /// - Returns: the verified envelope, so the peerstore can store the original copy.
+    private func verifiedSignedRecord(
         from remoteIdentify: IdentifyMessage,
         expectedPeer: PeerID,
         connection: Connection
-    ) -> PeerRecord? {
+    ) -> SealedEnvelope? {
         guard !remoteIdentify.signedPeerRecord.isEmpty, !remoteIdentify.publicKey.isEmpty else {
             connection.logger.trace("Identify::No signed peer record present, storing unsigned fields only")
             return nil
@@ -252,10 +254,8 @@ extension Identify {
                 marshaledEnvelope: Array(remoteIdentify.signedPeerRecord),
                 verifiedWithPublicKey: Array(remoteIdentify.publicKey)
             )
-            let peerRecord = try PeerRecord(
-                marshaledData: Data(signedEnvelope.rawPayload),
-                withPublicKey: remoteIdentify.publicKey
-            )
+            /// Decoding checks that the record matches the envelope's signer.
+            let peerRecord = try PeerRecord(signedEnvelope: signedEnvelope)
             /// The record must belong to the same peer that opened this stream
             guard peerRecord.peerID == expectedPeer else {
                 connection.logger.warning(
@@ -265,7 +265,7 @@ extension Identify {
             }
             connection.logger.debug("Identify::\n\(signedEnvelope)")
             connection.logger.debug("Identify::\n\(peerRecord)")
-            return peerRecord
+            return signedEnvelope
         } catch {
             connection.logger.warning(
                 "Identify::Failed to verify signed peer record -> \(error); storing unsigned fields only"
@@ -293,7 +293,7 @@ extension Identify {
             }
 
             /// Optional signed record, verified and bound to the authenticated peer.
-            let peerRecord = self.verifiedPeerRecord(
+            let signedPeerRecord = self.verifiedSignedRecord(
                 from: remoteIdentify,
                 expectedPeer: identifiedPeer,
                 connection: connection
@@ -303,7 +303,7 @@ extension Identify {
             /// Push messages are partial updates: only the fields present should be applied
             self.updateIdentifiedPeerInPeerStore(
                 identifiedPeer: identifiedPeer,
-                peerRecord: peerRecord,
+                signedPeerRecord: signedPeerRecord,
                 identifyMessage: remoteIdentify,
                 connection: connection,
                 isPartialUpdate: true
@@ -367,7 +367,7 @@ extension Identify {
 extension Identify {
     private func updateIdentifiedPeerInPeerStore(
         identifiedPeer: PeerID,
-        peerRecord: PeerRecord?,
+        signedPeerRecord: SealedEnvelope?,
         identifyMessage: IdentifyMessage,
         connection: Connection,
         isPartialUpdate: Bool = false
@@ -410,9 +410,9 @@ extension Identify {
             )
         }
 
-        // Add the (verified) PeerRecord to our Records list when one is present.
-        if let peerRecord = peerRecord {
-            tasks.append(application.peers.add(record: peerRecord, on: connection.channel.eventLoop))
+        // Add the (verified) signed PeerRecord, when one is present.
+        if let signedPeerRecord {
+            tasks.append(application.peers.add(signedRecord: signedPeerRecord, on: connection.channel.eventLoop))
         }
 
         // Update our peers metadata (agent version, protocol version, etc.. maybe include a verified attribute (the signed peer record))

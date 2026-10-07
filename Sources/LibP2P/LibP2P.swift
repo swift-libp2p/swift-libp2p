@@ -21,6 +21,7 @@ internal import ConsoleKit
 public import LibP2PCrypto
 @_exported public import Logging
 @_exported public import Multiaddr
+@_exported public import Multihash
 @_exported public import NIO
 public import NIOConcurrencyHelpers
 @_exported public import PeerID
