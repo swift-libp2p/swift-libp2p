@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import LibP2P
+import LibP2P
 import LibP2PCrypto
 import NIOConcurrencyHelpers
 import SwiftProtobuf
