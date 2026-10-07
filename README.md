@@ -156,7 +156,9 @@ try await lib.asyncShutdown()
 | [`swift-libp2p-identify`](//github.com/swift-libp2p/swift-libp2p-identify) | 🟢 | IPFS Identify Protocols (embedded) | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-identify/actions/workflows/build+test.yml/badge.svg) |
 | `swift-libp2p-rendezvous` | 🔴 | TODO: Rendezvous (protocol poster board) | N/A |
 | **Integrations** |
-| [`swift-libp2p-queues-redis-driver`](//github.com/swift-libp2p/swift-libp2p-queues-redis-driver) | 🟢 | A [Queues](https://docs.vapor.codes/advanced/queues/) driver powered by Redis | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-queues-redis-driver/actions/workflows/build+test.yml/badge.svg) |
+| [`swift-libp2p-queues`](//github.com/swift-libp2p/swift-libp2p-queues) | 🟢 | [Queues](https://docs.vapor.codes/advanced/queues/) (Offload & Schedule Tasks) | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-queues/actions/workflows/build+test.yml/badge.svg) |
+| [`swift-libp2p-redis`](//github.com/swift-libp2p/swift-libp2p-redis) | 🟢 | [Redis](https://docs.vapor.codes/redis/overview) Integration | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-redis/actions/workflows/build+test.yml/badge.svg) |
+| [`swift-libp2p-queues-redis-driver`](//github.com/swift-libp2p/swift-libp2p-queues-redis-driver) | 🟢 | A Queues driver powered by Redis | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-queues-redis-driver/actions/workflows/build+test.yml/badge.svg) |
 | [`swift-libp2p-fluent`](//github.com/swift-libp2p/swift-libp2p-fluent) | 🟢 | [Fluent](https://docs.vapor.codes/fluent/overview/), a Database Abstraction Layer | ![Build & Test (macos and linux)](https://github.com/swift-libp2p/swift-libp2p-fluent/actions/workflows/build+test.yml/badge.svg) |
 | **Testing and examples** |
 | [`LibP2PTesting`](https://github.com/swift-libp2p/swift-libp2p/tree/main/Sources/LibP2PTesting) | 🟢 | A collection of testing utilities for libp2p (embedded) | N/A |
@@ -242,6 +244,15 @@ try await lib.withStream(
 ```
 
 > Note: swift-libp2p 0.4.0 is async-first. The application lifecycle (`Application.make`, `startup`, `asyncShutdown`) and the client APIs (`newRequest`, `newStream`, `broadcast`, PubSub, Discovery, …) all have native `async` forms. The `EventLoopFuture`-returning variants are deprecated and will be removed in 0.5.0.
+
+### Swift Versions
+
+The minimum Swift version supported by swift-libp2p releases are detailed below:
+
+LibP2P             | Minimum Swift Version
+-------------------|----------------------
+`0.0.0 ..< 0.4.0`  | 6.0
+`0.4.0 ...`        | 6.1
 
 ## Contributing
 
