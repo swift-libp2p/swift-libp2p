@@ -41,10 +41,11 @@ extension LibP2PTests {
 
         @Test("Routes marked advertised(false) are left out of the advertised protocols")
         func routeLevelFlag() async throws {
-            try await withApp(configure: { app in
+            let configure: ((Application) async throws -> Void) = { app in
                 app.routes.on("visible", "1.0.0") { _ -> Response<ByteBuffer> in .close }
                 app.routes.on("hidden", "1.0.0") { _ -> Response<ByteBuffer> in .close }.advertised(false)
-            }) { app in
+            }
+            try await withApp(configure: configure) { app in
                 let advertised = app.routes.advertisedProtocols
                 #expect(advertised.contains("/visible/1.0.0"))
                 #expect(!advertised.contains("/hidden/1.0.0"))
@@ -54,9 +55,10 @@ extension LibP2PTests {
 
         @Test("Protocols can be hidden and shown again at runtime")
         func runtimeHiding() async throws {
-            try await withApp(configure: { app in
+            let configure: ((Application) async throws -> Void) = { app in
                 app.routes.on("toggle", "1.0.0") { _ -> Response<ByteBuffer> in .close }
-            }) { app in
+            }
+            try await withApp(configure: configure) { app in
                 let proto = "/toggle/1.0.0"
                 #expect(app.routes.advertisedProtocols.contains(proto))
 
@@ -74,9 +76,10 @@ extension LibP2PTests {
 
         @Test("Hiding a protocol posts .localProtocolChange")
         func postsLocalProtocolChange() async throws {
-            try await withApp(configure: { app in
+            let configure: ((Application) async throws -> Void) = { app in
                 app.routes.on("toggle", "1.0.0") { _ -> Response<ByteBuffer> in .close }
-            }) { app in
+            }
+            try await withApp(configure: configure) { app in
                 let events = app.events.subscribe(to: [.localProtocolChange])
                 app.stopAdvertising(protocol: "/toggle/1.0.0")
                 var iterator = events.makeAsyncIterator()
