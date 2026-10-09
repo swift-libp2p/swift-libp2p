@@ -199,7 +199,7 @@ extension Multiaddr {
 }
 
 extension Multiaddr {
-    
+
     /// True if this multiaddr is only reachable from a local network or host
     /// (loopback, RFC 1918, CGNAT, link local, IPv6 unique local, or `localhost`). See ``IPScope``.
     public var isInternalAddress: Bool {
