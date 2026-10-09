@@ -111,7 +111,7 @@ extension Application {
         // Scoped: the stream never outlives `body`, on any exit path. `closeNow` rather than
         // `close()` on the failure paths because neither a thrown error nor a cancelled task is
         // somewhere we can afford to suspend again.
-        return try await withTaskCancellationHandler {
+        try await withTaskCancellationHandler {
             do {
                 let result = try await body(stream)
                 // Close without waiting for the remote to reciprocate. On a muxer with half-closure
