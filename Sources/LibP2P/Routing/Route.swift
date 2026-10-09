@@ -2,7 +2,7 @@
 //
 // This source file is part of the swift-libp2p open source project
 //
-// Copyright (c) 2022-2025 swift-libp2p project authors
+// Copyright (c) 2022-2026 swift-libp2p project authors
 // Licensed under MIT
 //
 // See LICENSE for license information
@@ -113,6 +113,23 @@ public final class Route: CustomStringConvertible, Sendable {
     @discardableResult
     public func description(_ string: String) -> Route {
         self.userInfo["description"] = string
+        return self
+    }
+
+    /// Whether this route's protocol is advertised to remote peers (e.g. in our Identify message). Defaults to `true`.
+    ///
+    /// Unadvertised routes are still served, they're just not announced. Use this for local only, outbound only or
+    /// deprecated protocols. To stop advertising a protocol at runtime see ``Application/stopAdvertising(protocol:)``.
+    public var isAdvertised: Bool {
+        (self.userInfo["advertised"] as? Bool) ?? true
+    }
+
+    /// Sets whether this route's protocol is advertised to remote peers, see ``isAdvertised``.
+    ///
+    ///     app.on("legacy", "1.0.0") { req in ... }.advertised(false)
+    @discardableResult
+    public func advertised(_ advertised: Bool) -> Route {
+        self.userInfo["advertised"] = advertised
         return self
     }
 }
