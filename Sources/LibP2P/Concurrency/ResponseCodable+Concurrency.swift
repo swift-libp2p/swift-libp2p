@@ -139,6 +139,8 @@ extension Response: AsyncResponseEncodable {
         case .respondThenClose(let payload):
             request.shouldClose()
             return try await payload.encodeResponse(for: request).get()
+        case .respondEmpty:
+            return RawResponse(payload: request.allocator.buffer(bytes: []), isExplicitlyEmpty: true)
         case .close, .reset:
             let res = RawResponse(payload: request.allocator.buffer(bytes: []))
             request.shouldClose()

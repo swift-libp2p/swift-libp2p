@@ -39,6 +39,11 @@ public struct RawResponse: CustomStringConvertible, Sendable {
     /// against the in-flight write. Used to back `Response.respondThenClose` / `.close`.
     public var closeAfterWrite: Bool
 
+    /// When `true`, an empty `payload` is still written as a (zero length) message instead of being treated as
+    /// "nothing to write". Framing handlers turn it into an empty frame (e.g. a lone `0x00` varint prefix), which
+    /// is how protobuf messages whose fields all hold default values travel. Enables `Response.respondEmpty`.
+    public var isExplicitlyEmpty: Bool
+
     /// See `CustomStringConvertible`
     public var description: String {
         var desc: [String] = []
@@ -51,10 +56,12 @@ public struct RawResponse: CustomStringConvertible, Sendable {
     /// Internal init that creates a new `RawResponse`
     public init(
         payload: ByteBuffer,
-        closeAfterWrite: Bool = false
+        closeAfterWrite: Bool = false,
+        isExplicitlyEmpty: Bool = false
     ) {
         self.payload = payload
         self.closeAfterWrite = closeAfterWrite
+        self.isExplicitlyEmpty = isExplicitlyEmpty
     }
 }
 //public final class RawResponse: CustomStringConvertible, Sendable {
@@ -111,6 +118,11 @@ public struct RawResponse: CustomStringConvertible, Sendable {
 public enum Response<T: ResponseEncodable & Sendable>: ResponseEncodable, Sendable {
     case respond(T)
     case respondThenClose(T)
+    /// Writes a single zero length message (an empty frame) and keeps the stream open.
+    ///
+    /// Unlike `.respond` with an empty payload, which is dropped as "nothing to write", this always reaches the
+    /// remote peer (e.g. as a lone `0x00` with varint framing).
+    case respondEmpty
     case stayOpen
     case close
     case reset(Error)
@@ -129,6 +141,9 @@ public enum Response<T: ResponseEncodable & Sendable>: ResponseEncodable, Sendab
             return payload.encodeResponse(for: request).map { raw in
                 RawResponse(payload: raw.payload, closeAfterWrite: true)
             }
+        case .respondEmpty:
+            let res = RawResponse(payload: request.allocator.buffer(bytes: []), isExplicitlyEmpty: true)
+            return request.eventLoop.makeSucceededFuture(res)
         case .close, .reset:
             let res = RawResponse(payload: request.allocator.buffer(bytes: []), closeAfterWrite: true)
             return request.eventLoop.makeSucceededFuture(res)
