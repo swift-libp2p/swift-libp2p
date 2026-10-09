@@ -54,18 +54,64 @@ extension Application {
         _ body: (LibP2PStream) async throws -> T
     ) async throws -> T {
         let stream = try await self.openStream(
-            toTarget: target,
-            forProtocol: proto,
-            withHandlers: handlers,
-            andMiddleware: middleware,
             inboundBufferSize: inboundBufferSize,
             openTimeout: openTimeout
-        )
+        ) { closure in
+            self._newStream(
+                toTarget: target,
+                forProtocol: proto,
+                withHandlers: handlers,
+                andMiddleware: middleware,
+                closure: closure
+            )
+        }
+        return try await Self.runScoped(stream, body)
+    }
 
+    /// Opens an outbound stream on a specific `connection` and hands it to `body` as a ``LibP2PStream``.
+    ///
+    /// Unlike ``withStream(to:forProtocol:withHandlers:andMiddleware:inboundBufferSize:openTimeout:_:)``,
+    /// which picks (or dials) a connection for you, the stream is always opened on `connection`. Use this when the stream must
+    /// travel over one connection in particular, e.g. an AutoNAT dial-back over a freshly dialed connection
+    /// (see ``connect(to:forceNewConnection:timeout:)``). A connection that's still upgrading queues the stream until
+    /// it's muxed.
+    ///
+    /// - Throws: ``StreamError/openTimedOut`` or ``StreamError/closedBeforeReady`` if the stream never became ready,
+    ///   `Application.Connections.Errors.connectionUpgradeFailed` if `connection` is closing / closed, or whatever
+    ///   `body` throws.
+    @discardableResult
+    public func withStream<T>(
+        on connection: AppConnection,
+        forProtocol proto: String,
+        withHandlers handlers: HandlerConfig = .rawHandlers([]),
+        andMiddleware middleware: MiddlewareConfig = .custom(nil),
+        inboundBufferSize: Int = LibP2PStream.defaultInboundBufferSize,
+        openTimeout: TimeAmount = .seconds(10),
+        _ body: (LibP2PStream) async throws -> T
+    ) async throws -> T {
+        let stream = try await self.openStream(
+            inboundBufferSize: inboundBufferSize,
+            openTimeout: openTimeout
+        ) { closure in
+            connection.tryNewStream(
+                forProtocol: proto,
+                withHandlers: handlers,
+                andMiddleware: middleware,
+                closure: closure
+            )
+        }
+        return try await Self.runScoped(stream, body)
+    }
+
+    /// Runs `body` with `stream`, closing the stream on every exit path.
+    private static func runScoped<T>(
+        _ stream: LibP2PStream,
+        _ body: (LibP2PStream) async throws -> T
+    ) async throws -> T {
         // Scoped: the stream never outlives `body`, on any exit path. `closeNow` rather than
         // `close()` on the failure paths because neither a thrown error nor a cancelled task is
         // somewhere we can afford to suspend again.
-        return try await withTaskCancellationHandler {
+        try await withTaskCancellationHandler {
             do {
                 let result = try await body(stream)
                 // Close without waiting for the remote to reciprocate. On a muxer with half-closure
@@ -84,20 +130,18 @@ extension Application {
         }
     }
 
-    /// Opens a stream to `target` and resolves once it's ready, wiring every subsequent event into
-    /// the returned ``LibP2PStream``.
+    /// Opens a stream and resolves once it's ready, wiring every subsequent event into the returned
+    /// ``LibP2PStream``.
     ///
-    /// Implemented over the one `_newStream(toTarget:…closure:)` engine, so target resolution,
-    /// connection reuse and cold dialling behave exactly as they do for `newStream` / `newRequest`.
-    /// The event closure it installs is a pure pump, it never returns a payload, because
+    /// `start` kicks off the open with the event closure it's handed, either through the
+    /// `_newStream(toTarget:…closure:)` engine (so target resolution, connection reuse and cold dialling
+    /// behave exactly as they do for `newStream` / `newRequest`) or on a specific connection.
+    /// The event closure is a pure pump, it never returns a payload, because
     /// ``LibP2PStream/write(_:)`` writes out of band straight to the channel.
-    private func openStream<Target: RequestTarget>(
-        toTarget target: Target,
-        forProtocol proto: String,
-        withHandlers handlers: HandlerConfig,
-        andMiddleware middleware: MiddlewareConfig,
+    private func openStream(
         inboundBufferSize: Int,
-        openTimeout: TimeAmount
+        openTimeout: TimeAmount,
+        start: (@escaping @Sendable (Request) throws -> EventLoopFuture<RawResponse>) -> EventLoopFuture<Void>
     ) async throws -> LibP2PStream {
         let el = self.eventLoopGroup.next()
         let opening = OpeningStream(promise: el.makePromise(of: LibP2PStream.self))
@@ -111,12 +155,7 @@ extension Application {
             opening.failIfPending(Application.StreamError.openTimedOut)
         }
 
-        self._newStream(
-            toTarget: target,
-            forProtocol: proto,
-            withHandlers: handlers,
-            andMiddleware: middleware
-        ) { req -> EventLoopFuture<RawResponse> in
+        start { req -> EventLoopFuture<RawResponse> in
             switch req.event {
             case .ready:
                 opening.ready(LibP2PStream(request: req, inboundBufferSize: inboundBufferSize))
