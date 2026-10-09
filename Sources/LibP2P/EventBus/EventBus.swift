@@ -201,6 +201,7 @@ public final class EventBus: Sendable {
         case listen(_ cb: @Sendable (String, Multiaddr) -> Void)
         case listenClosed(_ cb: @Sendable (String, Multiaddr) -> Void)
         case remotePeerProtocolChange(_ cb: @Sendable (LibP2P.RemotePeerProtocolChange) -> Void)
+        case localProtocolChange(_ cb: @Sendable () -> Void)
 
         var kind: Kind {
             switch self {
@@ -215,6 +216,7 @@ public final class EventBus: Sendable {
             case .listen: return .listen
             case .listenClosed: return .listenClosed
             case .remotePeerProtocolChange: return .remotePeerProtocolChange
+            case .localProtocolChange: return .localProtocolChange
             }
         }
     }
@@ -280,6 +282,7 @@ public final class EventBus: Sendable {
         case .listen(let cb): if case .listen(let s, let ma) = emitter { cb(s, ma) }
         case .listenClosed(let cb): if case .listenClosed(let s, let ma) = emitter { cb(s, ma) }
         case .remotePeerProtocolChange(let cb): if case .remotePeerProtocolChange(let change) = emitter { cb(change) }
+        case .localProtocolChange(let cb): if case .localProtocolChange = emitter { cb() }
         }
     }
 
