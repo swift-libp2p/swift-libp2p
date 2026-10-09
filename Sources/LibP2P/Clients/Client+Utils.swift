@@ -413,6 +413,44 @@ extension Application {
         return connection
     }
 
+    /// Connects to `ma`, optionally forcing a brand new Connection even if we're already connected to the peer.
+    ///
+    /// With `forceNewConnection == false` this behaves exactly like ``connect(to:timeout:)``.
+    ///
+    /// With `forceNewConnection == true` the address is dialed as is, existing connections to the address (or to the
+    /// `/p2p` peer it names) are never reused, and the remote peer isn't substituted for one of its other known addresses.
+    /// The dial is still gated by the ``ConnectionGater`` and coalesced with any concurrent cold dial to the same address.
+    /// This is what protocols that verify reachability (like AutoNAT dial-backs) need.
+    ///
+    /// - Parameters:
+    ///   - ma: The address to dial. Include the `/p2p/<peer>` component so the security upgrade verifies the remote peer.
+    ///   - forceNewConnection: When true, always open a new Connection.
+    ///   - timeout: How long to wait for the connection to finish upgrading (defaults to 10 seconds).
+    /// - Returns: The upgraded `AppConnection`. When forcing a new connection, the caller owns it and should close it when done.
+    /// - Throws: Dial failures, `Application.Connections.Errors.timedOut` if the connection doesn't
+    ///   upgrade within `timeout`, and `.connectionUpgradeFailed` if it closes before upgrading.
+    @discardableResult
+    public func connect(
+        to ma: Multiaddr,
+        forceNewConnection: Bool,
+        timeout: TimeAmount = .seconds(10)
+    ) async throws -> AppConnection {
+        guard forceNewConnection else { return try await self.connect(to: ma, timeout: timeout) }
+        let el = self.eventLoopGroup.next()
+        let resolved = try await self.resolveAddressIfNecessary(ma)
+        guard !resolved.isEmpty else { throw Errors.noTransportForMultiaddr(ma) }
+        let dialable = try self.transports.canDialAny(resolved)
+        let connection = try await self._coldDial(dialable, on: el).get()
+        do {
+            try await self.waitUntilUpgraded(connection, timeout: timeout)
+        } catch {
+            // Don't leak a half open connection that we own.
+            try? await connection.close().get()
+            throw error
+        }
+        return connection
+    }
+
     /// Suspends until `connection` is secured and muxed.
     private func waitUntilUpgraded(_ connection: AppConnection, timeout: TimeAmount) async throws {
         /// Subscribe before checking the status, so an upgrade landing in between isn't missed.
