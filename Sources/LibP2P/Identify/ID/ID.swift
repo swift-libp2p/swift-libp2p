@@ -405,12 +405,23 @@ extension Identify {
         }
 
         // Update our peers known protocols (skip empty lists on partial updates).
+        // A protocol list is always the peer's complete set (in pushes too), so it replaces what we knew, otherwise
+        // a peer could never tell us it stopped supporting (or advertising) a protocol. This matches go-libp2p's
+        // `SetProtocols`.
         let protocols = identifyMessage.protocols.compactMap { SemVerProtocol($0) }
         if !protocols.isEmpty {
-            connection.logger.trace("Identify::Adding known protocols to peer \(identifiedPeer.b58String)")
+            connection.logger.trace("Identify::Setting known protocols for peer \(identifiedPeer.b58String)")
             connection.logger.trace("Identify::\(protocols.map({ $0.stringValue }).joined(separator: ","))")
+            let peers = application.peers
+            let eventLoop = connection.channel.eventLoop
+            let current = Set(protocols)
             tasks.append(
-                application.peers.add(protocols: protocols, toPeer: identifiedPeer, on: connection.channel.eventLoop)
+                peers.getProtocols(forPeer: identifiedPeer, on: eventLoop)
+                    .flatMap { known -> EventLoopFuture<Void> in
+                        let stale = known.filter { !current.contains($0) }
+                        return peers.remove(protocols: stale, fromPeer: identifiedPeer, on: eventLoop)
+                    }
+                    .flatMap { peers.add(protocols: protocols, toPeer: identifiedPeer, on: eventLoop) }
             )
         }
 
