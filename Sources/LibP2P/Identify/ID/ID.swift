@@ -346,11 +346,7 @@ extension Identify {
 
         var id = IdentifyMessage()
         id.publicKey = try self.localPeerID.keyPair!.publicKey.marshal()
-        // TODO: We need a way to filter out protocols we don't want to advertise
-        // (like local only protocols, outbound only protocols, or protocols for certain peers only, deprecated protocols (like Delta)
-        let registeredProtos = req.application.routes.all.compactMap { $0.description }
-            .filter { $0 != Identify.Multicodecs.delta }
-        id.protocols = registeredProtos
+        id.protocols = req.application.routes.advertisedProtocols
         id.protocolVersion = Identify.protocolVersion
         id.agentVersion = req.application.agentVersion
         id.observedAddr = try req.remoteAddress?.toMultiaddr().binaryPacked() ?? Data()
