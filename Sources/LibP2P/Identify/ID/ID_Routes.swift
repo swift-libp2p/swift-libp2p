@@ -70,14 +70,13 @@ func routes(_ app: Application) throws {
             // Route Group: p2p/id/delta/...
             // NOTE: The delta message has been removed from current go-libp2p, so delta
             // is legacy. We still register the handler to accept inbound deltas, but we
-            // filter it out of our advertised protocol list in `constructIdentifyMessage`.
-            // The modern replacement is identify/push.
+            // don't advertise it. The replacement is identify/push.
             id.group("delta") { delta in
 
                 // Route Endpoint: p2p/id/delta/1.0.0
                 delta.on("1.0.0") { req -> Response<ByteBuffer> in
                     handleDeltaRequest(req)
-                }
+                }.advertised(false)
             }
         }
     }
