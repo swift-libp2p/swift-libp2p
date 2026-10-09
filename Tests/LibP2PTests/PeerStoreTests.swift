@@ -335,11 +335,15 @@ extension LibP2PTests {
         // (integration-tests covers identify over yamux / mplex).
 
         /// An identify message advertising `peer`'s signed record with sequence number `seq`.
-        private static func identifyPayload(from peer: PeerID, seq: UInt64) throws -> Data {
+        private static func identifyPayload(
+            from peer: PeerID,
+            seq: UInt64,
+            protocols: [String] = ["/echo/1.0.0"]
+        ) throws -> Data {
             let address = try Multiaddr("/ip4/127.0.0.1/tcp/4001")
             var message = IdentifyMessage()
             message.publicKey = try #require(peer.keyPair?.publicKey).marshal()
-            message.protocols = ["/echo/1.0.0"]
+            message.protocols = protocols
             message.listenAddrs = [try address.encapsulating(peer: peer).binaryPacked()]
             let record = PeerRecord(peerID: peer, multiaddrs: [address], sequenceNumber: seq)
             message.signedPeerRecord = Data(try record.seal(withPrivateKey: peer).marshal())
@@ -401,6 +405,33 @@ extension LibP2PTests {
                         return (try? PeerRecord(signedEnvelope: envelope).sequenceNumber) == 2
                     }
                 )
+            }
+        }
+
+        @Test("An identify push's protocol list replaces the protocols we knew, so peers can drop protocols")
+        func identifyPushReplacesProtocols() async throws {
+            try await withApp { app in
+                let remote = try Self.randomPeer()
+                let connection = DummyConnection()
+                connection.remotePeer = remote
+                let identify = try Self.identify(app)
+                let known: @Sendable () async -> Set<String> = {
+                    Set(((try? await app.peers.getProtocols(forPeer: remote)) ?? []).map(\.stringValue))
+                }
+
+                identify.consumeIdentifyMessage(
+                    payload: try Self.identifyPayload(from: remote, seq: 1, protocols: ["/echo/1.0.0", "/chat/1.0.0"]),
+                    id: nil,
+                    connection: connection
+                )
+                #expect(await waitUntil { await known() == ["/echo/1.0.0", "/chat/1.0.0"] })
+
+                identify.consumePushIdentifyMessage(
+                    payload: try Self.identifyPayload(from: remote, seq: 2, protocols: ["/chat/1.0.0", "/new/1.0.0"]),
+                    id: nil,
+                    connection: connection
+                )
+                #expect(await waitUntil { await known() == ["/chat/1.0.0", "/new/1.0.0"] })
             }
         }
 

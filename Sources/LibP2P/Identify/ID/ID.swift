@@ -120,6 +120,8 @@ public final class Identify: IdentityManager, CustomStringConvertible {
         /// When our own listen addresses change, proactively push the update to peers.
         application.events.on(self, event: .listen(self.onLocalListenAddressesChanged))
         application.events.on(self, event: .listenClosed(self.onLocalListenAddressesChanged))
+        /// Likewise when the protocols we advertise change.
+        application.events.on(self, event: .localProtocolChange(self.onLocalProtocolsChanged))
 
         self.logger.trace("Initialized!")
     }
@@ -173,6 +175,12 @@ public final class Identify: IdentityManager, CustomStringConvertible {
     /// spec's push variant, we proactively inform connected peers of the change.
     internal func onLocalListenAddressesChanged(_ proto: String, _ addr: Multiaddr) {
         self.logger.trace("Identify::Local listen addresses changed (\(addr)); pushing update to peers")
+        self.push()
+    }
+
+    /// Fired when the set of protocols we advertise changes, see `Application.stopAdvertising(protocol:)`.
+    internal func onLocalProtocolsChanged() {
+        self.logger.trace("Identify::Local protocols changed; pushing update to peers")
         self.push()
     }
 }
@@ -338,11 +346,7 @@ extension Identify {
 
         var id = IdentifyMessage()
         id.publicKey = try self.localPeerID.keyPair!.publicKey.marshal()
-        // TODO: We need a way to filter out protocols we don't want to advertise
-        // (like local only protocols, outbound only protocols, or protocols for certain peers only, deprecated protocols (like Delta)
-        let registeredProtos = req.application.routes.all.compactMap { $0.description }
-            .filter { $0 != Identify.Multicodecs.delta }
-        id.protocols = registeredProtos
+        id.protocols = req.application.routes.advertisedProtocols
         id.protocolVersion = Identify.protocolVersion
         id.agentVersion = req.application.agentVersion
         id.observedAddr = try req.remoteAddress?.toMultiaddr().binaryPacked() ?? Data()
@@ -401,12 +405,23 @@ extension Identify {
         }
 
         // Update our peers known protocols (skip empty lists on partial updates).
+        // A protocol list is always the peer's complete set (in pushes too), so it replaces what we knew, otherwise
+        // a peer could never tell us it stopped supporting (or advertising) a protocol. This matches go-libp2p's
+        // `SetProtocols`.
         let protocols = identifyMessage.protocols.compactMap { SemVerProtocol($0) }
         if !protocols.isEmpty {
-            connection.logger.trace("Identify::Adding known protocols to peer \(identifiedPeer.b58String)")
+            connection.logger.trace("Identify::Setting known protocols for peer \(identifiedPeer.b58String)")
             connection.logger.trace("Identify::\(protocols.map({ $0.stringValue }).joined(separator: ","))")
+            let peers = application.peers
+            let eventLoop = connection.channel.eventLoop
+            let current = Set(protocols)
             tasks.append(
-                application.peers.add(protocols: protocols, toPeer: identifiedPeer, on: connection.channel.eventLoop)
+                peers.getProtocols(forPeer: identifiedPeer, on: eventLoop)
+                    .flatMap { known -> EventLoopFuture<Void> in
+                        let stale = known.filter { !current.contains($0) }
+                        return peers.remove(protocols: stale, fromPeer: identifiedPeer, on: eventLoop)
+                    }
+                    .flatMap { peers.add(protocols: protocols, toPeer: identifiedPeer, on: eventLoop) }
             )
         }
 
