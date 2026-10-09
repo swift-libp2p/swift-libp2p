@@ -197,3 +197,28 @@ extension Multiaddr {
         return new
     }
 }
+
+extension Multiaddr {
+    
+    /// True if this multiaddr is only reachable from a local network or host
+    /// (loopback, RFC 1918, CGNAT, link local, IPv6 unique local, or `localhost`). See ``IPScope``.
+    public var isInternalAddress: Bool {
+        self.isPrivateAddress
+    }
+
+    /// True if this multiaddr is a globally routable host.
+    public var isExternalAddress: Bool {
+        self.isPublicAddress
+    }
+
+    /// True when this multiaddr's IP component is the unspecified/wildcard
+    /// address (IPv4 `0.0.0.0` or IPv6 `::`). A wildcard is a *bind* address,
+    /// never a dialable destination, so it must never be advertised to remote
+    /// peers. Parsed via `tcpAddress` (not a substring match) so a real address
+    /// like `10.0.0.0` — which *contains* the substring `0.0.0.0` — is not
+    /// misclassified.
+    public var isUnspecifiedAddress: Bool {
+        guard let tcp = self.tcpAddress else { return false }
+        return tcp.address == "0.0.0.0" || tcp.address == "::"
+    }
+}
