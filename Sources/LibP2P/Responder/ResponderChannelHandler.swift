@@ -46,8 +46,9 @@ final class ResponderChannelHandler: ChannelInboundHandler, RemovableChannelHand
     }
 
     func serialize(_ response: RawResponse, for request: Request, context: ChannelHandlerContext) {
-        guard response.payload.readableBytes > 0 else {
+        guard response.payload.readableBytes > 0 || response.isExplicitlyEmpty else {
             // Nothing to write (e.g. `.stayOpen`, or `.close` / `.reset` with an empty payload).
+            // `.respondEmpty` sets `isExplicitlyEmpty` so its zero length message is still written.
             // There's no write to wait on, so close immediately if requested.
             if response.closeAfterWrite {
                 request.shouldClose()
