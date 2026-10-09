@@ -12,8 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+import Foundation
 import LibP2PCrypto
 import LibP2PTesting
+import NIOCore
 import Testing
 
 @testable import LibP2P
@@ -72,6 +74,59 @@ extension LibP2PTests {
                 )
                 let live = try await Self.liveConnections(from: client, to: host.peerID)
                 #expect(live.map(\.id) == [connection.id])
+            }
+        }
+
+        @Test("connect(forceNewConnection:) opens a second connection alongside the existing one")
+        func forceNewConnectionOpensASecondConnection() async throws {
+            try await withPeers(configure: Self.configure) { host, client in
+                let first = try await client.connect(to: host.dialableAddress)
+                let second = try await client.connect(to: host.dialableAddress, forceNewConnection: true)
+
+                #expect(second.id != first.id)
+                #expect(second.status == .upgraded)
+                #expect(second.remotePeer == host.peerID)
+
+                // Both connections stay live, on both sides.
+                let live = try await Self.liveConnections(from: client, to: host.peerID)
+                #expect(Set(live.map(\.id)) == Set([first.id, second.id]))
+                #expect(
+                    await waitUntil {
+                        (try? await Self.liveConnections(from: host, to: client.peerID).count) == 2
+                    }
+                )
+
+                // A stream can be opened on the forced connection specifically.
+                let (echoed, streamConnectionID) = try await client.withStream(
+                    on: second,
+                    forProtocol: "/echo/1.0.0",
+                    withHandlers: .handlers([.newLineDelimited])
+                ) { stream -> (String, UUID) in
+                    try await stream.write(ByteBuffer(string: "over the second connection"))
+                    for try await frame in stream.inbound { return (String(buffer: frame), stream.connection.id) }
+                    return ("", stream.connection.id)
+                }
+                #expect(echoed == "over the second connection")
+                #expect(streamConnectionID == second.id)
+
+                // Closing the forced connection leaves the original untouched.
+                try await second.close().get()
+                #expect(
+                    await waitUntil {
+                        let ids = (try? await Self.liveConnections(from: client, to: host.peerID).map(\.id)) ?? []
+                        return ids == [first.id]
+                    }
+                )
+                #expect(first.status == .upgraded)
+            }
+        }
+
+        @Test("connect(forceNewConnection: false) still reuses the existing connection")
+        func forceNewConnectionFalseReuses() async throws {
+            try await withPeers(configure: Self.configure) { host, client in
+                let first = try await client.connect(to: host.dialableAddress)
+                let again = try await client.connect(to: host.dialableAddress, forceNewConnection: false)
+                #expect(again.id == first.id)
             }
         }
 
