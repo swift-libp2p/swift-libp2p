@@ -120,6 +120,8 @@ public final class Identify: IdentityManager, CustomStringConvertible {
         /// When our own listen addresses change, proactively push the update to peers.
         application.events.on(self, event: .listen(self.onLocalListenAddressesChanged))
         application.events.on(self, event: .listenClosed(self.onLocalListenAddressesChanged))
+        /// Likewise when the protocols we advertise change.
+        application.events.on(self, event: .localProtocolChange(self.onLocalProtocolsChanged))
 
         self.logger.trace("Initialized!")
     }
@@ -173,6 +175,12 @@ public final class Identify: IdentityManager, CustomStringConvertible {
     /// spec's push variant, we proactively inform connected peers of the change.
     internal func onLocalListenAddressesChanged(_ proto: String, _ addr: Multiaddr) {
         self.logger.trace("Identify::Local listen addresses changed (\(addr)); pushing update to peers")
+        self.push()
+    }
+
+    /// Fired when the set of protocols we advertise changes, see `Application.stopAdvertising(protocol:)`.
+    internal func onLocalProtocolsChanged() {
+        self.logger.trace("Identify::Local protocols changed; pushing update to peers")
         self.push()
     }
 }
